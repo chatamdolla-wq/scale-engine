@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.scale/scale.db*
+.scale/events/
+.scale/checkpoints/
+.scale/vectors/
+!.scale/artifacts/
+!.scale/rules/enforced/
+!.scale/config.yaml
+.env
+.env.local

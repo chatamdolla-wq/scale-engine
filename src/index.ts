@@ -1,0 +1,26 @@
+// SCALE Engine — Public API
+export * from './artifact/types.js'
+export { FSM, SpecFSM } from './artifact/fsm.js'
+export { InMemoryArtifactStore } from './artifact/store.js'
+export type { IArtifactStore } from './artifact/store.js'
+export { EventBus } from './core/eventBus.js'
+export type { IEventBus } from './core/eventBus.js'
+export { Container, container, createToken } from './core/container.js'
+export { logger } from './core/logger.js'
+export { TaskEngine } from './tasks/TaskEngine.js'
+export { KnowledgeBase } from './knowledge/KnowledgeBase.js'
+export { BehaviorTracker } from './evolution/BehaviorTracker.js'
+export { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from './evolution/EvolutionEngine.js'
+export { Gateway } from './guardrails/Gateway.js'
+export { ROLES, getRole, listRoles } from './guardrails/roles.js'
+export { ContextBuilder } from './context/ContextBuilder.js'
+export { wireEffects } from './orchestration/EffectsWiring.js'
+export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'
+export { ClaudeCodeAdapter, createAdapter } from './adapters/ClaudeCodeAdapter.js'
+export { CodexAdapter } from './adapters/CodexAdapter.js'
+export { Doctor } from './api/doctor.js'
+export { ScaleMCPServer } from './api/mcp.js'
+export {
+  BruteRetryDetector, IdleToolDetector, BusyLoopDetector,
+  PrematureDoneDetector, BlameShiftDetector,
+} from './guardrails/detectors.js'
