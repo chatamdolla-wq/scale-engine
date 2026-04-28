@@ -2,7 +2,7 @@
 // 10 种工作流预设：覆盖开发、测试、审查、安全、自主循环等场景
 // 设计参考：SCALE v10.0 工作流系统
 
-import type { WorkflowPreset, WorkflowStep, ScenarioMode } from '../artifact/types.js'
+import type { WorkflowPreset, ScenarioMode } from '../artifact/types.js'
 
 // ============================================================================
 // 10 Workflow Presets
