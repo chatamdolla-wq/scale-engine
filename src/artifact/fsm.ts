@@ -39,6 +39,8 @@ export interface IFSM {
 
 export class FSM implements IFSM {
   private registry = new Map<ArtifactType, FSMDefinition>()
+  /** Per-artifact lock chain to prevent concurrent transitions */
+  private locks = new Map<string, Promise<void>>()
 
   constructor(
     private store: IArtifactStore,
@@ -87,6 +89,29 @@ export class FSM implements IFSM {
   }
 
   async transition(
+    artifactId: string,
+    action: string,
+    context: TransitionContext
+  ): Promise<TransitionResult> {
+    // Concurrency lock: serialize transitions per artifact
+    const prev = this.locks.get(artifactId) ?? Promise.resolve()
+    let releaseLock!: () => void
+    const acquired = new Promise<void>((resolve) => { releaseLock = resolve })
+    this.locks.set(artifactId, prev.then(() => acquired))
+    await prev
+
+    try {
+      return await this.executeTransition(artifactId, action, context)
+    } finally {
+      releaseLock()
+      // Clean up lock entry if no pending chain
+      if (this.locks.get(artifactId) === prev.then(() => acquired)) {
+        this.locks.delete(artifactId)
+      }
+    }
+  }
+
+  private async executeTransition(
     artifactId: string,
     action: string,
     context: TransitionContext
@@ -173,6 +198,11 @@ export class FSM implements IFSM {
     }
 
     return { success: true, artifact: updated, effectsExecuted }
+  }
+
+  /** Number of artifacts with pending lock chains (for testing/monitoring) */
+  get pendingLocks(): number {
+    return this.locks.size
   }
 
   async availableActions(artifactId: string): Promise<string[]> {

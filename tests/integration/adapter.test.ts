@@ -1,6 +1,7 @@
 // W8 Tests: Adapter + Init + Integration
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { ClaudeCodeAdapter, createAdapter } from '../../src/adapters/ClaudeCodeAdapter.js'
+import { ClaudeCodeAdapter } from '../../src/adapters/ClaudeCodeAdapter.js'
+import { createAdapter } from '../../src/adapters/index.js'
 import { EventBus } from '../../src/core/eventBus.js'
 import { InMemoryArtifactStore } from '../../src/artifact/store.js'
 import { FSM } from '../../src/artifact/fsm.js'
@@ -221,7 +222,15 @@ describe('Integration: Full Engine Lifecycle', () => {
     })
     expect(safeResult.allow).toBe(true)
 
-    // 8. Complete task
+    // 8. Set verification payload + complete task
+    await store.update(task.id, {
+      payload: {
+        ...((await store.get(task.id))?.payload ?? {}),
+        buildStatus: 'success', buildExitCode: 0,
+        lintStatus: 'success',
+        testPassed: true,
+      },
+    })
     await fsm.transition(task.id, 'complete', { actor: me })
     const finalTask = await store.get(task.id)
     expect(finalTask!.status).toBe('COMPLETED')

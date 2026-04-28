@@ -12,6 +12,7 @@ import {
   DangerousCommandDetector,
   SecretLeakDetector,
   RoleGateDetector,
+  ScopeCreepDetector,
   BUILT_IN_ROLES,
 } from '../../src/guardrails/advancedDetectors.js'
 import type { ToolUseInput, StopInput, ToolResultInput } from '../../src/artifact/types.js'
@@ -200,6 +201,58 @@ describe('Gateway + Detectors', () => {
       await gw.postTool({ sessionId: 's', tool: 'Bash', args: {}, exitCode: 1, output: 'error' })
       await new Promise((r) => setTimeout(r, 20))
       expect(emitted).toBe(true)
+    })
+  })
+
+  // ===== ScopeCreepDetector =====
+
+  describe('ScopeCreepDetector', () => {
+    it('does not trigger when under maxFiles threshold', async () => {
+      gw.registerDetector(new ScopeCreepDetector({ maxFiles: 5 }), 'preTool')
+      for (let i = 0; i < 5; i++) {
+        const r = await gw.preTool(mkInput('Edit', { file_path: `src/file${i}.ts` }))
+        expect(r.allow).toBe(true)
+      }
+    })
+
+    it('triggers warning when exceeding maxFiles', async () => {
+      gw.registerDetector(new ScopeCreepDetector({ maxFiles: 3 }), 'preTool')
+      for (let i = 0; i < 3; i++) {
+        await gw.preTool(mkInput('Edit', { file_path: `src/a${i}.ts` }))
+      }
+      // 4th distinct file exceeds threshold — warn severity still allows but injects context
+      const r = await gw.preTool(mkInput('Edit', { file_path: 'src/extra.ts' }))
+      expect(r.allow).toBe(true)
+      expect(r.reason).toContain('范围蔓延')
+    })
+
+    it('ignores non-edit tools', async () => {
+      gw.registerDetector(new ScopeCreepDetector({ maxFiles: 1 }), 'preTool')
+      const r1 = await gw.preTool(mkInput('Read', { file_path: 'a.ts' }))
+      const r2 = await gw.preTool(mkInput('Bash', { command: 'ls' }))
+      const r3 = await gw.preTool(mkInput('Grep', { pattern: 'foo' }))
+      expect(r1.allow).toBe(true)
+      expect(r2.allow).toBe(true)
+      expect(r3.allow).toBe(true)
+    })
+
+    it('editing the same file multiple times does not count as distinct', async () => {
+      gw.registerDetector(new ScopeCreepDetector({ maxFiles: 2 }), 'preTool')
+      await gw.preTool(mkInput('Edit', { file_path: 'src/same.ts' }))
+      await gw.preTool(mkInput('Edit', { file_path: 'src/same.ts' }))
+      await gw.preTool(mkInput('Edit', { file_path: 'src/same.ts' }))
+      // Only 1 distinct file, should not trigger
+      const r = await gw.preTool(mkInput('Edit', { file_path: 'src/same.ts' }))
+      expect(r.allow).toBe(true)
+    })
+
+    it('Write tool is also tracked', async () => {
+      gw.registerDetector(new ScopeCreepDetector({ maxFiles: 2 }), 'preTool')
+      await gw.preTool(mkInput('Write', { file_path: 'src/new1.ts' }))
+      await gw.preTool(mkInput('Write', { file_path: 'src/new2.ts' }))
+      const r = await gw.preTool(mkInput('Write', { file_path: 'src/new3.ts' }))
+      expect(r.allow).toBe(true)
+      expect(r.reason).toContain('范围蔓延')
     })
   })
 

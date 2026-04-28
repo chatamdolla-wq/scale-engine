@@ -22,6 +22,8 @@ export { TaskEngine } from './tasks/TaskEngine.js'
 
 // Knowledge Base
 export { KnowledgeBase } from './knowledge/KnowledgeBase.js'
+export { SQLiteKnowledgeBase } from './knowledge/SQLiteKnowledgeBase.js'
+export type { IKnowledgeBase } from './knowledge/KnowledgeBase.js'
 
 // Evolution
 export { BehaviorTracker } from './evolution/BehaviorTracker.js'
@@ -34,6 +36,10 @@ export {
   BruteRetryDetector, IdleToolDetector, BusyLoopDetector,
   PrematureDoneDetector, BlameShiftDetector,
 } from './guardrails/detectors.js'
+export {
+  DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector,
+  BUILT_IN_ROLES,
+} from './guardrails/advancedDetectors.js'
 
 // Context
 export { ContextBuilder } from './context/ContextBuilder.js'

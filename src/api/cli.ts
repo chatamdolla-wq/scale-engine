@@ -9,8 +9,8 @@ import { FSM } from '../artifact/fsm.js'
 import { registerAllFSMs, INITIAL_STATES } from '../artifact/fsmDefinitions.js'
 import { Gateway } from '../guardrails/Gateway.js'
 import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '../guardrails/detectors.js'
-import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
-import { KnowledgeBase } from '../knowledge/KnowledgeBase.js'
+import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
+import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
@@ -51,15 +51,16 @@ function createEngine() {
   const gateway = new Gateway(eventBus)
   const roleGate = new RoleGateDetector()
 
-  // Register all detectors
+  // Register all detectors (9 total)
   gateway.registerDetector(new DangerousCommandDetector(), 'preTool')
   gateway.registerDetector(new SecretLeakDetector(), 'preTool')
   gateway.registerDetector(roleGate, 'preTool')
   gateway.registerDetector(new BruteRetryDetector(), 'preTool')
+  gateway.registerDetector(new ScopeCreepDetector(), 'preTool')
   gateway.registerDetector(new PrematureDoneDetector(), 'beforeStop')
   gateway.registerDetector(new BlameShiftDetector(), 'postTool')
 
-  const kb = new KnowledgeBase(eventBus)
+  const kb = new SQLiteKnowledgeBase(eventBus, { dbPath: join(SCALE_DIR, 'knowledge.db') })
   const ctx = new ContextBuilder(store, kb, eventBus)
 
   return { eventBus, store, fsm, gateway, roleGate, kb, ctx }
@@ -795,7 +796,7 @@ const skill = defineCommand({
 // ============================================================================
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.5.0', description: 'SCALE Engine v0.5.0 CLI — AI engineering scaffold · 7 agents · 10 workflows · 8 detectors' },
+  meta: { name: 'scale', version: '0.6.0', description: 'SCALE Engine v0.6.0 CLI — AI engineering scaffold · 7 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks' },
   subCommands: {
     init,
     doctor,

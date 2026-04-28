@@ -1,5 +1,40 @@
 # @hongmaple0820/scale-engine CHANGELOG
 
+## 0.6.0 - 2026-04-29
+
+### SQLite 持久化 KnowledgeBase + FSM 并发锁 + 第 9 检测器
+
+**新增功能：**
+
+- **SQLiteKnowledgeBase**：基于 better-sqlite3 的持久化知识库
+  - WAL 模式 + busy_timeout 保证并发安全
+  - 完整实现 `IKnowledgeBase` 接口：add / recall / recallByVector / markHelpful / markUseless / verify / decay / stats / close
+  - 支持多类型过滤、标签过滤、最小相关度过滤、已验证过滤
+  - 数据在 close + reopen 后完整保留
+  - `src/knowledge/SQLiteKnowledgeBase.ts`
+- **FSM 并发锁**：per-artifact Promise 链式锁
+  - 防止同一 Artifact 的并发状态迁移产生竞态条件
+  - 不同 Artifact 间可并行迁移
+  - `pendingLocks` getter 用于监控
+  - `src/artifact/fsm.ts`
+- **ScopeCreep 检测器**（第 9 个）：范围蔓延检测
+  - 跟踪单会话内编辑的不同文件数量
+  - 超过阈值（默认 15 个文件 / 10 分钟窗口）时发出警告
+  - 支持自定义 `maxFiles` 和 `windowMs` 参数
+  - `src/guardrails/advancedDetectors.ts`
+
+**改进：**
+
+- CLI 默认使用 SQLiteKnowledgeBase（替代内存版 KnowledgeBase）
+- CLI 注册 ScopeCreepDetector 为 preTool 检测器
+- 公共 API 新增导出：`SQLiteKnowledgeBase`, `IKnowledgeBase`, `DangerousCommandDetector`, `SecretLeakDetector`, `RoleGateDetector`, `ScopeCreepDetector`, `BUILT_IN_ROLES`
+
+**测试：**
+
+- 新增 SQLiteKnowledgeBase 测试（19 个）：CRUD、过滤、持久化、事件发射
+- 新增 FSM 并发锁测试（4 个）：序列化、跨 Artifact 并行、历史完整性
+- 新增 ScopeCreep 检测器测试（5 个）：阈值、文件去重、Write 跟踪
+
 ## 0.5.0 - 2026-04-22
 
 ### 重大更新：7 Agent 适配器 + 场景模式 + 工作流预设 + 技能生态

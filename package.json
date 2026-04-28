@@ -1,13 +1,19 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.5.0",
-  "description": "SCALE Engine v0.5.0 — AI engineering scaffold: 7 agent adapters, 11 artifacts FSM, 8 guardrail detectors, skill ecosystem, 10 workflow presets, 4-level self-evolution",
+  "version": "0.6.0",
+  "description": "SCALE Engine v0.6.0 — AI engineering scaffold: 7 agent adapters, 11 artifacts FSM, 9 guardrail detectors, SQLite knowledge base, skill ecosystem, 10 workflow presets, 4-level self-evolution",
   "type": "module",
   "bin": {
     "scale": "./dist/api/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],

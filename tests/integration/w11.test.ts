@@ -1,7 +1,7 @@
 // W11 Tests: Codex Adapter + MCP Server
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { CodexAdapter } from '../../src/adapters/CodexAdapter.js'
-import { createAdapter } from '../../src/adapters/ClaudeCodeAdapter.js'
+import { createAdapter } from '../../src/adapters/index.js'
 import { ScaleMCPServer } from '../../src/api/mcp.js'
 import { rmSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'

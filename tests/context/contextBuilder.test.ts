@@ -131,7 +131,7 @@ describe('ContextBuilder', () => {
 
   it('builds basic context with system rules', async () => {
     const ctx = await builder.build({ sessionId: 'test-session' })
-    expect(ctx.system).toContain('SCALE Core Rules')
+    expect(ctx.system).toContain('SCALE Engine v10.0')
     expect(ctx.metadata.layers).toContain('system_rules')
     expect(ctx.metadata.totalTokens).toBeGreaterThan(0)
   })
