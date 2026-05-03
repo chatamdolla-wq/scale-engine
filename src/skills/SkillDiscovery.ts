@@ -19,6 +19,10 @@ const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string | null> = {
   'gemini': null,      // Gemini has no skills directory concept
   'openclaw': null,    // OpenClaw has no skills directory concept
   'hermes': null,      // Hermes has no skills directory concept
+  'trae': null,        // Trae has no skills directory concept
+  'workbuddy': null,   // WorkBuddy has no skills directory concept
+  'vsc': null,         // VSC has no skills directory concept
+  'qcoder': null,      // QCoder has no skills directory concept
 }
 
 // ============================================================================
@@ -45,6 +49,10 @@ export class SkillDiscovery {
       { platform: 'gemini', paths: [join(this.projectDir, '.gemini', 'settings.json')] },
       { platform: 'openclaw', paths: [join(this.projectDir, '.openclaw', 'settings.json')] },
       { platform: 'hermes', paths: [join(this.projectDir, '.hermes', 'settings.json')] },
+      { platform: 'trae', paths: [join(this.projectDir, '.trae', 'settings.json')] },
+      { platform: 'workbuddy', paths: [join(this.projectDir, '.workbuddy', 'settings.json')] },
+      { platform: 'vsc', paths: [join(this.projectDir, '.vscode', 'scale.json')] },
+      { platform: 'qcoder', paths: [join(this.projectDir, '.qwen', 'settings.json')] },
     ]
 
     for (const check of checks) {

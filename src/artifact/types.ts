@@ -584,7 +584,18 @@ export const SCENARIO_MODE_CONFIGS: Record<ScenarioMode, ScenarioModeConfig> = {
 // ============================================================================
 
 /** Agent 平台类型 */
-export type AgentPlatform = 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'gemini' | 'openclaw' | 'hermes'
+export type AgentPlatform =
+  | 'claude-code'
+  | 'codex'
+  | 'opencode'
+  | 'cursor'
+  | 'gemini'
+  | 'openclaw'
+  | 'hermes'
+  | 'trae'
+  | 'workbuddy'
+  | 'vsc'
+  | 'qcoder'
 
 /** Skill 引用 */
 export interface SkillRef {
@@ -629,6 +640,6 @@ export interface WorkflowPreset {
   requiredArtifacts: Array<{ type: ArtifactType; status?: string }>
 }
 
-/** Agent 类型扩展（支持所有 7 种 Agent） */
+/** Agent 类型扩展（支持所有 11 种 Agent） */
 export type AgentType = AgentPlatform
 

@@ -50,7 +50,7 @@ export { wireEffects } from './orchestration/EffectsWiring.js'
 // Routing
 export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'
 
-// Adapters (all 7 platforms)
+// Adapters (all 11 platforms)
 export {
   ClaudeCodeAdapter,
   CodexAdapter,
@@ -59,6 +59,10 @@ export {
   GeminiAdapter,
   OpenClawAdapter,
   HermesAdapter,
+  TraeAdapter,
+  WorkBuddyAdapter,
+  VSCAdapter,
+  QCoderAdapter,
   createAdapter,
   SUPPORTED_AGENTS,
 } from './adapters/index.js'

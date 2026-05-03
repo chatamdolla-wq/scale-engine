@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.6.0-orange?style=flat-square" alt="version" />
-  <img src="https://img.shields.io/badge/agents-7-blue?style=flat-square" alt="agents" />
+  <img src="https://img.shields.io/badge/agents-11-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-9-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-197-passing-brightgreen?style=flat-square" alt="tests" />
@@ -157,9 +157,9 @@ SCALE Engine 通过 **六层架构** 实现 AI 工程化：
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │  7 Agent 适配器                                            │  │
+│  │  11 Agent 适配器                                           │  │
 │  │  Claude Code │ Codex CLI │ OpenCode │ Cursor │ Gemini │   │  │
-│  │  OpenClaw │ Hermes                                         │  │
+│  │  OpenClaw │ Hermes │ Trae │ WorkBuddy │ VSC │ QCoder      │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
 │  ┌──────────────────────┐  ┌──────────────────────────────────┐│
@@ -320,7 +320,7 @@ Defect (closed) → Lesson (extracted) → Rule (proposed) → Hook (generated)
 
 ## ✨ 功能特性
 
-### 7 种 Agent 适配器
+### 11 种 Agent 适配器
 
 | Agent | 配置文件 | 知识文档 | 技能目录 | 特色能力 |
 |-------|---------|---------|---------|---------|
@@ -331,6 +331,10 @@ Defect (closed) → Lesson (extracted) → Rule (proposed) → Hook (generated)
 | 🔴 **Gemini** | `.gemini/settings.json` | `GEMINI.md` | — | Google 生态 + gstack + 免费额度 |
 | 🟡 **OpenClaw** | `.openclaw/settings.json` | `AGENTS.md` | — | 开源 Agent 框架 |
 | 🟤 **Hermes** | `.hermes/settings.json` | `.hermes.md` | — | 轻量级 Agent |
+| 🟦 **Trae** | `.trae/settings.json` | `TRAE.md` | — | 字节跳动 AI 编程助手 |
+| 🟪 **WorkBuddy** | `.workbuddy/settings.json` | `WORKBUDDY.md` | — | 腾讯 CodeBuddy 团队协作 |
+| 🟦 **VSC** | `.vscode/scale.json` | `VSC.md` | — | VS Code Copilot CLI |
+| 🟧 **QCoder** | `.qwen/settings.json` | `QWEN.md` | — | 阿里通义千问 Code CLI |
 
 **统一工厂函数**：
 
@@ -505,13 +509,17 @@ scale init --agent claude-code --scenario sandbox    # 🏖️ 探索/原型
 scale init --agent claude-code --scenario standard   # ⚙️ 日常开发（默认）
 scale init --agent claude-code --scenario critical   # 🔒 生产/安全
 
-# 支持 7 种 Agent
+# 支持 11 种 Agent
 scale init --agent codex          # Codex CLI
 scale init --agent opencode       # OpenCode
 scale init --agent cursor         # Cursor
 scale init --agent gemini         # Gemini
 scale init --agent openclaw       # OpenClaw
 scale init --agent hermes         # Hermes
+scale init --agent trae           # 字节 Trae
+scale init --agent workbuddy      # 腾讯 WorkBuddy
+scale init --agent vsc            # VS Code Copilot CLI
+scale init --agent qcoder         # 阿里 Qwen Code
 ```
 
 ### 环境诊断
@@ -657,7 +665,7 @@ console.log('生成的配置文件:', initResult.files)
 | `ScenarioMode` | Type | `'sandbox' \| 'standard' \| 'critical'` |
 | `ScenarioModeConfig` | Interface | 场景模式配置 |
 | `SCENARIO_MODE_CONFIGS` | Constant | 3 种场景模式预设 |
-| `AgentPlatform` | Type | 7 种 Agent 平台联合类型 |
+| `AgentPlatform` | Type | 11 种 Agent 平台联合类型 |
 | `SkillRef` | Interface | 技能引用 |
 | `SkillScanResult` | Interface | 技能扫描结果 |
 | `WorkflowPreset` | Interface | 工作流预设 |
@@ -824,6 +832,21 @@ console.log('生成的配置文件:', initResult.files)
 ---
 
 ## 📋 CHANGELOG
+
+### v0.6.1 (Unreleased)
+
+**新增 4 种 Agent 适配器（共 11 种）：**
+- ✨ **TraeAdapter** — 字节跳动 Trae AI 编程助手（`.trae/settings.json` + `TRAE.md`）
+- ✨ **WorkBuddyAdapter** — 腾讯 CodeBuddy 团队协作（`.workbuddy/settings.json` + `WORKBUDDY.md`）
+- ✨ **VSCAdapter** — VS Code Copilot CLI（`.vscode/scale.json` + `VSC.md`）
+- ✨ **QCoderAdapter** — 阿里通义千问 Code CLI（`.qwen/settings.json` + `QWEN.md`）
+
+**集成完整性：**
+- `AgentPlatform` 联合类型扩展至 11 种
+- `Doctor.checkSettingsJson` / `checkKnowledgeDoc` 支持新增 4 种平台检测
+- `SkillDiscovery.detectPlatform` 支持识别 4 种新平台
+- `createAdapter` / `SUPPORTED_AGENTS` 注册新适配器
+- 4 个测试套件 × 共 ~50 个新测试用例
 
 ### v0.6.0 (2026-04-29)
 

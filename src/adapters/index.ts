@@ -1,5 +1,5 @@
 // SCALE Engine — Unified Adapter Factory
-// 统一导出所有 7 种 Agent Adapter + createAdapter 工厂函数
+// 统一导出所有 Agent Adapter + createAdapter 工厂函数
 
 import type { IAgentAdapter } from './ClaudeCodeAdapter.js'
 import { ClaudeCodeAdapter } from './ClaudeCodeAdapter.js'
@@ -9,6 +9,10 @@ import { CursorAdapter } from './CursorAdapter.js'
 import { GeminiAdapter } from './GeminiAdapter.js'
 import { OpenClawAdapter } from './OpenClawAdapter.js'
 import { HermesAdapter } from './HermesAdapter.js'
+import { TraeAdapter } from './TraeAdapter.js'
+import { WorkBuddyAdapter } from './WorkBuddyAdapter.js'
+import { VSCAdapter } from './VSCAdapter.js'
+import { QCoderAdapter } from './QCoderAdapter.js'
 import type { AgentPlatform } from '../artifact/types.js'
 
 // Re-export all adapters and shared types
@@ -20,6 +24,10 @@ export { CursorAdapter } from './CursorAdapter.js'
 export { GeminiAdapter } from './GeminiAdapter.js'
 export { OpenClawAdapter } from './OpenClawAdapter.js'
 export { HermesAdapter } from './HermesAdapter.js'
+export { TraeAdapter } from './TraeAdapter.js'
+export { WorkBuddyAdapter } from './WorkBuddyAdapter.js'
+export { VSCAdapter } from './VSCAdapter.js'
+export { QCoderAdapter } from './QCoderAdapter.js'
 
 // ============================================================================
 // Adapter Registry
@@ -33,6 +41,10 @@ const ADAPTER_MAP: Record<AgentPlatform, new () => IAgentAdapter> = {
   'gemini': GeminiAdapter,
   'openclaw': OpenClawAdapter,
   'hermes': HermesAdapter,
+  'trae': TraeAdapter,
+  'workbuddy': WorkBuddyAdapter,
+  'vsc': VSCAdapter,
+  'qcoder': QCoderAdapter,
 }
 
 /** All supported agent type identifiers */

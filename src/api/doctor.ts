@@ -93,14 +93,18 @@ export class Doctor {
       { agent: 'gemini', path: join(this.projectDir, '.gemini', 'settings.json') },
       { agent: 'openclaw', path: join(this.projectDir, '.openclaw', 'settings.json') },
       { agent: 'hermes', path: join(this.projectDir, '.hermes', 'settings.json') },
+      { agent: 'trae', path: join(this.projectDir, '.trae', 'settings.json') },
+      { agent: 'workbuddy', path: join(this.projectDir, '.workbuddy', 'settings.json') },
+      { agent: 'vsc', path: join(this.projectDir, '.vscode', 'scale.json') },
+      { agent: 'qcoder', path: join(this.projectDir, '.qwen', 'settings.json') },
     ]
     const found = candidates.find((c) => existsSync(c.path))
     if (!found) {
       return {
         name: 'Agent settings',
         status: 'warn',
-        message: 'No agent settings found (.claude/.codex/.cursor/.gemini/.openclaw/.hermes)',
-        fix: 'Run: scale init --agent <claude-code|codex|cursor|gemini|openclaw|hermes>',
+        message: 'No agent settings found (.claude/.codex/.cursor/.gemini/.openclaw/.hermes/.trae/.workbuddy/.vscode/.qwen)',
+        fix: 'Run: scale init --agent <claude-code|codex|cursor|gemini|openclaw|hermes|trae|workbuddy|vsc|qcoder>',
       }
     }
     try {
@@ -122,7 +126,7 @@ export class Doctor {
   }
 
   private checkKnowledgeDoc(): DiagnosticResult {
-    const paths = ['CLAUDE.md', 'AGENTS.md', '.cursorrules', 'GEMINI.md', '.hermes.md']
+    const paths = ['CLAUDE.md', 'AGENTS.md', '.cursorrules', 'GEMINI.md', '.hermes.md', 'TRAE.md', 'WORKBUDDY.md', 'VSC.md', 'QWEN.md']
     for (const name of paths) {
       const p = join(this.projectDir, name)
       if (existsSync(p)) {

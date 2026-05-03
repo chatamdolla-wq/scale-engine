@@ -13,7 +13,18 @@ import { logger } from '../core/logger.js'
 export interface AdapterConfig {
   projectDir: string
   scaleDir?: string
-  agentType?: 'claude-code' | 'codex' | 'opencode' | 'cursor' | 'gemini' | 'openclaw' | 'hermes'
+  agentType?:
+    | 'claude-code'
+    | 'codex'
+    | 'opencode'
+    | 'cursor'
+    | 'gemini'
+    | 'openclaw'
+    | 'hermes'
+    | 'trae'
+    | 'workbuddy'
+    | 'vsc'
+    | 'qcoder'
   scenarioMode?: 'sandbox' | 'standard' | 'critical'
 }
 

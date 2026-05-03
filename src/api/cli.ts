@@ -796,7 +796,7 @@ const skill = defineCommand({
 // ============================================================================
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.6.0', description: 'SCALE Engine v0.6.0 CLI — AI engineering scaffold · 7 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks' },
+  meta: { name: 'scale', version: '0.6.0', description: 'SCALE Engine v0.6.0 CLI — AI engineering scaffold · 11 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks' },
   subCommands: {
     init,
     doctor,
