@@ -1,0 +1,23 @@
+{
+  "name": "SCALE Engine",
+  "displayName": "SCALE Engine - Workflow Orchestration",
+  "description": "FSM-based workflow with guardrails, agents, skills, and self-evolution",
+  "categories": ["workflow", "quality", "automation"],
+  "badges": [
+    { "name": "FSM", "description": "Artifact state machine" },
+    { "name": "Agents", "description": "8 specialist agents" },
+    { "name": "Skills", "description": "10 reusable skills" },
+    { "name": "Evolution", "description": "Self-improving rules" }
+  ],
+  "stats": {
+    "downloads": 0,
+    "rating": 0,
+    "reviews": 0
+  },
+  "pricing": "free",
+  "links": {
+    "repo": "https://github.com/yeachan-heo/scale-engine",
+    "docs": "https://github.com/yeachan-heo/scale-engine#readme",
+    "issues": "https://github.com/yeachan-heo/scale-engine/issues"
+  }
+}

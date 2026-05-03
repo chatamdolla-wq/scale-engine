@@ -1,0 +1,77 @@
+{
+  "id": "scale-engine",
+  "name": "SCALE Engine",
+  "version": "0.7.0",
+  "description": "FSM-based workflow orchestration with guardrails and evolution",
+  "author": "scale-engine-team",
+  "repo": "https://github.com/yeachan-heo/scale-engine",
+  "license": "MIT",
+  "entrypoints": {
+    "sessionStart": "src/hooks/SessionStartHook.ts",
+    "preToolUse": "src/hooks/PreToolUseHook.ts",
+    "postToolUse": "src/hooks/PostToolUseHook.ts",
+    "stop": "src/hooks/StopHook.ts"
+  },
+  "provides": {
+    "agents": [
+      "planner",
+      "researcher",
+      "implementer",
+      "reviewer",
+      "tester",
+      "security",
+      "debugger",
+      "doc-writer"
+    ],
+    "skills": [
+      "tdd",
+      "debugging",
+      "code-review",
+      "security-audit",
+      "planning",
+      "refactoring",
+      "documentation",
+      "git-workflow",
+      "performance",
+      "api-design"
+    ],
+    "workflows": [
+      "BASIC_DEV",
+      "TDD_DEV",
+      "BUG_FIX",
+      "SDD",
+      "CODE_REVIEW",
+      "SECURITY_AUDIT",
+      "RALPH_LOOP",
+      "RAPID_PROTO",
+      "MASSIVE_REFACTOR",
+      "PARALLEL_EXEC"
+    ],
+    "detectors": [
+      "BruteRetry",
+      "IdleTool",
+      "BusyLoop",
+      "PrematureDone",
+      "BlameShift",
+      "DangerousCommand",
+      "SecretLeak",
+      "RoleGate",
+      "ScopeCreep"
+    ]
+  },
+  "compatibleWith": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "cursor",
+    "gemini"
+  ],
+  "keywords": [
+    "workflow",
+    "fsm",
+    "guardrails",
+    "evolution",
+    "tdd",
+    "agents"
+  ]
+}
