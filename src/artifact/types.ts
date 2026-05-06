@@ -331,6 +331,10 @@ export type EventType =
   | 'rule.enforced'
   | 'hook.generated'
   | 'evolution.cycle_completed'
+  | 'pattern.extracted'
+  | 'pattern.verified'
+  | 'skill.proposed'
+  | 'skill.published'
   // Context
   | 'context.built'
 

@@ -89,6 +89,33 @@ export {
   PARALLEL_EXEC,
 } from './workflows/presets.js'
 
+// Agents (Phase 1)
+export {
+  AgentManager,
+  initializeAgentManager,
+  registerAllAgents,
+  ALL_AGENTS,
+  AGENT_MANAGER_TOKEN,
+} from './agents/index.js'
+export type {
+  IAgentManager,
+  IAgent,
+  AgentDefinition,
+  AgentTaskContext,
+  AgentResult,
+  AgentCapability,
+} from './agents/index.js'
+
+// Evolution Positive Learning (Phase 4)
+export { PatternExtractor } from './evolution/PatternExtractor.js'
+export type { Pattern, PatternStep, IPatternExtractor } from './evolution/PatternExtractor.js'
+export { SkillCreator } from './evolution/SkillCreator.js'
+export type { SkillProposal, SkillStep, ISkillCreator } from './evolution/SkillCreator.js'
+
+// Dashboard (Phase 7)
+export { DashboardServer } from './dashboard/index.js'
+export type { DashboardConfig, DashboardData } from './dashboard/index.js'
+
 // API
 export { Doctor } from './api/doctor.js'
 export { ScaleMCPServer } from './api/mcp.js'
