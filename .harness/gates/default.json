@@ -1,0 +1,66 @@
+{
+  "gates": {
+    "ci-strict": {
+      "name": "CI 严格门禁",
+      "automatedCheck": "buildExitCode == 0 && testPassed == true && testTotal > 0 && testFailed == 0",
+      "conditions": [
+        { "field": "buildExitCode", "operator": "==", "value": 0, "description": "编译成功" },
+        { "field": "testPassed", "operator": "==", "value": true, "description": "测试通过" },
+        { "field": "testTotal", "operator": ">", "value": 0, "description": "测试数 > 0（防止空测试）" },
+        { "field": "testFailed", "operator": "==", "value": 0, "description": "无失败测试" }
+      ]
+    },
+    "coverage-80": {
+      "name": "覆盖率门禁",
+      "automatedCheck": "testCoverage >= 80",
+      "conditions": [
+        { "field": "testCoverage", "operator": ">=", "value": 80, "description": "覆盖率 >= 80%" }
+      ]
+    },
+    "review-passed": {
+      "name": "评审门禁",
+      "automatedCheck": "reviewPassed == true",
+      "conditions": [
+        { "field": "reviewPassed", "operator": "==", "value": true, "description": "评审通过" }
+      ]
+    },
+    "lint-clean": {
+      "name": "Lint 门禁",
+      "automatedCheck": "lintStatus == \"success\"",
+      "conditions": [
+        { "field": "lintStatus", "operator": "==", "value": "success", "description": "Lint 无错误" }
+      ]
+    },
+    "e2e-passed": {
+      "name": "E2E 门禁",
+      "automatedCheck": "e2ePassed == true",
+      "conditions": [
+        { "field": "e2ePassed", "operator": "==", "value": true, "description": "E2E 测试通过" }
+      ]
+    },
+    "security-clean": {
+      "name": "安全门禁",
+      "automatedCheck": "securityScanStatus == \"clean\"",
+      "conditions": [
+        { "field": "securityScanStatus", "operator": "==", "value": "clean", "description": "安全扫描无漏洞" }
+      ]
+    }
+  },
+  "scenarioModes": {
+    "sandbox": {
+      "requiredGates": ["lint-clean"],
+      "maxRetries": 10,
+      "humanConfirmation": false
+    },
+    "standard": {
+      "requiredGates": ["ci-strict", "coverage-80", "lint-clean"],
+      "maxRetries": 5,
+      "humanConfirmation": false
+    },
+    "critical": {
+      "requiredGates": ["ci-strict", "coverage-80", "review-passed", "lint-clean", "e2e-passed", "security-clean"],
+      "maxRetries": 3,
+      "humanConfirmation": true
+    }
+  }
+}
