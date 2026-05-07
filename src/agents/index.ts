@@ -1,5 +1,7 @@
-// SCALE Engine — Agent System Entry Point
+// SCALE Engine — Agent System
+// 旧 Agent 系统 + 新 Multi-Agent 协作系统共存
 
+// ===== 旧 Agent 系统（单个 Agent 管理）=====
 export type {
   IAgentManager,
   IAgent,
@@ -48,3 +50,12 @@ import type { AgentManager } from './AgentManager.js'
 export function registerAllAgents(manager: AgentManager): void {
   for (const def of ALL_AGENTS) manager.register(def)
 }
+
+// ===== 新 Multi-Agent 协作系统（团队协作）=====
+export * from './types.js'
+export * from './profiles.js'
+export { AgentRegistry, DEFAULT_REGISTRY, type IAgentRegistry } from './AgentRegistry.js'
+export { AgentPool, type IAgentPool } from './AgentPool.js'
+export { AgentDispatcher, type IAgentDispatcher } from './AgentDispatcher.js'
+export { AgentChannel, type IAgentChannel } from './AgentChannel.js'
+export { AgentCoordinator, type IAgentCoordinator } from './AgentCoordinator.js'

@@ -4,3 +4,5 @@ export { SkillRegistry, type ISkillRegistry, type SkillDefinition, type SkillTri
 export { TriggerEngine, type ITriggerEngine, type TriggerEvent } from "./TriggerEngine.js"
 export { SkillExecutor, type ISkillExecutor, type SkillExecutionResult } from "./SkillExecutor.js"
 export { CORE_SKILLS, getCoreSkill, registerCoreSkills } from "./coreSkills.js"
+export { registerExternalSkills } from "./ExternalSkills.js"
+export { SkillInstaller, type ISkillInstaller, type SkillInstallConfig, type InstallResult, type InstallMethod } from "./SkillInstaller.js"
