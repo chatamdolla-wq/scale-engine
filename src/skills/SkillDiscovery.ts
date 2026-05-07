@@ -1,45 +1,173 @@
-// SCALE Engine — Skill Discovery
-// 检测平台 → 扫描技能目录 → 生成 skills.md
-// 设计参考：SCALE v10.0 技能生态系统
+// SCALE Engine - Agent Proactive Skill Discovery + Platform Scanner
+// 让 Agent 在执行任务时主动发现缺失能力，推荐安装优秀技能
+// 同时支持扫描平台已有技能目录
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import type { IEventBus } from '../core/eventBus.js'
+import type { SkillRegistry } from './SkillRegistry.js'
+import type { SkillInstallConfig, ISkillInstaller } from './SkillInstaller.js'
 import type { AgentPlatform, SkillRef, SkillScanResult } from '../artifact/types.js'
+
+// ============================================================================
+// 技能来源知识库 - Agent 知道去哪里找优秀技能
+// ============================================================================
+
+const KNOWN_SKILL_SOURCES = {
+  browserAutomation: [
+    { id: 'web-access', source: 'https://github.com/anthropics/claude-code/tree/main/skills/web-access', quality: 95, description: 'CDP browser automation' },
+    { id: 'playwright', source: 'https://github.com/microsoft/playwright', quality: 92, description: 'CLI browser automation' },
+    { id: 'cua', source: 'https://github.com/trycua/cua', quality: 90, description: 'Computer use agent' },
+  ],
+  uiDesign: [
+    { id: 'awesome-design-md', source: 'https://github.com/anthropics/anthropic-cookbook/tree/main/skills/awesome-design-md', quality: 88, description: 'Brand design specs' },
+    { id: 'ui-ux-pro-max', source: 'https://github.com/anthropics/claude-code/tree/main/skills/ui-ux-pro-max', quality: 85, description: 'UX guidelines database' },
+  ],
+  diagrams: [
+    { id: 'fireworks-tech-graph', source: 'https://github.com/yizhiyanhua-ai/fireworks-tech-graph', quality: 82, description: 'Tech flow diagrams' },
+    { id: 'architecture-diagram-generator', source: 'https://github.com/Cocoon-AI/architecture-diagram-generator', quality: 85, description: 'System architecture diagrams' },
+  ],
+  videoGeneration: [
+    { id: 'hyperframes', source: 'https://github.com/heygen-com/hyperframes', quality: 75, description: 'HeyGen video generation' },
+  ],
+  pptGeneration: [
+    { id: 'guizang-ppt-skill', source: 'https://github.com/op7418/guizang-ppt-skill', quality: 70, description: 'PPT auto generation' },
+  ],
+  knowledgeGraph: [
+    { id: 'graphify', source: 'https://github.com/anthropics/claude-code/tree/main/skills/graphify', quality: 90, description: 'Knowledge graph generator' },
+  ],
+  testing: [
+    { id: 'playwright-interactive', source: 'https://github.com/anthropics/claude-code/tree/main/skills/playwright-interactive', quality: 80, description: 'Persistent session UI debug' },
+  ],
+}
+
+/** 发现上下文 - Agent 执行任务时的场景 */
+export interface DiscoveryContext {
+  taskType: string              // 'web-scraping' | 'ui-design' | ...
+  missingCapabilities: string[] // ['browser', 'login'] | ['design', 'accessibility']
+  phase: 'explore' | 'plan' | 'execute' | 'verify' | 'deliver'
+  keywords: string[]
+}
+
+/** 发现结果 */
+export interface DiscoveryResult {
+  skillId: string
+  sourceUrl: string
+  quality: number               // 0-100
+  relevance: number             // 0-1
+  description: string
+  alreadyInstalled: boolean
+  installConfig?: SkillInstallConfig
+}
+
+/** Agent 主动技能发现接口 */
+export interface ISkillDiscovery {
+  discover(context: DiscoveryContext): Promise<DiscoveryResult[]>
+  recommendInstall(context: DiscoveryContext): Promise<SkillInstallConfig[]>
+  periodicScan(): Promise<DiscoveryResult[]>
+  checkDuringExecution(taskType: string, capabilities: string[]): Promise<DiscoveryResult[]>
+  scanSkills(platform: AgentPlatform): SkillScanResult
+  detectPlatform(): AgentPlatform | null
+}
 
 // ============================================================================
 // Platform Skills Directory Map
 // ============================================================================
 
 const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string | null> = {
-  'claude-code': null, // Claude Code uses .claude/commands/, no dedicated skills dir
-  'codex': null,       // Codex uses .codex/commands/
+  'claude-code': join(homedir(), '.claude', 'skills'),
+  'codex': join(homedir(), '.omx', 'skills'),
   'opencode': join(homedir(), '.config', 'opencode', 'skills'),
   'cursor': join('.cursor', 'skills'),
-  'gemini': null,      // Gemini has no skills directory concept
-  'openclaw': null,    // OpenClaw has no skills directory concept
-  'hermes': null,      // Hermes has no skills directory concept
-  'trae': null,        // Trae has no skills directory concept
-  'workbuddy': null,   // WorkBuddy has no skills directory concept
-  'vsc': null,         // VSC has no skills directory concept
-  'qcoder': null,      // QCoder has no skills directory concept
+  'gemini': null,
+  'openclaw': null,
+  'hermes': null,
+  'trae': null,
+  'workbuddy': null,
+  'vsc': null,
+  'qcoder': null,
 }
 
-// ============================================================================
-// SkillDiscovery
-// ============================================================================
-
-export class SkillDiscovery {
+export class SkillDiscovery implements ISkillDiscovery {
+  private registry: SkillRegistry
+  private installer: ISkillInstaller
+  private eventBus: IEventBus
   private projectDir: string
 
-  constructor(projectDir: string = '.') {
+  constructor(
+    registry: SkillRegistry,
+    installer: ISkillInstaller,
+    eventBus: IEventBus,
+    projectDir: string = '.'
+  ) {
+    this.registry = registry
+    this.installer = installer
+    this.eventBus = eventBus
     this.projectDir = projectDir
   }
 
-  /**
-   * Detect the active agent platform based on config files present in the project.
-   * Returns the most likely platform, or null if indeterminate.
-   */
+  // ========== 主动发现功能 ==========
+
+  async discover(context: DiscoveryContext): Promise<DiscoveryResult[]> {
+    const results: DiscoveryResult[] = []
+    const category = this.matchCategory(context.taskType, context.keywords)
+    if (!category) return []
+
+    const candidates = KNOWN_SKILL_SOURCES[category] || []
+    for (const candidate of candidates) {
+      const registered = this.registry.get(candidate.id)
+      const relevance = this.calculateRelevance(context, candidate)
+      results.push({
+        skillId: candidate.id,
+        sourceUrl: candidate.source,
+        quality: candidate.quality,
+        relevance,
+        description: candidate.description,
+        alreadyInstalled: registered?.installed ?? false,
+        installConfig: !registered?.installed ? this.createInstallConfig(candidate) : undefined,
+      })
+    }
+
+    results.sort((a, b) => (b.quality * b.relevance) - (a.quality * a.relevance))
+    this.eventBus.emit('skill.recommended', { context, recommendations: results.filter(r => !r.alreadyInstalled) })
+    return results
+  }
+
+  async recommendInstall(context: DiscoveryContext): Promise<SkillInstallConfig[]> {
+    const discoveries = await this.discover(context)
+    return discoveries.filter(r => !r.alreadyInstalled && r.quality >= 80 && r.relevance >= 0.7 && r.installConfig)
+      .map(r => r.installConfig!)
+  }
+
+  async periodicScan(): Promise<DiscoveryResult[]> {
+    const allResults: DiscoveryResult[] = []
+    for (const category of Object.keys(KNOWN_SKILL_SOURCES)) {
+      for (const candidate of KNOWN_SKILL_SOURCES[category]) {
+        if (!this.registry.get(candidate.id)) {
+          allResults.push({
+            skillId: candidate.id,
+            sourceUrl: candidate.source,
+            quality: candidate.quality,
+            relevance: 1.0,
+            description: candidate.description,
+            alreadyInstalled: false,
+            installConfig: this.createInstallConfig(candidate),
+          })
+        }
+      }
+    }
+    return allResults
+  }
+
+  async checkDuringExecution(taskType: string, capabilities: string[]): Promise<DiscoveryResult[]> {
+    const missing = this.detectMissingCapabilities(capabilities)
+    if (missing.length === 0) return []
+    return this.discover({ taskType, missingCapabilities: missing, phase: 'execute', keywords: missing })
+  }
+
+  // ========== 原有平台扫描功能 ==========
+
   detectPlatform(): AgentPlatform | null {
     const checks: Array<{ platform: AgentPlatform; paths: string[] }> = [
       { platform: 'claude-code', paths: [join(this.projectDir, '.claude', 'settings.json')] },
@@ -47,156 +175,103 @@ export class SkillDiscovery {
       { platform: 'opencode', paths: [join(homedir(), '.config', 'opencode', 'hooks.json')] },
       { platform: 'cursor', paths: [join(this.projectDir, '.cursor', 'settings.json')] },
       { platform: 'gemini', paths: [join(this.projectDir, '.gemini', 'settings.json')] },
-      { platform: 'openclaw', paths: [join(this.projectDir, '.openclaw', 'settings.json')] },
-      { platform: 'hermes', paths: [join(this.projectDir, '.hermes', 'settings.json')] },
-      { platform: 'trae', paths: [join(this.projectDir, '.trae', 'settings.json')] },
-      { platform: 'workbuddy', paths: [join(this.projectDir, '.workbuddy', 'settings.json')] },
-      { platform: 'vsc', paths: [join(this.projectDir, '.vscode', 'scale.json')] },
-      { platform: 'qcoder', paths: [join(this.projectDir, '.qwen', 'settings.json')] },
     ]
-
     for (const check of checks) {
-      if (check.paths.some((p) => existsSync(p))) {
-        return check.platform
-      }
+      if (check.paths.some(p => existsSync(p))) return check.platform
     }
-
     return null
   }
 
-  /**
-   * Scan the skills directory for a given platform.
-   * Returns structured skill references.
-   */
   scanSkills(platform: AgentPlatform): SkillScanResult {
     const skillsDir = PLATFORM_SKILLS_DIRS[platform]
-    if (!skillsDir) {
-      return {
-        platform,
-        skillsDir: '',
-        skills: [],
-        exists: false,
-      }
-    }
+    if (!skillsDir) return { platform, skillsDir: '', skills: [], exists: false }
 
-    const resolvedDir = platform === 'opencode'
-      ? skillsDir
-      : join(this.projectDir, skillsDir)
-
-    if (!existsSync(resolvedDir)) {
-      return {
-        platform,
-        skillsDir: resolvedDir,
-        skills: [],
-        exists: false,
-      }
-    }
+    const resolvedDir = platform === 'opencode' ? skillsDir : join(this.projectDir, skillsDir)
+    if (!existsSync(resolvedDir)) return { platform, skillsDir: resolvedDir, skills: [], exists: false }
 
     const skills: SkillRef[] = []
-
     try {
-      const entries = readdirSync(resolvedDir)
-      for (const entry of entries) {
+      for (const entry of readdirSync(resolvedDir)) {
         const entryPath = join(resolvedDir, entry)
         const stat = statSync(entryPath)
-
-        if (stat.isFile() && (entry.endsWith('.md') || entry.endsWith('.json') || entry.endsWith('.yaml') || entry.endsWith('.yml'))) {
-          const name = entry.replace(/\.(md|json|ya?ml)$/, '')
-          let description = ''
-
-          // Try to extract description from file content
-          try {
-            const content = readFileSync(entryPath, 'utf-8')
-            // Extract first line as description for .md files
-            if (entry.endsWith('.md')) {
-              const firstLine = content.split('\n').find((l) => l.trim().length > 0) ?? ''
-              description = firstLine.replace(/^#+\s*/, '').trim()
-            } else if (entry.endsWith('.json')) {
-              const parsed = JSON.parse(content)
-              description = parsed.description ?? parsed.name ?? ''
-            }
-          } catch {
-            description = ''
-          }
-
-          skills.push({
-            id: `${platform}-${name}`,
-            name,
-            description,
-            platform,
-            path: entryPath,
-            enabled: true,
-          })
-        } else if (stat.isDirectory()) {
-          // Directory-based skills
-          skills.push({
-            id: `${platform}-${entry}`,
-            name: entry,
-            description: '',
-            platform,
-            path: entryPath,
-            enabled: true,
-          })
+        if (stat.isDirectory()) {
+          skills.push({ id: `${platform}-${entry}`, name: entry, description: '', platform, path: entryPath, enabled: true })
         }
       }
-    } catch {
-      // Permission or read error
-    }
+    } catch { /* Permission error */ }
 
-    return {
-      platform,
-      skillsDir: resolvedDir,
-      skills,
-      exists: true,
-    }
+    return { platform, skillsDir: resolvedDir, skills, exists: true }
   }
 
-  /**
-   * Generate a skills.md document from discovered skills.
-   * Useful for injecting into agent knowledge docs.
-   */
   generateSkillsMd(skills: SkillRef[]): string {
-    if (skills.length === 0) {
-      return '## Available Skills\n\nNo skills discovered.\n'
-    }
-
+    if (skills.length === 0) return '## Available Skills\n\nNo skills discovered.\n'
     const grouped = new Map<AgentPlatform, SkillRef[]>()
     for (const skill of skills) {
       const group = grouped.get(skill.platform) ?? []
       group.push(skill)
       grouped.set(skill.platform, group)
     }
-
-    const sections: string[] = ['## Available Skills\n']
-
+    const sections = ['## Available Skills\n']
     for (const [platform, platformSkills] of grouped) {
-      sections.push(`### ${platform}`)
-      sections.push('')
+      sections.push(`### ${platform}\n`)
       for (const skill of platformSkills) {
         const desc = skill.description ? ` — ${skill.description}` : ''
-        const status = skill.enabled ? '✅' : '❌'
-        sections.push(`- ${status} **${skill.name}**${desc}`)
+        sections.push(`- ✅ **${skill.name}**${desc}`)
       }
       sections.push('')
     }
-
     return sections.join('\n')
   }
 
-  /**
-   * Full discovery pipeline: detect platform → scan → generate doc.
-   */
-  discover(): { platform: AgentPlatform | null; skills: SkillRef[]; skillsMd: string } {
-    const platform = this.detectPlatform()
-    let skills: SkillRef[] = []
+  // ========== Private Methods ==========
 
-    if (platform) {
-      const result = this.scanSkills(platform)
-      skills = result.skills
+  private matchCategory(taskType: string, keywords: string[]): string | null {
+    const typeToCategory: Record<string, string> = {
+      'web-scraping': 'browserAutomation', 'e2e-testing': 'testing', 'ui-design': 'uiDesign',
+      'diagram': 'diagrams', 'video-generation': 'videoGeneration', 'ppt-generation': 'pptGeneration',
+      'knowledge-graph': 'knowledgeGraph',
     }
+    if (typeToCategory[taskType]) return typeToCategory[taskType]
+    for (const kw of keywords) {
+      if (kw.includes('browser')) return 'browserAutomation'
+      if (kw.includes('design')) return 'uiDesign'
+      if (kw.includes('diagram')) return 'diagrams'
+      if (kw.includes('test')) return 'testing'
+    }
+    return null
+  }
 
-    const skillsMd = this.generateSkillsMd(skills)
+  private calculateRelevance(ctx: DiscoveryContext, candidate: { description: string }): number {
+    const descLower = candidate.description.toLowerCase()
+    let matchCount = 0
+    for (const kw of ctx.keywords) if (descLower.includes(kw.toLowerCase())) matchCount++
+    for (const cap of ctx.missingCapabilities) if (descLower.includes(cap.toLowerCase())) matchCount++
+    const total = ctx.keywords.length + ctx.missingCapabilities.length
+    return total > 0 ? matchCount / total : 0.5
+  }
 
-    return { platform, skills, skillsMd }
+  private detectMissingCapabilities(capabilities: string[]): string[] {
+    const missing: string[] = []
+    const allSkills = this.registry.listAll()
+    for (const cap of capabilities) {
+      const hasIt = allSkills.some(s => s.installed && (s.id.includes(cap) || s.description.toLowerCase().includes(cap)))
+      if (!hasIt) missing.push(cap)
+    }
+    return missing
+  }
+
+  private createInstallConfig(candidate: { id: string; source: string; description: string }): SkillInstallConfig {
+    const method = candidate.source.includes('github') ? 'git-clone' : 'skill-file'
+    const command = method === 'git-clone'
+      ? `git clone ${candidate.source} ~/.claude/skills/${candidate.id}`
+      : `create ~/.claude/skills/${candidate.id}/SKILL.md`
+    return {
+      skillId: candidate.id,
+      method,
+      sourceUrl: candidate.source,
+      command,
+      verification: `test -f ~/.claude/skills/${candidate.id}/SKILL.md`,
+      description: candidate.description,
+    }
   }
 }

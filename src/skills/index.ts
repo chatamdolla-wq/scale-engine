@@ -6,3 +6,4 @@ export { SkillExecutor, type ISkillExecutor, type SkillExecutionResult } from ".
 export { CORE_SKILLS, getCoreSkill, registerCoreSkills } from "./coreSkills.js"
 export { registerExternalSkills } from "./ExternalSkills.js"
 export { SkillInstaller, type ISkillInstaller, type SkillInstallConfig, type InstallResult, type InstallMethod } from "./SkillInstaller.js"
+export { SkillDiscovery, type ISkillDiscovery, type DiscoveryContext, type DiscoveryResult } from "./SkillDiscovery.js"
