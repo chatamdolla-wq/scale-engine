@@ -101,6 +101,7 @@ export interface AgentRuntime {
   messages: AgentMessage[]      // 发送/接收的消息
   blockedBy?: string[]          // 阻塞依赖
   retryCount: number            // 重试次数
+  error?: string                // 错误信息（失败时）
 }
 
 /** 模型配置 */
@@ -121,6 +122,8 @@ export interface AgentTeam {
   leader: AgentRuntime          // 团队 Leader
   startedAt: Timestamp          // 创建时间
   completedAt?: Timestamp       // 完成时间
+  dissolvedAt?: Timestamp       // 解散时间
+  taskId?: ArtifactId           // 关联的任务 ID
   scenarioMode?: 'sandbox' | 'standard' | 'critical'
 }
 
@@ -140,6 +143,15 @@ export interface AgentResult {
   outputArtifacts: ArtifactId[]
   duration: number
   retryCount: number
+}
+
+/** Agent 执行结果（兼容旧版） */
+export interface AgentExecutionResult {
+  agentId: string
+  success: boolean
+  outputArtifacts: ArtifactId[]
+  duration: number
+  error?: string
 }
 
 /** 团队配置 */
@@ -184,11 +196,13 @@ export type TaskProfileMap = Record<string, string[]>
 /** 进度报告 */
 export interface ProgressReport {
   teamId: string
+  taskId?: ArtifactId           // 关联的任务 ID
   total: number                 // 总任务数
   completed: number             // 已完成
   running: number               // 运行中
   blocked: number               // 阻塞中
   failed: number                // 失败
+  idle: number                  // 空闲
   agents: AgentStatusReport[]   // 各 Agent 状态
 }
 
