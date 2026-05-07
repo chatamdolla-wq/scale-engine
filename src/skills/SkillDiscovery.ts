@@ -90,26 +90,47 @@ const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string | null> = {
 }
 
 export class SkillDiscovery implements ISkillDiscovery {
-  private registry: SkillRegistry
-  private installer: ISkillInstaller
-  private eventBus: IEventBus
+  private registry: SkillRegistry | null
+  private installer: ISkillInstaller | null
+  private eventBus: IEventBus | null
   private projectDir: string
 
+  /**
+   * 构造函数支持两种模式：
+   * 1. 独立模式（仅 projectDir）：用于平台检测和技能扫描
+   * 2. 增强模式（完整参数）：用于 Agent 主动发现和推荐安装
+   */
   constructor(
-    registry: SkillRegistry,
-    installer: ISkillInstaller,
-    eventBus: IEventBus,
-    projectDir: string = '.'
+    registryOrProjectDir: SkillRegistry | string,
+    installer?: ISkillInstaller,
+    eventBus?: IEventBus,
+    projectDir?: string
   ) {
-    this.registry = registry
-    this.installer = installer
-    this.eventBus = eventBus
-    this.projectDir = projectDir
+    // 判断是独立模式还是增强模式
+    if (typeof registryOrProjectDir === 'string') {
+      // 独立模式
+      this.registry = null
+      this.installer = null
+      this.eventBus = null
+      this.projectDir = registryOrProjectDir
+    } else {
+      // 增强模式
+      this.registry = registryOrProjectDir
+      this.installer = installer ?? null
+      this.eventBus = eventBus ?? null
+      this.projectDir = projectDir ?? '.'
+    }
   }
 
   // ========== 主动发现功能 ==========
 
   async discover(context: DiscoveryContext): Promise<DiscoveryResult[]> {
+    // 独立模式下无法执行发现功能
+    if (!this.registry) {
+      console.warn('SkillDiscovery: registry not initialized, discover disabled')
+      return []
+    }
+
     const results: DiscoveryResult[] = []
     const category = this.matchCategory(context.taskType, context.keywords)
     if (!category) return []
@@ -130,17 +151,21 @@ export class SkillDiscovery implements ISkillDiscovery {
     }
 
     results.sort((a, b) => (b.quality * b.relevance) - (a.quality * a.relevance))
-    this.eventBus.emit('skill.recommended', { context, recommendations: results.filter(r => !r.alreadyInstalled) })
+    if (this.eventBus) {
+      this.eventBus.emit('skill.recommended', { context, recommendations: results.filter(r => !r.alreadyInstalled) })
+    }
     return results
   }
 
   async recommendInstall(context: DiscoveryContext): Promise<SkillInstallConfig[]> {
+    if (!this.registry) return []
     const discoveries = await this.discover(context)
     return discoveries.filter(r => !r.alreadyInstalled && r.quality >= 80 && r.relevance >= 0.7 && r.installConfig)
       .map(r => r.installConfig!)
   }
 
   async periodicScan(): Promise<DiscoveryResult[]> {
+    if (!this.registry) return []
     const allResults: DiscoveryResult[] = []
     for (const category of Object.keys(KNOWN_SKILL_SOURCES)) {
       for (const candidate of KNOWN_SKILL_SOURCES[category]) {
@@ -161,6 +186,7 @@ export class SkillDiscovery implements ISkillDiscovery {
   }
 
   async checkDuringExecution(taskType: string, capabilities: string[]): Promise<DiscoveryResult[]> {
+    if (!this.registry) return []
     const missing = this.detectMissingCapabilities(capabilities)
     if (missing.length === 0) return []
     return this.discover({ taskType, missingCapabilities: missing, phase: 'execute', keywords: missing })
@@ -175,6 +201,12 @@ export class SkillDiscovery implements ISkillDiscovery {
       { platform: 'opencode', paths: [join(homedir(), '.config', 'opencode', 'hooks.json')] },
       { platform: 'cursor', paths: [join(this.projectDir, '.cursor', 'settings.json')] },
       { platform: 'gemini', paths: [join(this.projectDir, '.gemini', 'settings.json')] },
+      { platform: 'openclaw', paths: [join(this.projectDir, '.openclaw', 'settings.json')] },
+      { platform: 'hermes', paths: [join(this.projectDir, '.hermes', 'settings.json')] },
+      { platform: 'trae', paths: [join(this.projectDir, '.trae', 'settings.json')] },
+      { platform: 'workbuddy', paths: [join(this.projectDir, '.workbuddy', 'settings.json')] },
+      { platform: 'vsc', paths: [join(this.projectDir, '.vscode', 'scale.json')] },
+      { platform: 'qcoder', paths: [join(this.projectDir, '.qwen', 'settings.json')] },
     ]
     for (const check of checks) {
       if (check.paths.some(p => existsSync(p))) return check.platform
@@ -251,6 +283,7 @@ export class SkillDiscovery implements ISkillDiscovery {
   }
 
   private detectMissingCapabilities(capabilities: string[]): string[] {
+    if (!this.registry) return capabilities // 无 registry 时返回全部
     const missing: string[] = []
     const allSkills = this.registry.listAll()
     for (const cap of capabilities) {

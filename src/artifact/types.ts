@@ -97,6 +97,30 @@ export interface Gate {
   passed: boolean
   checkedAt?: Timestamp
   checkedBy?: Actor
+  // Harness Engineering: 程序化质量门禁
+  // 文章启发："不可机器验证的约束是无效约束"
+  automatedCheck?: string  // 条件表达式，如 "buildExitCode == 0 && testPassed == true && testCoverage >= 80"
+  conditions?: GateCondition[]  // 分解的条件列表，便于单独检查
+}
+
+/** Harness Engineering: 可程序化验证的条件 */
+export interface GateCondition {
+  field: string        // 字段名：buildExitCode, testPassed, testCoverage, lintStatus
+  operator: '==' | '!=' | '>=' | '<=' | '>' | '<' | 'includes' | 'matches'
+  value: number | string | boolean | RegExp
+  description?: string // 人类可读描述
+}
+
+/** Harness Engineering: TaskPayload 质量字段（防止 Premature Done） */
+export interface TaskQualityMetrics {
+  buildStatus?: 'pending' | 'success' | 'failed'
+  buildExitCode?: number
+  lintStatus?: 'pending' | 'success' | 'failed'
+  testPassed?: boolean
+  testCoverage?: number
+  testTotal?: number
+  testFailed?: number
+  e2ePassed?: boolean
 }
 
 // ============================================================================
@@ -170,12 +194,17 @@ export interface TaskPayload {
   requiredRole: string
   requiredCapabilities: string[]
 
-  // 代码质量验证字段（防止虚假完成）
+  // Harness Engineering: 代码质量验证字段（防止 Premature Done）
+  // 文章启发："检查 CI 是否通过"不够具体，必须程序化验证
   buildStatus?: 'pending' | 'success' | 'failed'
   buildExitCode?: number
   lintStatus?: 'pending' | 'success' | 'failed'
   testPassed?: boolean
   testCoverage?: number
+  testTotal?: number      // 新增：测试总数（检测 0/0 异常）
+  testFailed?: number     // 新增：失败测试数
+  e2ePassed?: boolean     // 新增：端到端测试通过
+  reviewPassed?: boolean  // 新增：评审通过（强制评审阶段）
 }
 
 /** Change —— 实际代码变更 */

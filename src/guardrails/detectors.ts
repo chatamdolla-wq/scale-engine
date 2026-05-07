@@ -100,7 +100,8 @@ export class BusyLoopDetector implements IDetector {
   }
 }
 
-// 4. 声称完成但未验证
+// 4. 声称完成但未验证（Harness Engineering 增强）
+// 文章启发："CI 通过但测试 0/0 是无效的"
 export class PrematureDoneDetector implements IDetector {
   name = 'premature-done'
 
@@ -111,6 +112,8 @@ export class PrematureDoneDetector implements IDetector {
       filter: (e) => ['Edit', 'Write', 'MultiEdit'].includes((e.payload as { tool: string }).tool),
     })
     if (edits.length === 0) return { triggered: false }
+
+    // Harness: 检查验证命令是否运行
     const verifications = await ctx.eventBus.query({
       sessionId: input.sessionId,
       types: ['tool.completed'],
@@ -119,15 +122,19 @@ export class PrematureDoneDetector implements IDetector {
         return p.tool === 'Bash' && /test|lint|build|typecheck/i.test(p.args.command ?? '')
       },
     })
+
+    // 情况1：完全未验证
     if (verifications.length === 0) {
       ctx.eventBus.emit('behavior.premature_done', { reason: 'no_verification' }, { sessionId: input.sessionId })
       return {
         triggered: true,
         severity: 'block',
         reason: '检测到「声称完成但未验证」：本会话修改了代码，但未运行任何 test/lint/build。请先运行验证命令。',
-        suggestion: 'pnpm test  (or your project test command)',
+        suggestion: 'pnpm test && pnpm lint && pnpm build',
       }
     }
+
+    // 情况2：验证在编辑之前（文章：Premature Victory Declaration）
     const lastVerify = verifications[0]
     const lastEdit = edits[0]
     if (lastVerify.timestamp < lastEdit.timestamp) {
@@ -137,6 +144,55 @@ export class PrematureDoneDetector implements IDetector {
         reason: '修改了代码但最后一次验证是修改之前运行的。请重新运行验证。',
       }
     }
+
+    // 情况3：Harness 新增 - 检查测试结果是否真正通过
+    // 文章启发：Agent 可能认为 "SUCCESS" 就通过，但实际测试 0/0
+    const testCmd = verifications.find(e => {
+      const p = e.payload as { args: { command?: string } }
+      return /test/i.test(p.args.command ?? '')
+    })
+    if (testCmd) {
+      const output = (testCmd.payload as { output?: string }).output ?? ''
+      // 检测测试 0/0 异常
+      if (/tests?\s*(0|no\s*tests?)/i.test(output) || /passed:\s*0/i.test(output)) {
+        ctx.eventBus.emit('behavior.premature_done', { reason: 'empty_tests' }, { sessionId: input.sessionId })
+        return {
+          triggered: true,
+          severity: 'block',
+          reason: '检测到「测试为空」：运行了测试命令但测试数为 0。请确保测试文件存在且被正确执行。',
+          suggestion: '检查测试文件是否存在，或添加测试用例',
+        }
+      }
+      // 检测失败测试
+      if (/failed:\s*[1-9]/i.test(output) || /FAIL/i.test(output)) {
+        ctx.eventBus.emit('behavior.premature_done', { reason: 'tests_failed' }, { sessionId: input.sessionId })
+        return {
+          triggered: true,
+          severity: 'block',
+          reason: '检测到「测试失败」：存在失败的测试，不能声称完成。',
+          suggestion: '修复失败的测试后重新运行',
+        }
+      }
+    }
+
+    // 情况4：Harness 新增 - 检查编译是否通过
+    const buildCmd = verifications.find(e => {
+      const p = e.payload as { args: { command?: string } }
+      return /build|compile|tsc/i.test(p.args.command ?? '')
+    })
+    if (buildCmd) {
+      const exitCode = (buildCmd.payload as { exitCode?: number }).exitCode ?? 0
+      if (exitCode !== 0) {
+        ctx.eventBus.emit('behavior.premature_done', { reason: 'build_failed' }, { sessionId: input.sessionId })
+        return {
+          triggered: true,
+          severity: 'block',
+          reason: '检测到「编译失败」：build 命令返回非零退出码。',
+          suggestion: '修复编译错误后重新构建',
+        }
+      }
+    }
+
     return { triggered: false }
   }
 }
