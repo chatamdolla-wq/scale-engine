@@ -856,11 +856,136 @@ const skill = defineCommand({
 })
 
 // ============================================================================
+// agent commands — Multi-Agent 协作系统 (Phase 9)
+// ============================================================================
+
+import { AgentPool } from '../agents/AgentPool.js'
+import { AgentChannel } from '../agents/AgentChannel.js'
+import { PROFESSIONAL_AGENTS, getProfile, listProfiles } from '../agents/profiles.js'
+
+const agentPool = new AgentPool()
+const agentChannel = new AgentChannel(getEngine().eventBus)
+
+const agentSpawn = defineCommand({
+  meta: { name: 'spawn', description: 'Spawn a new agent instance' },
+  args: {
+    profile: { type: 'positional', required: true, description: 'Agent profile ID (e.g., frontend-agent)' },
+  },
+  async run({ args }) {
+    const profile = getProfile(args.profile)
+    if (!profile) {
+      console.error(`Profile not found: ${args.profile}`)
+      console.log(`Available profiles: ${listProfiles().join(', ')}`)
+      process.exit(1)
+    }
+    const agent = agentPool.spawn(args.profile)
+    console.log(JSON.stringify({ ok: true, agentId: agent.id, profile: agent.profile.name, status: agent.status }, null, 2))
+  },
+})
+
+const agentList = defineCommand({
+  meta: { name: 'list', description: 'List all agent instances' },
+  args: {},
+  async run() {
+    const agents = agentPool.listAll()
+    if (agents.length === 0) {
+      console.log('No agent instances spawned.')
+      return
+    }
+    console.log(`\n🤖 Agent Instances (${agents.length})`)
+    console.log('──────────────────────────────────────────────')
+    for (const a of agents) {
+      const statusEmoji = { idle: '💤', running: '🔄', blocked: '🚫', completed: '✅', failed: '❌' }[a.status]
+      console.log(`  ${statusEmoji} ${a.id} (${a.profile.name})`)
+      if (a.assignedTask) console.log(`     Task: ${a.assignedTask}`)
+    }
+  },
+})
+
+const agentProfiles = defineCommand({
+  meta: { name: 'profiles', description: 'List available agent profiles' },
+  args: {},
+  async run() {
+    console.log(`\n📋 Agent Profiles (${PROFESSIONAL_AGENTS.length})`)
+    console.log('──────────────────────────────────────────────')
+    for (const p of PROFESSIONAL_AGENTS) {
+      const modelEmoji = { fast: '⚡', balanced: '⚖️', powerful: '🧠' }[p.preferredModel]
+      console.log(`  ${modelEmoji} ${p.id} — ${p.name}`)
+      console.log(`     Role: ${p.inheritsRole} · Domain: ${p.domain}`)
+      console.log(`     Capabilities: ${p.capabilities.slice(0, 3).join(', ')}...`)
+    }
+  },
+})
+
+const agent = defineCommand({
+  meta: { name: 'agent', description: 'Multi-Agent system management' },
+  subCommands: { spawn: agentSpawn, list: agentList, profiles: agentProfiles },
+})
+
+// ============================================================================
+// team commands — 团队协作 (Phase 9)
+// ============================================================================
+
+const teamCreate = defineCommand({
+  meta: { name: 'create', description: 'Create an agent team for a task' },
+  args: {
+    profiles: { type: 'string', required: true, description: 'Comma-separated profile IDs' },
+    task: { type: 'string', description: 'Task description' },
+  },
+  async run({ args }) {
+    const profileIds = args.profiles.split(',').map(p => p.trim())
+    const agents = []
+    for (const profileId of profileIds) {
+      const profile = getProfile(profileId)
+      if (!profile) {
+        console.error(`Profile not found: ${profileId}`)
+        process.exit(1)
+      }
+      agents.push(agentPool.spawn(profileId))
+    }
+    const teamId = `TEAM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    console.log(JSON.stringify({
+      ok: true,
+      teamId,
+      agents: agents.map(a => ({ id: a.id, profile: a.profile.name })),
+      leader: agents[0].profile.name,
+      description: args.task,
+    }, null, 2))
+  },
+})
+
+const teamStatus = defineCommand({
+  meta: { name: 'status', description: 'Show team status' },
+  args: {
+    team: { type: 'positional', required: true, description: 'Team ID' },
+  },
+  async run({ args }) {
+    // Simplified: show all agents in pool
+    const agents = agentPool.listAll()
+    const running = agents.filter(a => a.status === 'running').length
+    const completed = agents.filter(a => a.status === 'completed').length
+    console.log(JSON.stringify({
+      teamId: args.team,
+      total: agents.length,
+      running,
+      completed,
+      failed: agents.filter(a => a.status === 'failed').length,
+      agents: agents.map(a => ({ id: a.id, status: a.status })),
+    }, null, 2))
+  },
+})
+
+const team = defineCommand({
+  meta: { name: 'team', description: 'Agent team orchestration' },
+  subCommands: { create: teamCreate, status: teamStatus },
+})
+
+// ============================================================================
 // Main
 // ============================================================================
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.6.0', description: 'SCALE Engine v0.6.0 CLI — AI engineering scaffold · 11 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks' },
+  meta: { name: 'scale', version: '0.8.0', description: 'SCALE Engine v0.8.0 CLI — AI engineering scaffold · 11 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks · Multi-Agent' },
   subCommands: {
     init,
     doctor,
@@ -878,6 +1003,8 @@ const main = defineCommand({
     stats,
     workflow,
     skill,
+    agent,
+    team,
     'create-prd': createPRD,
   },
 })
