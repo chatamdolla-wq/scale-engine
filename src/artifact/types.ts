@@ -348,6 +348,12 @@ export type EventType =
   | 'skill.executed'
   | 'skill.installation_changed'
   | 'skills.cleared'
+  | 'external-skills.registered'
+  | 'skills.install-prompt'     // 技能安装提示
+  | 'skill.install-started'     // 开始安装
+  | 'skill.installed'           // 安装成功
+  | 'skill.install-failed'      // 安装失败
+  | 'skills.batch-installed'    // 批量安装完成
   // Workflows (v0.7.0)
   | 'workflow.started'
   | 'workflow.paused'
@@ -362,6 +368,22 @@ export type EventType =
   | 'detector.triggered'
   | 'phase.changed'
   | 'context.inject'
+  // Agent System (v0.8.0)
+  | 'agent.spawned'
+  | 'agent.task_assigned'
+  | 'agent.running'
+  | 'agent.completed'
+  | 'agent.failed'
+  | 'agent.recycled'
+  | 'agent.message_sent'
+  | 'agent.message_received'
+  | 'agent.dispatched'
+  | 'agent.dispatch_blocked'
+  | 'team.formed'
+  | 'team.dissolved'
+  | 'team.progress_updated'
+  | 'team.completed'
+  | 'team.failed'
 
 export interface Event<TPayload = unknown> {
   id: EventId

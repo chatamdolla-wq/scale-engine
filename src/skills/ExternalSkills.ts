@@ -1,0 +1,23 @@
+// SCALE Engine - External Skills Registration
+import type { SkillDefinition, SkillRegistry } from './SkillRegistry.js'
+import type { IEventBus } from '../core/eventBus.js'
+
+export function registerExternalSkills(registry: SkillRegistry, eventBus: IEventBus): void {
+  const skills: SkillDefinition[] = [
+    { id: 'web-access', name: 'Web Access', description: 'CDP browser automation', domain: 'execution', triggers: [{ type: 'taskType', value: ['web-scraping'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/web-access/SKILL.md' } }, priority: 85, installed: true },
+    { id: 'playwright', name: 'Playwright', description: 'CLI browser automation', domain: 'execution', triggers: [{ type: 'taskType', value: ['e2e-testing'], weight: 0.9 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/playwright/SKILL.md' } }, priority: 75, installed: true },
+    { id: 'playwright-interactive', name: 'Playwright Interactive', description: 'Persistent session UI debug', domain: 'verification', triggers: [{ type: 'taskType', value: ['ui-debugging'], weight: 0.95 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/playwright-interactive/SKILL.md' } }, priority: 80, installed: true },
+    { id: 'cua', name: 'CUA', description: 'Computer use agent', domain: 'execution', triggers: [{ type: 'taskType', value: ['desktop-automation'], weight: 1.0 }], execution: { type: 'cli-command', config: { command: 'npx @anthropic/mcp-cua' } }, priority: 90, installed: false, source: 'https://github.com/trycua/cua' },
+    { id: 'awesome-design-md', name: 'Awesome Design', description: 'Brand design specs', domain: 'planning', triggers: [{ type: 'taskType', value: ['ui-design'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/awesome-design-md/SKILL.md' } }, priority: 88, installed: true },
+    { id: 'ui-ux-pro-max', name: 'UI/UX Pro Max', description: 'UX guidelines database', domain: 'planning', triggers: [{ type: 'taskType', value: ['ui-design'], weight: 0.95 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/ui-ux-pro-max/SKILL.md' } }, priority: 85, installed: true },
+    { id: 'graphify', name: 'Graphify', description: 'Knowledge graph generator', domain: 'context', triggers: [{ type: 'taskType', value: ['knowledge-graph'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/graphify/SKILL.md' } }, priority: 90, installed: true },
+    // 未安装技能（SkillInstaller 可交互式安装）
+    { id: 'fireworks-tech-graph', name: 'Fireworks Tech Graph', description: 'Tech flow diagrams', domain: 'planning', triggers: [{ type: 'taskType', value: ['diagram'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/fireworks-tech-graph/SKILL.md' } }, priority: 82, installed: false, source: 'https://github.com/yizhiyanhua-ai/fireworks-tech-graph' },
+    { id: 'excalidraw-diagram-generator', name: 'Excalidraw Generator', description: 'Hand-drawn style diagrams', domain: 'planning', triggers: [{ type: 'taskType', value: ['sketch-diagram'], weight: 0.9 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/excalidraw-diagram-generator/SKILL.md' } }, priority: 78, installed: false, source: 'https://github.com/github/awesome-copilot/tree/main/skills/excalidraw-diagram-generator' },
+    { id: 'architecture-diagram-generator', name: 'Architecture Diagram', description: 'System architecture diagrams', domain: 'planning', triggers: [{ type: 'taskType', value: ['architecture-diagram'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/architecture-diagram-generator/SKILL.md' } }, priority: 85, installed: false, source: 'https://github.com/Cocoon-AI/architecture-diagram-generator' },
+    { id: 'hyperframes', name: 'Hyperframes', description: 'HeyGen video generation', domain: 'execution', triggers: [{ type: 'taskType', value: ['video-generation'], weight: 1.0 }], execution: { type: 'cli-command', config: { command: 'npx @heygen/hyperframes' } }, priority: 75, installed: false, source: 'https://github.com/heygen-com/hyperframes' },
+    { id: 'guizang-ppt-skill', name: 'Guizang PPT', description: 'PPT auto generation', domain: 'execution', triggers: [{ type: 'taskType', value: ['ppt-generation'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/guizang-ppt-skill/SKILL.md' } }, priority: 70, installed: false, source: 'https://github.com/op7418/guizang-ppt-skill' },
+  ]
+  registry.registerBatch(skills)
+  eventBus.emit('external-skills.registered', { count: skills.length })
+}
