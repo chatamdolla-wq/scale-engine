@@ -1,7 +1,11 @@
-// SCALE Engine — Professional Agent Profiles
-// 12 个专业 Agent：前端、后端、测试、UI设计、运维、产品、代码审核、安全、数据库、性能、文档、架构
+// SCALE Engine — Predefined Agent Profiles (v0.8.0)
+// 12 个专业 Agent Profile 定义
 
-import type { AgentProfile } from './types.js'
+import type { AgentProfile, AgentDomain } from './types.js'
+
+// ============================================================================
+// 12 个预定义 Professional Agent Profiles
+// ============================================================================
 
 export const PROFESSIONAL_AGENTS: AgentProfile[] = [
   {
@@ -9,12 +13,11 @@ export const PROFESSIONAL_AGENTS: AgentProfile[] = [
     name: 'Frontend Developer',
     domain: 'frontend',
     inheritsRole: 'Implementer',
-    capabilities: ['react', 'vue', 'css', 'animation', 'accessibility', 'typescript', 'playwright-interactive', 'web-access'],
-    // 外部技能：playwright-interactive (UI 调试), web-access (浏览器验证)
+    capabilities: ['react', 'vue', 'css', 'animation', 'accessibility', 'typescript'],
     preferredModel: 'balanced',
     outputFormat: { fileTypes: ['.tsx', '.css', '.html'], style: 'component-based' },
     collaboration: { reportsTo: 'backend-agent', sharesWith: ['ui-design-agent', 'test-agent'] },
-    description: '负责 UI/UX 实现、组件开发、样式设计、动画效果、可访问性'
+    description: 'UI/UX implementation, React/Vue components, CSS styling'
   },
   {
     id: 'backend-agent',
@@ -25,19 +28,18 @@ export const PROFESSIONAL_AGENTS: AgentProfile[] = [
     preferredModel: 'balanced',
     outputFormat: { fileTypes: ['.ts', '.sql', '.json'], style: 'layered-architecture' },
     collaboration: { reportsTo: 'frontend-agent', sharesWith: ['test-agent', 'ops-agent'] },
-    description: '负责 API 设计、数据库操作、认证授权、性能优化、缓存策略'
+    description: 'API design, database operations, authentication, performance optimization'
   },
   {
     id: 'test-agent',
     name: 'Test Engineer',
     domain: 'testing',
     inheritsRole: 'Verifier',
-    capabilities: ['tdd', 'e2e', 'mocking', 'coverage', 'playwright', 'jest', 'web-access', 'cua'],
-    // 外部技能：playwright (E2E 脚本), web-access (登录态测试), cua (GUI 测试)
+    capabilities: ['tdd', 'e2e', 'mocking', 'coverage', 'playwright', 'vitest'],
     preferredModel: 'fast',
     outputFormat: { fileTypes: ['.test.ts', '.spec.ts'], style: 'aaa-pattern' },
-    collaboration: { sharesWith: ['code-review-agent'] },
-    description: '负责 TDD、单元测试、集成测试、E2E 测试、测试覆盖率、Mocking'
+    collaboration: { sharesWith: ['frontend-agent', 'backend-agent'] },
+    description: 'TDD workflow, E2E testing, test coverage, mocking strategies'
   },
   {
     id: 'ui-design-agent',
@@ -48,19 +50,18 @@ export const PROFESSIONAL_AGENTS: AgentProfile[] = [
     preferredModel: 'powerful',
     outputFormat: { fileTypes: ['.md', '.css'], style: 'design-spec' },
     collaboration: { reportsTo: 'frontend-agent', sharesWith: ['product-agent'] },
-    description: '负责视觉设计、用户体验、响应式布局、设计规范、可访问性'
+    description: 'Visual design, accessibility compliance, UX patterns, responsive layouts'
   },
   {
     id: 'ops-agent',
     name: 'DevOps Engineer',
     domain: 'operations',
     inheritsRole: 'Releaser',
-    capabilities: ['deploy', 'cicd', 'monitoring', 'docker', 'k8s', 'terraform', 'cua', 'web-access'],
-    // 外部技能：cua (电脑操控), web-access (浏览器监控)
+    capabilities: ['deploy', 'cicd', 'monitoring', 'docker', 'k8s', 'terraform'],
     preferredModel: 'fast',
-    outputFormat: { fileTypes: ['.yaml', '.sh', '.dockerfile'], style: 'automation' },
+    outputFormat: { fileTypes: ['.yaml', '.sh', '.dockerfile', '.tf'], style: 'automation' },
     collaboration: { reportsTo: 'backend-agent', sharesWith: ['security-agent'] },
-    description: '负责部署、CI/CD、监控、容器化、Kubernetes、基础设施'
+    description: 'Deployment, CI/CD pipelines, monitoring, Docker/Kubernetes'
   },
   {
     id: 'product-agent',
@@ -70,90 +71,144 @@ export const PROFESSIONAL_AGENTS: AgentProfile[] = [
     capabilities: ['requirements', 'user-story', 'analytics', 'roadmap', 'prioritization'],
     preferredModel: 'powerful',
     outputFormat: { fileTypes: ['.md'], style: 'user-centric' },
-    collaboration: { sharesWith: ['ui-design-agent'] },
-    description: '负责需求分析、用户故事、数据分析、路线规划、优先级排序'
+    collaboration: { sharesWith: ['ui-design-agent', 'architect-agent'] },
+    description: 'Requirements gathering, user stories, analytics, roadmap planning'
   },
   {
     id: 'code-review-agent',
     name: 'Code Reviewer',
     domain: 'code-review',
     inheritsRole: 'Verifier',
-    capabilities: ['quality', 'security', 'patterns', 'best-practices', 'refactoring'],
+    capabilities: ['quality', 'security', 'patterns', 'best-practices', 'clean-code'],
     preferredModel: 'powerful',
     outputFormat: { fileTypes: ['.md'], style: 'review-report' },
     collaboration: { sharesWith: ['test-agent', 'security-agent'] },
-    description: '负责代码质量、安全审查、设计模式、最佳实践、重构建议'
+    description: 'Code quality review, security analysis, pattern enforcement'
   },
   {
     id: 'security-agent',
     name: 'Security Specialist',
     domain: 'security',
     inheritsRole: 'Verifier',
-    capabilities: ['owasp', 'auth', 'crypto', 'compliance', 'audit', 'penetration'],
+    capabilities: ['owasp', 'auth', 'crypto', 'compliance', 'audit', 'penetration-testing'],
     preferredModel: 'powerful',
-    outputFormat: { fileTypes: ['.md', '.yaml'], style: 'review-report' },
-    collaboration: { reportsTo: 'code-review-agent', sharesWith: ['ops-agent'] },
-    description: '负责 OWASP 合规、认证安全、加密、渗透测试、安全审计'
+    outputFormat: { fileTypes: ['.md', '.yaml'], style: 'security-report' },
+    collaboration: { sharesWith: ['code-review-agent', 'ops-agent'] },
+    description: 'OWASP compliance, authentication, cryptography, security audit'
   },
-  // ===== 新增 4 个专业 Agent =====
+  // ===== 新增 4 个 Agent =====
   {
     id: 'database-agent',
     name: 'Database Specialist',
     domain: 'database',
     inheritsRole: 'Implementer',
-    capabilities: ['migration', 'schema-design', 'sql-optimization', 'indexing', 'postgresql', 'mongodb', 'data-modeling'],
+    capabilities: ['migration', 'schema-design', 'sql-optimization', 'indexing', 'backup-recovery'],
     preferredModel: 'balanced',
-    outputFormat: { fileTypes: ['.sql', '.ts', '.prisma'], style: 'layered-architecture' },
-    collaboration: { reportsTo: 'backend-agent', sharesWith: ['performance-agent'] },
-    description: '负责数据库迁移、Schema 设计、SQL 优化、索引策略、数据建模、PostgreSQL/MongoDB'
+    outputFormat: { fileTypes: ['.sql', '.ts'], style: 'migration-script' },
+    collaboration: { reportsTo: 'backend-agent', sharesWith: ['ops-agent'] },
+    description: 'Database migrations, schema design, query optimization'
   },
   {
     id: 'performance-agent',
     name: 'Performance Engineer',
     domain: 'performance',
     inheritsRole: 'Verifier',
-    capabilities: ['profiling', 'load-testing', 'cache-strategy', 'benchmark', 'memory-analysis', 'lighthouse', 'web-vitals'],
+    capabilities: ['profiling', 'benchmarking', 'optimization', 'caching', 'load-testing'],
     preferredModel: 'powerful',
-    outputFormat: { fileTypes: ['.md', '.json'], style: 'review-report' },
-    collaboration: { reportsTo: 'frontend-agent', sharesWith: ['backend-agent', 'database-agent'] },
-    description: '负责性能分析、负载测试、缓存策略、Benchmark、内存泄漏排查、Core Web Vitals'
+    outputFormat: { fileTypes: ['.md', '.ts'], style: 'performance-report' },
+    collaboration: { sharesWith: ['frontend-agent', 'backend-agent', 'database-agent'] },
+    description: 'Performance profiling, benchmarking, optimization strategies'
   },
   {
     id: 'docs-agent',
     name: 'Documentation Specialist',
     domain: 'documentation',
     inheritsRole: 'SpecWriter',
-    capabilities: ['api-docs', 'readme', 'tutorials', 'swagger', 'markdown', 'tech-writing', 'changelog'],
+    capabilities: ['api-docs', 'user-guide', 'technical-writing', 'diagrams', 'examples'],
     preferredModel: 'fast',
     outputFormat: { fileTypes: ['.md', '.mdx'], style: 'documentation' },
-    collaboration: { sharesWith: ['product-agent', 'frontend-agent', 'backend-agent'] },
-    description: '负责 API 文档、README、教程、技术博客、Swagger/OpenAPI、文档结构、变更日志'
+    collaboration: { sharesWith: ['product-agent', 'architect-agent'] },
+    description: 'API documentation, user guides, technical writing'
   },
   {
     id: 'architect-agent',
     name: 'Software Architect',
     domain: 'architecture',
     inheritsRole: 'Planner',
-    capabilities: ['system-design', 'tech-selection', 'module-boundary', 'dependency-analysis', 'patterns', 'ddd', 'microservices'],
+    capabilities: ['system-design', 'microservices', 'patterns', 'scalability', 'trade-offs'],
     preferredModel: 'powerful',
-    outputFormat: { fileTypes: ['.md', '.yaml'], style: 'design-spec' },
-    collaboration: { reportsTo: 'product-agent', sharesWith: ['backend-agent', 'code-review-agent'] },
-    description: '负责系统架构设计、技术选型、模块边界、依赖关系、架构评审、DDD、微服务拆分'
+    outputFormat: { fileTypes: ['.md', '.yaml'], style: 'architecture-spec' },
+    collaboration: { sharesWith: ['product-agent', 'backend-agent', 'frontend-agent'] },
+    description: 'System architecture design, scalability planning, pattern selection'
   }
 ]
 
+// ============================================================================
+// Profile Registry
+// ============================================================================
+
+export class AgentProfileRegistry {
+  private profiles = new Map<string, AgentProfile>()
+
+  constructor() {
+    // 注册预定义 Profiles
+    for (const profile of PROFESSIONAL_AGENTS) {
+      this.profiles.set(profile.id, profile)
+    }
+  }
+
+  /** 获取 Profile */
+  get(id: string): AgentProfile | undefined {
+    return this.profiles.get(id)
+  }
+
+  /** 获取所有 Profiles */
+  listAll(): AgentProfile[] {
+    return Array.from(this.profiles.values())
+  }
+
+  /** 按 Domain 筛选 */
+  findByDomain(domain: string): AgentProfile[] {
+    return this.listAll().filter(p => p.domain === domain)
+  }
+
+  /** 按能力标签筛选 */
+  findByCapability(capability: string): AgentProfile[] {
+    return this.listAll().filter(p => p.capabilities.includes(capability))
+  }
+
+  /** 注册自定义 Profile */
+  register(profile: AgentProfile): void {
+    if (this.profiles.has(profile.id)) {
+      throw new Error(`Profile already registered: ${profile.id}`)
+    }
+    this.profiles.set(profile.id, profile)
+  }
+}
+
+/** 默认 Registry 实例 */
+export const defaultProfileRegistry = new AgentProfileRegistry()
+
+// ============================================================================
+// Helper Functions（测试需要）
+// ============================================================================
+
+/** 获取单个 Profile */
 export function getProfile(id: string): AgentProfile | undefined {
-  return PROFESSIONAL_AGENTS.find(p => p.id === id)
+  return defaultProfileRegistry.get(id)
 }
 
+/** 按 Domain 获取 Profiles */
 export function getProfilesByDomain(domain: string): AgentProfile[] {
-  return PROFESSIONAL_AGENTS.filter(p => p.domain === domain)
+  return defaultProfileRegistry.findByDomain(domain)
 }
 
+/** 按 Role 获取 Profiles */
 export function getProfilesByRole(role: string): AgentProfile[] {
   return PROFESSIONAL_AGENTS.filter(p => p.inheritsRole === role)
 }
 
+/** 列出所有 Profile IDs */
 export function listProfiles(): string[] {
   return PROFESSIONAL_AGENTS.map(p => p.id)
 }

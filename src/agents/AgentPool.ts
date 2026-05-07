@@ -1,80 +1,98 @@
-// SCALE Engine — Agent Pool
-// Agent 实例池管理
+// SCALE Engine — Agent Pool (v0.8.0)
+// Agent 实例池管理：生命周期、任务分配、状态跟踪
 
-import type { AgentRuntime, AgentStatus } from './types.js'
-import type { ArtifactId } from '../artifact/types.js'
-import type { IEventBus } from '../core/eventBus.js'
-import type { IAgentRegistry } from './AgentRegistry.js'
-import type { IModelRouter } from '../routing/ModelRouter.js'
-import { logger } from '../core/logger.js'
+import type { ArtifactId, Timestamp, EventBus } from '../artifact/types.js'
+import type { AgentRuntime, AgentStatus, AgentProfile, ModelConfig, AgentResult } from './types.js'
+import { AgentProfileRegistry, defaultProfileRegistry } from './profiles.js'
+import type { ModelRouter } from '../core/modelRouter.js'
+
+// ============================================================================
+// AgentPool 接口
+// ============================================================================
 
 export interface IAgentPool {
   spawn(profileId: string): AgentRuntime
-  get(agentId: string): AgentRuntime | undefined
   getIdleAgents(profileId?: string): AgentRuntime[]
-  getRunningAgents(): AgentRuntime[]
+  getAgent(agentId: string): AgentRuntime | undefined
   assignTask(agentId: string, taskId: ArtifactId): void
-  updateStatus(agentId: string, status: AgentStatus): void
   complete(agentId: string, outputArtifacts: ArtifactId[]): void
-  fail(agentId: string, error: string): void
+  fail(agentId: string, reason: string): void
+  block(agentId: string, blockedBy: string[]): void
+  unblock(agentId: string): void
   recycle(agentId: string): void
-  getAll(): AgentRuntime[]
-  size(): number
+  getStatus(agentId: string): AgentStatus | null
+  listAll(): AgentRuntime[]
+  getActiveCount(): number
 }
+
+// ============================================================================
+// AgentPool 实现
+// ============================================================================
 
 export class AgentPool implements IAgentPool {
   private agents = new Map<string, AgentRuntime>()
   private seq = 0
+  private registry: AgentProfileRegistry
+  private modelRouter?: ModelRouter
+  private eventBus?: EventBus
 
   constructor(
-    private registry: IAgentRegistry,
-    private modelRouter: IModelRouter,
-    private eventBus: IEventBus,
-  ) {}
+    registry?: AgentProfileRegistry,
+    modelRouter?: ModelRouter,
+    eventBus?: EventBus
+  ) {
+    this.registry = registry ?? defaultProfileRegistry
+    this.modelRouter = modelRouter
+    this.eventBus = eventBus
+  }
 
+  // ========== 实例管理 ==========
+
+  /** 创建 Agent 实例 */
   spawn(profileId: string): AgentRuntime {
     const profile = this.registry.get(profileId)
     if (!profile) {
-      throw new Error(`Agent profile not found: ${profileId}`)
+      throw new Error(`Profile not found: ${profileId}`)
     }
 
     const id = `AGENT-${profileId}-${++this.seq}`
-    const modelConfig = this.modelRouter.route({
-      taskComplexity: 0.5,
-      artifactType: 'Task',
-    })
+    const model = this.resolveModel(profile)
 
     const runtime: AgentRuntime = {
       id,
       profile,
       status: 'idle',
-      model: modelConfig.name,
-      startedAt: Date.now(),
+      model,
+      startedAt: Date.now() as Timestamp,
       outputArtifacts: [],
       messages: [],
+      retryCount: 0
     }
 
     this.agents.set(id, runtime)
-    this.eventBus.emit('agent.spawned', { agentId: id, profileId }, { sessionId: 'system' })
-    logger.info({ agentId: id, profileId, model: runtime.model }, 'Agent spawned')
-    
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.spawned', { agentId: id, profileId }, {})
+    }
+
     return runtime
   }
 
-  get(agentId: string): AgentRuntime | undefined {
-    return this.agents.get(agentId)
-  }
-
+  /** 获取空闲 Agent */
   getIdleAgents(profileId?: string): AgentRuntime[] {
     return Array.from(this.agents.values())
       .filter(a => a.status === 'idle')
       .filter(a => !profileId || a.profile.id === profileId)
   }
 
-  getRunningAgents(): AgentRuntime[] {
-    return Array.from(this.agents.values()).filter(a => a.status === 'running')
+  /** 获取 Agent */
+  getAgent(agentId: string): AgentRuntime | undefined {
+    return this.agents.get(agentId)
   }
 
+  // ========== 任务分配 ==========
+
+  /** 分配任务 */
   assignTask(agentId: string, taskId: ArtifactId): void {
     const agent = this.agents.get(agentId)
     if (!agent) {
@@ -87,18 +105,12 @@ export class AgentPool implements IAgentPool {
     agent.status = 'running'
     agent.assignedTask = taskId
 
-    this.eventBus.emit('agent.task_assigned', { agentId, taskId }, { artifactId: taskId })
-    logger.info({ agentId, taskId }, 'Task assigned to agent')
-  }
-
-  updateStatus(agentId: string, status: AgentStatus): void {
-    const agent = this.agents.get(agentId)
-    if (!agent) {
-      throw new Error(`Agent not found: ${agentId}`)
+    if (this.eventBus) {
+      this.eventBus.emit('agent.task_assigned', { agentId, taskId }, {})
     }
-    agent.status = status
   }
 
+  /** 完成任务 */
   complete(agentId: string, outputArtifacts: ArtifactId[]): void {
     const agent = this.agents.get(agentId)
     if (!agent) {
@@ -106,43 +118,144 @@ export class AgentPool implements IAgentPool {
     }
 
     agent.status = 'completed'
-    agent.completedAt = Date.now()
+    agent.completedAt = Date.now() as Timestamp
     agent.outputArtifacts = outputArtifacts
 
-    this.eventBus.emit('agent.completed', { agentId, outputs: outputArtifacts }, { sessionId: 'system' })
-    logger.info({ agentId, outputs: outputArtifacts.length }, 'Agent completed task')
+    if (this.eventBus) {
+      this.eventBus.emit('agent.completed', { agentId, outputs: outputArtifacts }, {})
+    }
   }
 
-  fail(agentId: string, error: string): void {
+  /** 任务失败 */
+  fail(agentId: string, reason: string): void {
     const agent = this.agents.get(agentId)
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`)
     }
 
     agent.status = 'failed'
-    agent.completedAt = Date.now()
-    agent.error = error
+    agent.completedAt = Date.now() as Timestamp
+    agent.retryCount++
 
-    this.eventBus.emit('agent.failed', { agentId, error }, { sessionId: 'system' })
-    logger.error({ agentId, error }, 'Agent failed')
+    if (this.eventBus) {
+      this.eventBus.emit('agent.failed', { agentId, reason, retryCount: agent.retryCount }, {})
+    }
   }
 
-  recycle(agentId: string): void {
+  /** 阻塞 Agent */
+  block(agentId: string, blockedBy: string[]): void {
     const agent = this.agents.get(agentId)
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`)
     }
 
-    this.agents.delete(agentId)
-    this.eventBus.emit('agent.recycled', { agentId }, { sessionId: 'system' })
-    logger.info({ agentId }, 'Agent recycled')
+    agent.status = 'blocked'
+    agent.blockedBy = blockedBy
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.blocked', { agentId, blockedBy }, {})
+    }
   }
 
-  getAll(): AgentRuntime[] {
+  /** 解除阻塞 */
+  unblock(agentId: string): void {
+    const agent = this.agents.get(agentId)
+    if (!agent || agent.status !== 'blocked') return
+
+    agent.status = 'idle'
+    agent.blockedBy = undefined
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.unblocked', { agentId }, {})
+    }
+  }
+
+  // ========== 资源回收 ==========
+
+  /** 回收 Agent */
+  recycle(agentId: string): void {
+    const agent = this.agents.get(agentId)
+    if (!agent) return
+
+    this.agents.delete(agentId)
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.recycled', { agentId }, {})
+    }
+  }
+
+  /** 批量回收已完成的 Agent */
+  recycleCompleted(): string[] {
+    const toRecycle = Array.from(this.agents.values())
+      .filter(a => a.status === 'completed' || a.status === 'failed')
+      .map(a => a.id)
+
+    for (const id of toRecycle) {
+      this.recycle(id)
+    }
+
+    return toRecycle
+  }
+
+  // ========== 状态查询 ==========
+
+  /** 获取状态 */
+  getStatus(agentId: string): AgentStatus | null {
+    return this.agents.get(agentId)?.status ?? null
+  }
+
+  /** 获取所有 Agent */
+  listAll(): AgentRuntime[] {
     return Array.from(this.agents.values())
   }
 
-  size(): number {
-    return this.agents.size
+  /** 获取活跃 Agent 数量 */
+  getActiveCount(): number {
+    return this.listAll().filter(a => a.status === 'running' || a.status === 'blocked').length
+  }
+
+  /** 获取 Agent 执行结果 */
+  getResult(agentId: string): AgentResult | null {
+    const agent = this.agents.get(agentId)
+    if (!agent) return null
+
+    return {
+      agentId: agent.id,
+      status: agent.status,
+      outputArtifacts: agent.outputArtifacts,
+      duration: agent.completedAt ? agent.completedAt - agent.startedAt : 0,
+      retryCount: agent.retryCount
+    }
+  }
+
+  // ========== Private Methods ==========
+
+  /** 解析模型配置 */
+  private resolveModel(profile: AgentProfile): ModelConfig {
+    // 如果有 ModelRouter，使用它选择模型
+    if (this.modelRouter) {
+      const routed = this.modelRouter.route({
+        taskComplexity: profile.preferredModel === 'powerful' ? 0.8 : 
+                        profile.preferredModel === 'fast' ? 0.3 : 0.5,
+        artifactType: 'Task'
+      })
+      return {
+        provider: routed.provider || 'anthropic',
+        modelId: routed.modelId || 'claude-sonnet-4',
+        tier: profile.preferredModel
+      }
+    }
+
+    // 默认模型配置
+    const defaultModels: Record<string, ModelConfig> = {
+      'fast': { provider: 'anthropic', modelId: 'claude-haiku-4', tier: 'fast' },
+      'balanced': { provider: 'anthropic', modelId: 'claude-sonnet-4', tier: 'balanced' },
+      'powerful': { provider: 'anthropic', modelId: 'claude-opus-4', tier: 'powerful' }
+    }
+
+    return defaultModels[profile.preferredModel] || defaultModels['balanced']
   }
 }
+
+/** 默认 Pool 实例 */
+export const defaultAgentPool = new AgentPool()

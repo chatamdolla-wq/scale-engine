@@ -1,85 +1,157 @@
-// SCALE Engine — Agent Channel
-// Agent 通信管道：消息发送/接收/广播
+// SCALE Engine — Agent Channel (v0.8.0)
+// Agent 通信管道：消息发送/接收/广播/订阅
 
+import type { Timestamp, EventBus } from '../artifact/types.js'
 import type { AgentMessage, MessageType } from './types.js'
-import type { IEventBus } from '../core/eventBus.js'
-import { logger } from '../core/logger.js'
+
+// ============================================================================
+// AgentChannel 接口
+// ============================================================================
 
 export interface IAgentChannel {
-  send(from: string, to: string, type: MessageType, payload: unknown): AgentMessage
+  send(from: string, to: string | 'broadcast', type: MessageType, payload: unknown): AgentMessage
   receive(agentId: string): AgentMessage[]
   subscribe(agentId: string, channel: string): void
   unsubscribe(agentId: string, channel: string): void
-  broadcast(from: string, type: MessageType, payload: unknown): AgentMessage
-  getPendingMessages(agentId: string): number
+  getPendingCount(agentId: string): number
+  broadcast(from: string, type: MessageType, payload: unknown): AgentMessage[]
 }
 
+// ============================================================================
+// AgentChannel 实现
+// ============================================================================
+
 export class AgentChannel implements IAgentChannel {
-  private subscriptions = new Map<string, Set<string>>()
-  private messageQueue = new Map<string, AgentMessage[]>()
+  private subscriptions = new Map<string, Set<string>>()  // agentId -> subscribed channels
+  private messageQueue = new Map<string, AgentMessage[]>()// agentId -> pending messages
   private seq = 0
+  private eventBus?: EventBus
 
-  constructor(private eventBus: IEventBus) {}
+  constructor(eventBus?: EventBus) {
+    this.eventBus = eventBus
+  }
 
-  send(from: string, to: string, type: MessageType, payload: unknown): AgentMessage {
+  // ========== 消息发送 ==========
+
+  /** 发送消息 */
+  send(from: string, to: string | 'broadcast', type: MessageType, payload: unknown): AgentMessage {
     const message: AgentMessage = {
       id: `MSG-${Date.now()}-${++this.seq}`,
       from,
       to,
       type,
       payload,
-      timestamp: Date.now(),
+      timestamp: Date.now() as Timestamp
     }
 
     if (to === 'broadcast') {
+      // 广播给所有订阅者
       this.broadcastInternal(from, message)
     } else {
+      // 发送给特定 Agent
       this.deliver(to, message)
     }
 
-    this.eventBus.emit('agent.message_sent', { messageId: message.id, from, to, type })
-    logger.debug({ messageId: message.id, from, to, type }, 'Message sent')
-    
+    if (this.eventBus) {
+      this.eventBus.emit('agent.message_sent', { messageId: message.id, from, to, type }, {})
+    }
+
     return message
   }
 
+  /** 广播消息 */
+  broadcast(from: string, type: MessageType, payload: unknown): AgentMessage[] {
+    const message = this.send(from, 'broadcast', type, payload)
+    
+    // 返回所有接收者的消息
+    const recipients = this.getSubscribers(from)
+    return recipients.map(r => ({
+      ...message,
+      id: `${message.id}-${r}`,
+      to: r
+    }))
+  }
+
+  // ========== 消息接收 ==========
+
+  /** 接收消息（取出所有待处理消息） */
   receive(agentId: string): AgentMessage[] {
     const messages = this.messageQueue.get(agentId) ?? []
     this.messageQueue.set(agentId, [])
-    
-    for (const msg of messages) {
-      this.eventBus.emit('agent.message_received', { messageId: msg.id, to: agentId })
-    }
-    
     return messages
   }
 
+  /** 获取待处理消息数量 */
+  getPendingCount(agentId: string): number {
+    return this.messageQueue.get(agentId)?.length ?? 0
+  }
+
+  /** 查看最新消息（不移除） */
+  peekLatest(agentId: string): AgentMessage | null {
+    const messages = this.messageQueue.get(agentId)
+    return messages?.length > 0 ? messages[messages.length - 1] : null
+  }
+
+  // ========== 订阅管理 ==========
+
+  /** 订阅频道 */
   subscribe(agentId: string, channel: string): void {
     if (!this.subscriptions.has(agentId)) {
       this.subscriptions.set(agentId, new Set())
     }
     this.subscriptions.get(agentId)!.add(channel)
-    logger.debug({ agentId, channel }, 'Agent subscribed to channel')
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.subscribed', { agentId, channel }, {})
+    }
   }
 
+  /** 取消订阅 */
   unsubscribe(agentId: string, channel: string): void {
-    const subs = this.subscriptions.get(agentId)
-    if (subs) {
-      subs.delete(channel)
-      if (subs.size === 0) {
+    const channels = this.subscriptions.get(agentId)
+    if (channels) {
+      channels.delete(channel)
+      if (channels.size === 0) {
         this.subscriptions.delete(agentId)
       }
     }
   }
 
-  broadcast(from: string, type: MessageType, payload: unknown): AgentMessage {
-    return this.send(from, 'broadcast', type, payload)
+  /** 获取订阅者列表 */
+  getSubscribers(channel: string): string[] {
+    const subscribers: string[] = []
+    for (const [agentId, channels] of this.subscriptions) {
+      if (channels.has(channel)) {
+        subscribers.push(agentId)
+      }
+    }
+    return subscribers
   }
 
-  getPendingMessages(agentId: string): number {
-    return this.messageQueue.get(agentId)?.length ?? 0
+  // ========== 消息过滤 ==========
+
+  /** 按类型过滤消息 */
+  filterByType(agentId: string, type: MessageType): AgentMessage[] {
+    const messages = this.messageQueue.get(agentId) ?? []
+    const filtered = messages.filter(m => m.type === type)
+    // 从队列中移除已过滤的消息
+    const remaining = messages.filter(m => m.type !== type)
+    this.messageQueue.set(agentId, remaining)
+    return filtered
   }
 
+  /** 按发送者过滤消息 */
+  filterBySender(agentId: string, from: string): AgentMessage[] {
+    const messages = this.messageQueue.get(agentId) ?? []
+    const filtered = messages.filter(m => m.from === from)
+    const remaining = messages.filter(m => m.from !== from)
+    this.messageQueue.set(agentId, remaining)
+    return filtered
+  }
+
+  // ========== Private Methods ==========
+
+  /** 投递消息 */
   private deliver(agentId: string, message: AgentMessage): void {
     if (!this.messageQueue.has(agentId)) {
       this.messageQueue.set(agentId, [])
@@ -87,11 +159,17 @@ export class AgentChannel implements IAgentChannel {
     this.messageQueue.get(agentId)!.push(message)
   }
 
+  /** 内部广播 */
   private broadcastInternal(from: string, message: AgentMessage): void {
-    for (const [agentId, channels] of this.subscriptions) {
-      if (channels.has(from) && agentId !== from) {
+    const subscribers = this.getSubscribers(from)
+    for (const agentId of subscribers) {
+      // 排除发送者自己
+      if (agentId !== from) {
         this.deliver(agentId, message)
       }
     }
   }
 }
+
+/** 默认 Channel 实例 */
+export const defaultAgentChannel = new AgentChannel()
