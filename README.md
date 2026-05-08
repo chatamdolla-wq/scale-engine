@@ -840,10 +840,10 @@ console.log('生成的配置文件:', initResult.files)
 ### 微信公众号
 
 <p align="center">
-  <img src="/image/wechat-public.jpg" alt="微信公众号" width="200" />
+  <img src="/image/wechat-public.jpg" alt="鸿枫技术栈" width="200" />
 </p>
 
-关注「**SCALE Engine**」公众号，获取最新动态和工程化实践文章。
+关注「**鸿枫技术栈**」公众号，获取最新动态和工程化实践文章。
 
 ### 微信交流群
 

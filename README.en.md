@@ -197,7 +197,7 @@ await dispatcher.dispatch(taskId, ['frontend-agent', 'backend-agent'])
 
 ### WeChat
 
-- **Public Account**: Search "SCALE Engine"
+- **Public Account**: Search "鸿枫技术栈"
 - **Group Chat**: Add **mapleCx330** to join discussion group
 - **Email**: 2496155694@qq.com
 
