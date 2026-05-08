@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.7.1-orange?style=flat-square" alt="version" />
-  <img src="https://img.shields.io/badge/agents-11-blue?style=flat-square" alt="agents" />
+  <img src="https://img.shields.io/badge/version-0.8.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-9-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-323-passing-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/tests-410-passing-brightgreen?style=flat-square" alt="tests" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license" />
-  <img src="https://img.shields.io/badge/npm-0.7.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.8.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.7.1
+# SCALE Engine v0.8.0
 
 > **S**caffold · **C**ontrol · **A**rtifact · **L**earn · **E**volve
 >
@@ -846,6 +846,42 @@ console.log('生成的配置文件:', initResult.files)
 ---
 
 ## 📋 CHANGELOG
+
+### v0.8.0 (2026-05-08)
+
+**多 Agent 协作系统 + mattpoclock/skills 风格集成 + TF-IDF 记忆召回：**
+
+**Phase 1-3: 工作流增强**
+- ✨ **SessionStart Hook** — `scale context inject` 自动注入 FSM 状态和相关 lessons
+- ✨ **AutoDefectCreator** — 自动从检测器事件创建 Defect（hallucination/brute_retry/blame_shift）
+- ✨ **BehaviorTracker.autoEvolve** — bruteRetry 达阈值（默认3次）自动触发进化周期
+- ✨ **KnowledgeBase TF-IDF** — recallByVector 使用 TF-IDF 算法计算文本相似度
+
+**Phase 4-9: 多 Agent 协作系统**
+- ✨ **12 专业 Agent Profiles** — frontend/backend/test/ui-design/ops/product/code-review/security/database/performance/docs/architect
+- ✨ **AgentPool** — Agent 实例池管理（spawn/assign/complete/recycle）
+- ✨ **AgentDispatcher** — 任务自动分发到合适 Agent Profile
+- ✨ **AgentChannel** — Agent 间消息传递和广播机制
+- ✨ **AgentCoordinator** — 团队任务协调器（Task Lead 角色）
+- ✨ **CLI 命令** — `scale agent spawn/assign/status` + `scale team create/execute/status`
+
+**mattpoclock/skills 风格集成（设计完成）**
+- 📋 **UbiquitousLanguageManager** — CONTEXT.md + ADR 实时更新机制设计
+- 📋 **GrillingSessionSkill** — 递归决策树探索需求精炼
+- 📋 **IssueTriageFSM** — Issue 状态机（needs-triage → ready-for-agent → completed）
+- 📋 **CavemanCompressor** — 超压缩通信模式（约 75% token 减少）
+
+**Karpathy 反惰性原则**
+- 📋 **暴力重试反制** — 每次必须换策略，连续 2 次同策略触发级联
+- 📋 **甩锅反制** — 甩锅前必须验证，未验证的归因 = 甩锅
+- 📋 **工具闲置反制** — 有工具/技能不用而直接放弃 = 触发级联
+- 📋 **忙碌假象反制** — 反复微调同一行无新信息产生 = 触发级联
+- 📋 **被动等待反制** — 修完表面问题就停不泛化检查 = 触发级联
+
+**测试与发布**
+- ✅ 测试：410 passed (32 test files)
+- ✅ npm 发布：@hongmaple0820/scale-engine@0.8.0
+- ✅ GitHub 推送：master + tag v0.8.0
 
 ### v0.7.1 (2026-05-06)
 
