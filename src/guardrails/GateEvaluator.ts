@@ -99,14 +99,15 @@ export class GateEvaluator {
     gateResults: Array<{ gate: Gate; passed: boolean; reason?: string }>
   } {
     const gateResults: Array<{ gate: Gate; passed: boolean; reason?: string }> = []
+    const payloadRecord = payload as unknown as Record<string, unknown>
     for (const gateId of requiredGates) {
       const gate = this.HARNESS_GATES[gateId]
       if (!gate) continue
       if (gate.automatedCheck) {
-        const passed = this.evaluate(gate.automatedCheck, payload)
+        const passed = this.evaluate(gate.automatedCheck, payloadRecord)
         gateResults.push({ gate, passed, reason: passed ? undefined : `未满足 ${gate.automatedCheck}` })
       } else if (gate.conditions) {
-        const results = gate.conditions.map(c => this.checkCondition(c, payload))
+        const results = gate.conditions.map(c => this.checkCondition(c, payloadRecord))
         const passed = results.every(r => r.passed)
         gateResults.push({ gate, passed, reason: passed ? undefined : results.find(r => !r.passed)?.reason })
       }

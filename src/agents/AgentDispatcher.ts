@@ -1,14 +1,26 @@
 // SCALE Engine — Agent Dispatcher
 // 任务分发器：根据任务类型选择合适的 Agent Profile
 
-import type { AgentRuntime, TaskProfileMapping } from './types.js'
+import type { AgentRuntime, TaskProfileMap } from './types.js'
 import type { ArtifactId, Artifact } from '../artifact/types.js'
 import type { IArtifactStore } from '../artifact/store.js'
 import type { IEventBus } from '../core/eventBus.js'
 import type { IAgentPool } from './AgentPool.js'
 import type { IAgentRegistry } from './AgentRegistry.js'
-import { TASK_PROFILE_MAPPINGS } from './types.js'
 import { logger } from '../core/logger.js'
+
+// Default task -> profile mappings
+const DEFAULT_TASK_PROFILE_MAPPINGS: TaskProfileMap = {
+  'frontend': ['frontend-agent', 'ui-design-agent'],
+  'backend': ['backend-agent', 'database-agent'],
+  'testing': ['test-agent'],
+  'deployment': ['ops-agent'],
+  'review': ['code-review-agent', 'security-agent'],
+  'spec': ['product-agent', 'ui-design-agent'],
+  'documentation': ['docs-agent'],
+  'architecture': ['architect-agent'],
+  'performance': ['performance-agent']
+}
 
 export interface IAgentDispatcher {
   dispatch(taskId: ArtifactId): Promise<string[]>
@@ -17,16 +29,16 @@ export interface IAgentDispatcher {
 }
 
 export class AgentDispatcher implements IAgentDispatcher {
-  private mappings: TaskProfileMapping[]
+  private mappings: TaskProfileMap
 
   constructor(
     private pool: IAgentPool,
     private registry: IAgentRegistry,
     private store: IArtifactStore,
     private eventBus: IEventBus,
-    mappings?: TaskProfileMapping[],
+    mappings?: TaskProfileMap,
   ) {
-    this.mappings = mappings ?? TASK_PROFILE_MAPPINGS
+    this.mappings = mappings ?? DEFAULT_TASK_PROFILE_MAPPINGS
   }
 
   async dispatch(taskId: ArtifactId): Promise<string[]> {
@@ -99,9 +111,9 @@ export class AgentDispatcher implements IAgentDispatcher {
       }
     }
 
-    for (const mapping of this.mappings) {
-      if (tags.includes(mapping.taskType)) {
-        return mapping.profiles
+    for (const [taskType, profiles] of Object.entries(this.mappings)) {
+      if (tags.includes(taskType)) {
+        return profiles
       }
     }
 

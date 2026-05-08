@@ -1,7 +1,8 @@
 // SCALE Engine — Agent Channel (v0.8.0)
 // Agent 通信管道：消息发送/接收/广播/订阅
 
-import type { Timestamp, EventBus } from '../artifact/types.js'
+import type { Timestamp } from '../artifact/types.js'
+import type { IEventBus } from '../core/eventBus.js'
 import type { AgentMessage, MessageType } from './types.js'
 
 // ============================================================================
@@ -25,9 +26,9 @@ export class AgentChannel implements IAgentChannel {
   private subscriptions = new Map<string, Set<string>>()  // agentId -> subscribed channels
   private messageQueue = new Map<string, AgentMessage[]>()// agentId -> pending messages
   private seq = 0
-  private eventBus?: EventBus
+  private eventBus?: IEventBus
 
-  constructor(eventBus?: EventBus) {
+  constructor(eventBus?: IEventBus) {
     this.eventBus = eventBus
   }
 
@@ -89,7 +90,8 @@ export class AgentChannel implements IAgentChannel {
   /** 查看最新消息（不移除） */
   peekLatest(agentId: string): AgentMessage | null {
     const messages = this.messageQueue.get(agentId)
-    return messages?.length > 0 ? messages[messages.length - 1] : null
+    if (!messages || messages.length === 0) return null
+    return messages[messages.length - 1]
   }
 
   // ========== 订阅管理 ==========

@@ -29,6 +29,10 @@ export { KnowledgeBase } from './knowledge/KnowledgeBase.js'
 export { SQLiteKnowledgeBase } from './knowledge/SQLiteKnowledgeBase.js'
 export type { IKnowledgeBase } from './knowledge/KnowledgeBase.js'
 
+// Ubiquitous Language (mattpocock/skills style)
+export { UbiquitousLanguageManager, createUbiquitousLanguageManager } from './knowledge/UbiquitousLanguageManager.js'
+export type { IUbiquitousLanguageManager } from './knowledge/UbiquitousLanguageManager.js'
+
 // Evolution
 export { BehaviorTracker } from './evolution/BehaviorTracker.js'
 export type { IBehaviorTracker, SessionMetrics, AutoEvolveConfig } from './evolution/BehaviorTracker.js'
@@ -153,16 +157,30 @@ export type {
 export { PatternExtractor } from './evolution/PatternExtractor.js'
 export type { Pattern, PatternStep, IPatternExtractor } from './evolution/PatternExtractor.js'
 export { SkillCreator } from './evolution/SkillCreator.js'
-export type { SkillProposal, SkillStep, ISkillCreator } from './evolution/SkillCreator.js'
+export type { SkillProposal, SkillStep, ISkillCreator, SkillExample, SkillCriteria, SkillCandidate } from './evolution/SkillCreator.js'
 
-// Dashboard (Phase 7)
-export { DashboardServer } from './dashboard/index.js'
-export type { DashboardConfig, DashboardData } from './dashboard/index.js'
+// Grilling Session (Phase 11 - mattpoclock/skills style)
+export { GrillingSessionManager } from './skills/GrillingSessionSkill.js'
+export type { GrillingSession, GrillingQuestion, GrillingOption, GrillingConclusion } from './skills/GrillingSessionSkill.js'
+export { REQUIREMENT_CLARITY_TREE, DESIGN_DEPTH_TREE, TECH_SELECTION_TREE } from './skills/GrillingTemplates.js'
 
-// API
-export { Doctor } from './api/doctor.js'
-export { ScaleMCPServer } from './api/mcp.js'
+// Issue Triage FSM (Phase 12 - mattpoclock/skills style)
+export { IssueTriageFSM, ISSUE_TRIAGE_MACHINE } from './tasks/IssueTriageFSM.js'
+export type { IssueRole, IssueState, IssueTriageTransition, TriageResult } from './tasks/IssueTriageFSM.js'
+
+// Caveman Compressor (Phase 13 - mattpoclock/skills style)
+export { CavemanCompressor } from './context/CavemanCompressor.js'
+export type { CavemanConfig } from './context/CavemanCompressor.js'
+export { DEFAULT_SYMBOL_MAP, DEFAULT_PRESERVE_TERMS } from './context/CavemanCompressor.js'
+
+// Anti-Pattern Registry (andrej-karpathy-skills style)
+export { AntiPatternRegistry, createAntiPatternRegistry } from './context/AntiPatternRegistry.js'
+export type { AntiPattern, AntiPatternMatch, IAntiPatternRegistry } from './context/AntiPatternRegistry.js'
 
 // Dashboard (v0.7.0)
 export { DashboardServer } from './dashboard/DashboardServer.js'
 export type { DashboardState, ArtifactTreeNode, GateSummary, DetectorStatSummary, RecentEvent } from './dashboard/DashboardServer.js'
+
+// API
+export { Doctor } from './api/doctor.js'
+export { ScaleMCPServer } from './api/mcp.js'

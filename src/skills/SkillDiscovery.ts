@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 import type { IEventBus } from '../core/eventBus.js'
 import type { SkillRegistry } from './SkillRegistry.js'
-import type { SkillInstallConfig, ISkillInstaller } from './SkillInstaller.js'
+import type { SkillInstallConfig, ISkillInstaller, InstallMethod } from './SkillInstaller.js'
 import type { AgentPlatform, SkillRef, SkillScanResult } from '../artifact/types.js'
 
 // ============================================================================
@@ -135,7 +135,7 @@ export class SkillDiscovery implements ISkillDiscovery {
     const category = this.matchCategory(context.taskType, context.keywords)
     if (!category) return []
 
-    const candidates = KNOWN_SKILL_SOURCES[category] || []
+    const candidates = (KNOWN_SKILL_SOURCES as Record<string, Array<{ id: string; source: string; quality: number; description: string }>>)[category] || []
     for (const candidate of candidates) {
       const registered = this.registry.get(candidate.id)
       const relevance = this.calculateRelevance(context, candidate)
@@ -168,7 +168,7 @@ export class SkillDiscovery implements ISkillDiscovery {
     if (!this.registry) return []
     const allResults: DiscoveryResult[] = []
     for (const category of Object.keys(KNOWN_SKILL_SOURCES)) {
-      for (const candidate of KNOWN_SKILL_SOURCES[category]) {
+      for (const candidate of (KNOWN_SKILL_SOURCES as Record<string, Array<{ id: string; source: string; quality: number; description: string }>>)[category]) {
         if (!this.registry.get(candidate.id)) {
           allResults.push({
             skillId: candidate.id,
@@ -294,7 +294,7 @@ export class SkillDiscovery implements ISkillDiscovery {
   }
 
   private createInstallConfig(candidate: { id: string; source: string; description: string }): SkillInstallConfig {
-    const method = candidate.source.includes('github') ? 'git-clone' : 'skill-file'
+    const method: InstallMethod = candidate.source.includes('github') ? 'git-clone' : 'manual'
     const command = method === 'git-clone'
       ? `git clone ${candidate.source} ~/.claude/skills/${candidate.id}`
       : `create ~/.claude/skills/${candidate.id}/SKILL.md`
@@ -304,7 +304,6 @@ export class SkillDiscovery implements ISkillDiscovery {
       sourceUrl: candidate.source,
       command,
       verification: `test -f ~/.claude/skills/${candidate.id}/SKILL.md`,
-      description: candidate.description,
     }
   }
 }

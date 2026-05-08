@@ -828,13 +828,14 @@ const skillScan = defineCommand({
   },
   async run({ args }) {
     const discovery = new SkillDiscovery(args.dir)
-    const result = discovery.discover()
+    const platform = discovery.detectPlatform()
 
-    if (!result.platform) {
+    if (!platform) {
       console.log('\n⚠️  No agent platform detected. Run `scale init` first.')
       return
     }
 
+    const result = discovery.scanSkills(platform)
     console.log(`\n🔍 Platform: ${result.platform}`)
     console.log(`📦 Skills found: ${result.skills.length}`)
 
@@ -895,7 +896,7 @@ const agentList = defineCommand({
     console.log(`\n🤖 Agent Instances (${agents.length})`)
     console.log('──────────────────────────────────────────────')
     for (const a of agents) {
-      const statusEmoji = { idle: '💤', running: '🔄', blocked: '🚫', completed: '✅', failed: '❌' }[a.status]
+      const statusEmoji = { idle: '💤', running: '🔄', blocked: '🚫', completed: '✅', failed: '❌', recycled: '♻️' }[a.status]
       console.log(`  ${statusEmoji} ${a.id} (${a.profile.name})`)
       if (a.assignedTask) console.log(`     Task: ${a.assignedTask}`)
     }

@@ -408,11 +408,46 @@ export type EventType =
   | 'agent.message_received'
   | 'agent.dispatched'
   | 'agent.dispatch_blocked'
+  | 'agent.blocked'
+  | 'agent.unblocked'
+  | 'agent.subscribed'
   | 'team.formed'
   | 'team.dissolved'
   | 'team.progress_updated'
   | 'team.completed'
   | 'team.failed'
+  // Review System (v0.9.0)
+  | 'review.required'
+  | 'review.passed'
+  | 'review.failed'
+  | 'task.review_failed'
+  // Pattern Extraction (v0.9.0)
+  | 'pattern.extracted'
+  | 'pattern.verified'
+  // Skill Creation (v0.9.0)
+  | 'skill.proposed'
+  | 'skill.published'
+  // Ubiquitous Language (v0.10.0 - mattpoclock/skills)
+  | 'term.discovered'
+  | 'term.updated'
+  | 'term.ambiguity_detected'
+  | 'adr.proposed'
+  | 'adr.accepted'
+  | 'adr.deprecated'
+  | 'adr.superseded'
+  // Issue Triage (v0.10.0 - mattpoclock/skills)
+  | 'issue.triaged'
+  | 'issue.state_changed'
+  | 'issue.escalated'
+  | 'issue.info_requested'
+  // Grilling Session (v0.10.0 - mattpoclock/skills)
+  | 'grilling.session_started'
+  | 'grilling.session_ended'
+  | 'grilling.concluded'
+  | 'grilling.answer_received'
+  // Anti-Pattern Detection (v0.10.0 - andrej-karpathy-skills)
+  | 'antipattern.detected'
+  | 'antipattern.registered'
 
 export interface Event<TPayload = unknown> {
   id: EventId
@@ -722,4 +757,100 @@ export interface WorkflowPreset {
 
 /** Agent 类型扩展（支持所有 11 种 Agent） */
 export type AgentType = AgentPlatform
+
+// ============================================================================
+// 15. Ubiquitous Language 类型（mattpocock/skills 风格）
+// ============================================================================
+
+/** 术语定义来源 */
+export type TermSource = 'user-defined' | 'inferred-from-code' | 'extracted-from-docs'
+
+/** 术语定义（CONTEXT.md 条目） */
+export interface TermDefinition {
+  term: string
+  definition: string
+  examples: string[]
+  aliases: string[]
+  lastUpdated: Timestamp
+  source: TermSource
+}
+
+/** ADR 状态 */
+export type ADRStatus = 'proposed' | 'accepted' | 'deprecated' | 'superseded'
+
+/** ADR 记录（架构决策记录） */
+export interface ADRRecord {
+  id: string                    // ADR-001-title
+  title: string
+  status: ADRStatus
+  context: string
+  decision: string
+  consequences: string
+  alternatives?: string[]
+  supersededBy?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+}
+
+/** ADR 状态变更事件 Payload */
+export interface ADRStatusChangePayload {
+  adrId: string
+  previousStatus: ADRStatus
+  newStatus: ADRStatus
+  reason?: string
+  supersededBy?: string
+}
+
+/** 术语歧义报告 */
+export interface AmbiguityReport {
+  term: string
+  definitions: string[]
+  sources: TermSource[]
+  suggestedResolution?: string
+}
+
+// ============================================================================
+// 16. Issue Triage 类型（mattpocock/skills 风格）
+// ============================================================================
+
+/** Issue 角色：bug 修复或新功能 */
+export type IssueRole = 'bug' | 'enhancement'
+
+/** Issue Triage 状态 */
+export type IssueState =
+  | 'needs-triage'      // 初始：等待评估
+  | 'needs-info'        // 信息不足：等待补充
+  | 'ready-for-agent'   // 已就绪：可交给 Agent 执行
+  | 'ready-for-human'   // 需人工：复杂或高风险
+  | 'in-progress'       // 执行中
+  | 'blocked'           // 阻塞：等待依赖
+  | 'completed'         // 完成
+  | 'wontfix'           // 拒绝：不处理
+
+/** Issue Triage 状态流转 */
+export interface IssueTriageTransition {
+  from: IssueState
+  to: IssueState
+  condition: string                 // 流转条件描述
+  auto?: boolean                    // 是否可自动流转
+  agentAction?: string              // Agent 可执行的动作
+}
+
+/** Issue Triage 评估结果 */
+export interface TriageResult {
+  state: IssueState
+  action?: string
+  reason?: string
+}
+
+/** Issue 输入 */
+export interface IssueInput {
+  title: string
+  description: string
+  type?: IssueRole
+  complexity?: number               // 0-1 复杂度估算
+  riskLevel?: 'low' | 'medium' | 'high'
+  filesInvolved?: string[]
+  dependsOn?: ArtifactId[]
+}
 

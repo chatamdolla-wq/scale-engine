@@ -1,10 +1,11 @@
 // SCALE Engine — Agent Pool (v0.8.0)
 // Agent 实例池管理：生命周期、任务分配、状态跟踪
 
-import type { ArtifactId, Timestamp, EventBus } from '../artifact/types.js'
-import type { AgentRuntime, AgentStatus, AgentProfile, ModelConfig, AgentResult } from './types.js'
+import type { ArtifactId, Timestamp } from '../artifact/types.js'
+import type { IEventBus } from '../core/eventBus.js'
+import type { AgentRuntime, AgentStatus, AgentProfile, ModelConfig, ModelTier, AgentResult } from './types.js'
 import { AgentProfileRegistry, defaultProfileRegistry } from './profiles.js'
-import type { ModelRouter } from '../core/modelRouter.js'
+import type { IModelRouter } from '../routing/ModelRouter.js'
 
 // ============================================================================
 // AgentPool 接口
@@ -33,13 +34,13 @@ export class AgentPool implements IAgentPool {
   private agents = new Map<string, AgentRuntime>()
   private seq = 0
   private registry: AgentProfileRegistry
-  private modelRouter?: ModelRouter
-  private eventBus?: EventBus
+  private modelRouter?: IModelRouter
+  private eventBus?: IEventBus
 
   constructor(
     registry?: AgentProfileRegistry,
-    modelRouter?: ModelRouter,
-    eventBus?: EventBus
+    modelRouter?: IModelRouter,
+    eventBus?: IEventBus
   ) {
     this.registry = registry ?? defaultProfileRegistry
     this.modelRouter = modelRouter
@@ -235,14 +236,17 @@ export class AgentPool implements IAgentPool {
     // 如果有 ModelRouter，使用它选择模型
     if (this.modelRouter) {
       const routed = this.modelRouter.route({
-        taskComplexity: profile.preferredModel === 'powerful' ? 0.8 : 
+        taskComplexity: profile.preferredModel === 'powerful' ? 0.8 :
                         profile.preferredModel === 'fast' ? 0.3 : 0.5,
         artifactType: 'Task'
       })
+      // 从模型名称推断 provider
+      const provider = routed.name.includes('claude') ? 'anthropic' :
+                       routed.name.includes('gpt') ? 'openai' : 'anthropic'
       return {
-        provider: routed.provider || 'anthropic',
-        modelId: routed.modelId || 'claude-sonnet-4',
-        tier: profile.preferredModel
+        provider,
+        modelId: routed.name,
+        tier: routed.tier === 'local' ? 'fast' : routed.tier as ModelTier
       }
     }
 

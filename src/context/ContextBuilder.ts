@@ -77,6 +77,121 @@ You are operating under SCALE Engine governance. These rules are PHYSICALLY ENFO
 - The system gets stricter over time, not weaker`
 
 // ============================================================================
+// mattpoclock/skills style: Deep Modules + Vertical Slices TDD (Phase 15)
+// ============================================================================
+
+const DEEP_MODULES_PRINCIPLE = `## Deep Modules 原则
+
+接口深度 = 调用者杠杆 + 维护者局部性
+
+**删除测试**：如果删除这个模块，调用者需要写多少代码补偿？
+- 补偿代码越多 = 模块价值越大
+- 补偿代码越少 = 模块可删除
+
+**设计决策**：
+- 抓杠杆：接口应该让调用者一次调用完成复杂操作
+- 保局部：复杂逻辑隐藏在模块内部，不在接口暴露
+
+**判断标准**：
+- 好模块：简单接口，隐藏复杂性（如 fs.readFile(path) vs 手写文件系统）
+- 坏模块：复杂接口，暴露内部复杂性（如 10 个参数的 init 函数）
+
+**设计时问自己**：
+1. 调用者需要了解多少才能使用？
+2. 如果删除，调用者需要补偿多少？
+3. 内部实现变更，接口需要变吗？`
+
+const VERTICAL_SLICES_TDD = `## Vertical Slices TDD（Tracer Bullets）
+
+**Wrong（Horizontal）**：
+1. 写所有测试
+2. 实现所有功能
+3. 运行所有测试
+
+**Right（Vertical）**：
+1. 选一个行为
+2. 写该行为的测试
+3. 实现该行为
+4. 验证测试通过
+5. 下一个行为
+
+**优势**：
+- 每个切片独立可验证
+- 失败时定位精确
+- 避免大爆炸集成
+- 早期发现设计问题
+
+**Tracer Bullets 原则**：
+- 先打通端到端骨架（可能不完整但可运行）
+- 再逐层填充细节
+- 每一步都有可验证的产出
+
+**TDD 防幻觉铁律**：
+- 绝不能同时写代码和测试！
+- 如果先写了有 Bug 的代码，再写测试，会写出"验证错误逻辑"的测试
+- 正确做法：测试先行，独立验证
+- 测试文件一旦写完，后续实现中禁止修改测试（除非测试本身有错）`
+
+// ============================================================================
+// Karpathy Guidelines (andrej-karpathy-skills style)
+// ============================================================================
+
+const KARPATHY_PRINCIPLES = `## Karpathy Guidelines — LLM 编码行为准则
+
+源自 Andrej Karpathy 对 LLM 编码陷阱的观察。**倾向谨慎而非速度**。
+
+### 1. Think Before Coding（编码前先思考）
+**不做假设。不隐藏困惑。呈现权衡。**
+
+- 显式陈述假设。不确定就问。
+- 存在多种解释时全部呈现 — 不要默默选择。
+- 如果有更简单方案，说出来。该反驳就反驳。
+- 不清楚时停下。命名困惑点。询问。
+
+### 2. Simplicity First（简单优先）
+**解决问题的最少代码。拒绝投机性功能。**
+
+- 不写超出需求的功能。
+- 单用途代码不抽象化。
+- 不添加未请求的"灵活性"或"可配置性"。
+- 不处理不可能发生的错误场景。
+- 如果 200 行可以写成 50 行，重写它。
+
+**测试**：资深工程师会说"这过度复杂了吗？"如果是，简化。
+
+### 3. Surgical Changes（手术式修改）
+**只动必须动的。只清理自己制造的垃圾。**
+
+编辑现有代码时：
+- 不要"改进"相邻代码、注释或格式。
+- 不要重构未损坏的东西。
+- 匹配现有风格，即使你偏好不同写法。
+- 注意到无关死代码时提及 — 不要删除。
+
+你的修改产生孤儿时：
+- 删除 YOUR 修改导致未使用的导入/变量/函数。
+- 不要删除预先存在的死代码（除非被要求）。
+
+**测试**：每行改动应能追溯到用户请求。
+
+### 4. Goal-Driven Execution（目标驱动执行）
+**定义成功标准。循环直到验证。**
+
+将任务转化为可验证目标：
+- "添加验证" → "为无效输入写测试，然后使测试通过"
+- "修复 bug" → "写一个复现它的测试，然后使测试通过"
+- "重构 X" → "确保前后测试都通过"
+
+多步骤任务格式：
+\`\`\`
+1. [步骤] → verify: [检查]
+2. [步骤] → verify: [检查]
+3. [步骤] → verify: [检查]
+\`\`\`
+
+强成功标准让你独立循环。弱标准（"让它工作"）需要频繁澄清。`
+
+// ============================================================================
 // Scenario Mode Context Additions
 // ============================================================================
 
@@ -137,6 +252,30 @@ export class ContextBuilder implements IContextBuilder {
       content: SCENARIO_CONTEXT[scenarioMode],
       priority: 1,
       estimatedTokens: 800,
+    })
+
+    // P1.6: Deep Modules Principle (mattpoclock/skills style)
+    layers.push({
+      name: 'deep_modules',
+      content: DEEP_MODULES_PRINCIPLE,
+      priority: 1,
+      estimatedTokens: 1200,
+    })
+
+    // P1.7: Vertical Slices TDD (mattpoclock/skills style)
+    layers.push({
+      name: 'vertical_slices_tdd',
+      content: VERTICAL_SLICES_TDD,
+      priority: 1,
+      estimatedTokens: 1500,
+    })
+
+    // P1.8: Karpathy Guidelines (andrej-karpathy-skills style)
+    layers.push({
+      name: 'karpathy_guidelines',
+      content: KARPATHY_PRINCIPLES,
+      priority: 1,
+      estimatedTokens: 2000,
     })
 
     // P2: Role prompt

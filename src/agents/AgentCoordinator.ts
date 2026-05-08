@@ -1,7 +1,7 @@
 // SCALE Engine — Agent Coordinator
 // 协调器：任务分解、团队组建、进度监控、结果聚合
 
-import type { AgentTeam, TeamConfig, TeamExecutionResult, AgentExecutionResult, ProgressReport, AgentRuntime } from './types.js'
+import type { AgentTeam, TeamConfig, TeamExecutionResult, AgentResult, ProgressReport, AgentRuntime } from './types.js'
 import type { ArtifactId, Artifact } from '../artifact/types.js'
 import type { IArtifactStore } from '../artifact/store.js'
 import type { IEventBus } from '../core/eventBus.js'
@@ -117,6 +117,12 @@ export class AgentCoordinator implements IAgentCoordinator {
       blocked: statuses.filter(s => s === 'blocked').length,
       failed: statuses.filter(s => s === 'failed').length,
       idle: statuses.filter(s => s === 'idle').length,
+      agents: team.agents.map(a => ({
+        agentId: a.id,
+        profileId: a.profile.id,
+        status: a.status,
+        duration: a.completedAt ? a.completedAt - a.startedAt : Date.now() - a.startedAt
+      }))
     }
   }
 
@@ -143,17 +149,17 @@ export class AgentCoordinator implements IAgentCoordinator {
   }
 
   private async aggregateResults(team: AgentTeam, startTime: number): Promise<TeamExecutionResult> {
-    const agentResults = new Map<string, AgentExecutionResult>()
+    const agentResults = new Map<string, AgentResult>()
     const outputs: ArtifactId[] = []
 
     for (const agent of team.agents) {
       const duration = (agent.completedAt ?? Date.now()) - agent.startedAt
-      const result: AgentExecutionResult = {
+      const result: AgentResult = {
         agentId: agent.id,
-        success: agent.status === 'completed',
+        status: agent.status,
         outputArtifacts: agent.outputArtifacts,
         duration,
-        error: agent.error,
+        retryCount: agent.retryCount ?? 0,
       }
       agentResults.set(agent.id, result)
       outputs.push(...agent.outputArtifacts)

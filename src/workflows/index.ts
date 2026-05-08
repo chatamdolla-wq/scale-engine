@@ -1,6 +1,5 @@
-// SCALE Engine — Workflows Module Index (v0.7.0)
+// SCALE Engine — Workflow Module (v0.9.0)
+// DAG 工作流编排模块
 
-export { WORKFLOW_PRESETS, getWorkflowPreset, listWorkflowPresets, getPresetsByScenario } from "./presets.js"
-export type { WorkflowPreset, ScenarioMode, WorkflowStep } from "../artifact/types.js"
-export { WorkflowExecutor, type IWorkflowExecutor, type WorkflowSession, type StepHistoryEntry } from "./WorkflowExecutor.js"
-export { GateParser, type IGateParser, type GateExpression, type GateResult } from "./GateParser.js"
+export { DAGBuilder, defaultDAGBuilder } from './DAGBuilder.js'
+export { WorkflowOrchestrator, createWorkflowOrchestrator } from './WorkflowOrchestrator.js'
