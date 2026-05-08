@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.7.2",
-  "description": "SCALE Engine v0.7.1 — AI engineering scaffold: SessionStart FSM context injection, AutoDefectCreator for self-evolution loop, enhanced memory recall, 11 agent adapters, FSM artifacts, guardrail detectors",
+  "version": "0.8.0",
+  "description": "SCALE Engine v0.8.0 — AI engineering scaffold: 12 professional agents, multi-agent collaboration, mattpoclock/skills integration (Grilling/IssueTriage/Caveman), Karpathy anti-patterns, TF-IDF memory recall, 11 agent adapters, FSM artifacts, auto-evolution loop",
   "type": "module",
   "bin": {
     "scale": "./dist/api/cli.js"
