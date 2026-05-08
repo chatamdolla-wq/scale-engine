@@ -4,7 +4,6 @@
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-9-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-410-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license" />
   <img src="https://img.shields.io/badge/npm-0.8.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
@@ -186,6 +185,36 @@ await dispatcher.dispatch(taskId, ['frontend-agent', 'backend-agent'])
 
 ---
 
-## 📄 License
+## 🌐 Community
 
-MIT License - Copyright (c) 2026 hongmaple0820
+### Links
+
+| Platform | URL |
+|----------|-----|
+| **GitHub** | https://github.com/hongmaple0820/scale-engine |
+| **Gitee (Mirror)** | https://gitee.com/hongmaple/scale-engine |
+| **npm** | https://www.npmjs.com/package/@hongmaple0820/scale-engine |
+
+### WeChat
+
+- **Public Account**: Search "SCALE Engine"
+- **Group Chat**: Add **mapleCx330** to join discussion group
+- **Email**: 2496155694@qq.com
+
+### Knowledge Planet (¥99/year)
+
+- Exclusive skill packs and configuration templates
+- Deep case study breakdowns
+- 1v1 Q&A with community experts
+- Early access to new features
+
+> Join: https://t.zsxq.com/6T5Eq
+
+---
+
+### ❤️ Support Open Source
+
+<p align="center">
+  <img src="/image/wxPay.jpg" alt="WeChat Pay" width="150" />
+  <img src="/image/zfb.jpg" alt="Alipay" width="150" />
+</p>

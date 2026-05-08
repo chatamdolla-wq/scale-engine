@@ -4,7 +4,6 @@
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-9-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-410-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license" />
   <img src="https://img.shields.io/badge/npm-0.8.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
@@ -37,7 +36,6 @@
 - [完整 API 参考](#-完整-api-参考)
 - [社区与推广](#-社区与推广)
 - [CHANGELOG](#-changelog)
-- [License](#-license)
 - [贡献指南](#-贡献指南)
 
 ---
@@ -169,14 +167,20 @@ SCALE Engine 通过 **六层架构** 实现 AI 工程化：
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │  11 Agent 适配器                                           │  │
+│  │  11 Agent 平台适配器                                        │  │
 │  │  Claude Code │ Codex CLI │ OpenCode │ Cursor │ Gemini │   │  │
 │  │  OpenClaw │ Hermes │ Trae │ WorkBuddy │ VSC │ QCoder      │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  12 专业 Agent Profiles                                    │  │
+│  │  frontend │ backend │ test │ ui-design │ ops │ product    │  │
+│  │  code-review │ security │ database │ perf │ docs │ arch   │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
 │  ┌──────────────────────┐  ┌──────────────────────────────────┐│
-│  │  MCP Server          │  │  CLI (15 命令)                   ││
-│  │  Model Context Proto │  │  scale init/doctor/create/...    ││
+│  │  MCP Server          │  │  CLI (命令)                      ││
+│  │  Model Context Proto │  │  scale init/doctor/agent/team... ││
 │  └──────────────────────┘  └──────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -829,31 +833,46 @@ console.log('生成的配置文件:', initResult.files)
 
 | 平台 | 链接 | 说明 |
 |------|------|------|
-| 🌐 **官网** | [https://scale-os.vercel.app](https://scale-os.vercel.app) | 在线配置器 + 完整文档 |
-| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-os](https://github.com/hongmaple0820/scale-os) | 源码 + Issues + PR |
+| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | 源码 + Issues + PR |
 | 🔧 **Gitee** | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像 |
 | 📦 **npm** | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | 包下载 |
 
-### 加入社区
+### 微信公众号
 
-| 渠道 | 说明 |
-|------|------|
-| 💬 **微信群** | 扫码加入「SCALE OS 交流群」，获取最新动态和技术支持 |
-| 📱 **公众号** | 搜索「**SCALE OS**」关注，定期推送工程化实践文章 |
-| 🌟 **知识星球** | ¥99/年早鸟价，深度内容 + 专属服务 + 一对一答疑 |
+<p align="center">
+  <img src="/image/wechat-public.jpg" alt="微信公众号" width="200" />
+</p>
 
-### 内容平台
+关注「**SCALE Engine**」公众号，获取最新动态和工程化实践文章。
 
-| 平台 | 说明 |
-|------|------|
-| 📝 **思否** | 搜索「SCALE OS」，查看技术深度文章 |
-| 📝 **掘金** | 搜索「SCALE OS」，查看实战案例分享 |
+### 微信交流群
+
+添加微信 **mapleCx330** 加入交流群，或通过邮箱 **2496155694@qq.com** 联系。
+
+### 知识星球（¥99/年）
+
+加入知识星球，获取：
+- 专属技能包和配置模板
+- 深度实战案例拆解
+- 社区专家 1v1 答疑
+- 新功能优先体验权
+
+> 📌 加入知识星球，和认真的 AI 编码开发者一起成长：[https://t.zsxq.com/6T5Eq](https://t.zsxq.com/6T5Eq)
 
 ### 🌟 Star History
 
 如果 SCALE Engine 对你有帮助，请给个 ⭐ Star！
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hongmaple0820/scale-os&type=Date)](https://star-history.com/#hongmaple0820/scale-os&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=hongmaple0820/scale-engine&type=Date)](https://star-history.com/#hongmaple0820/scale-engine&Date)
+
+---
+
+### ❤️ 开源不易，谢谢打赏
+
+<p align="center">
+  <img src="/image/wxPay.jpg" alt="微信支付" width="150" />
+  <img src="/image/zfb.jpg" alt="支付宝" width="150" />
+</p>
 
 ---
 
@@ -1001,32 +1020,6 @@ console.log('生成的配置文件:', initResult.files)
 - L5 Memory — KnowledgeBase + 衰减算法 + SQLite 持久化
 - L6 Evolution — Defect→Lesson→Rule→Hook 四级自进化闭环
 - 148+ 单元测试通过
-
----
-
-## 📄 License
-
-MIT License
-
-Copyright (c) 2026 hongmaple0820
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
 ---
 
