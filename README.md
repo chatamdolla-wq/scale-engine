@@ -863,7 +863,13 @@ console.log('生成的配置文件:', initResult.files)
 
 如果 SCALE Engine 对你有帮助，请给个 ⭐ Star！
 
-[![Star History Chart](https://api.star-history.com/svg?repos=hongmaple0820/scale-engine&type=Date)](https://star-history.com/#hongmaple0820/scale-engine&Date)
+<a href="https://www.star-history.com/?type=date&repos=hongmaple0820%2Fscale-engine">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=hongmaple0820/scale-engine&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=hongmaple0820/scale-engine&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=hongmaple0820/scale-engine&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ---
 
