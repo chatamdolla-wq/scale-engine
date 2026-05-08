@@ -16,6 +16,18 @@
 
 ---
 
+## 📦 仓库地址
+
+| 平台 | 地址 |
+|------|------|
+| **GitHub** | https://github.com/hongmaple0820/scale-engine |
+| **Gitee (镜像)** | https://gitee.com/hongmaple/scale-engine |
+| **npm** | https://www.npmjs.com/package/@hongmaple0820/scale-engine |
+
+**语言版本：** [中文文档](README.md) | [English Documentation](README.en.md)
+
+---
+
 ## 📖 目录
 
 - [项目介绍](#-项目介绍)
