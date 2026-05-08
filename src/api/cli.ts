@@ -985,9 +985,24 @@ const team = defineCommand({
 // Main
 // ============================================================================
 
+// ============================================================================
+// Phase-Aligned Commands (v0.9.0) — agent-skills style
+// ============================================================================
+
+import * as phaseCommands from '../cli/phaseCommands.js'
+
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.8.0', description: 'SCALE Engine v0.8.0 CLI — AI engineering scaffold · 11 agents · 10 workflows · 9 detectors · SQLite KB · FSM locks · Multi-Agent' },
+  meta: { name: 'scale', version: '0.9.0', description: 'SCALE Engine v0.9.0 CLI — Phase Commands: define/plan/build/verify/review/ship · 11 agents · 10 workflows · 9 detectors' },
   subCommands: {
+    // Phase-Aligned Commands (agent-skills style)
+    define: phaseCommands.phaseDefine,
+    plan: phaseCommands.phasePlan,
+    build: phaseCommands.phaseBuild,
+    verify: phaseCommands.phaseVerify,
+    review: phaseCommands.phaseReview,
+    ship: phaseCommands.phaseShip,
+
+    // Original commands (preserved)
     init,
     doctor,
     session,
