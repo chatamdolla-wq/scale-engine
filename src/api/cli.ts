@@ -16,6 +16,7 @@ import { FSMAgentBridge, type FSMContextSnapshot } from '../fsm/FSMAgentBridge.j
 import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
 import { Doctor } from './doctor.js'
+import { quickStart, detectPlatform } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -702,13 +703,39 @@ const stats = defineCommand({
 // ============================================================================
 
 const init = defineCommand({
-  meta: { name: 'init', description: 'Initialize SCALE Engine in current project' },
+  meta: { name: 'init', description: 'Initialize SCALE Engine in current project (one-click install)' },
   args: {
-    agent: { type: 'string', default: 'claude-code', description: `Agent type (${SUPPORTED_AGENTS.join('/')})` },
+    agent: { type: 'string', default: '', description: `Agent type (${SUPPORTED_AGENTS.join('/')}) - auto-detected if not specified` },
     dir: { type: 'string', default: '.', description: 'Project directory' },
     scenario: { type: 'string', default: 'standard', description: 'Scenario mode (sandbox/standard/critical)' },
+    quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
   },
   async run({ args }) {
+    // One-click quick start mode
+    if (args.quick || !args.agent) {
+      const qsResult = await quickStart(args.dir)
+      if (qsResult.success && qsResult.platform) {
+        console.log(`\n✅ SCALE Engine Quick Start completed for ${qsResult.platform}`)
+        console.log(`\n📁 Created (${qsResult.created.length}):`)
+        for (const f of qsResult.created) console.log(`   + ${f}`)
+        if (qsResult.skipped.length > 0) {
+          console.log(`\n⏭️  Skipped (${qsResult.skipped.length}):`)
+          for (const f of qsResult.skipped) console.log(`   - ${f}`)
+        }
+        console.log(`\n🔒 Physical constraints applied: ${qsResult.constraintsApplied}`)
+        console.log(`\n🚀 Capabilities enabled: ${qsResult.capabilitiesEnabled.join(', ')}`)
+        console.log(`\n📋 Next steps:`)
+        for (const step of qsResult.nextSteps) console.log(`   → ${step}`)
+      } else {
+        console.log(`\n⚠️  No agent platform detected`)
+        const detection = detectPlatform(args.dir)
+        console.log(`\n📋 Suggested platforms: ${detection.suggestions.join(', ')}`)
+        console.log(`\n→ Run: scale init --agent <platform>`)
+      }
+      return
+    }
+
+    // Manual agent specification mode
     const adapter = createAdapter(args.agent)
     const result = await adapter.init({ projectDir: args.dir, agentType: args.agent as never, scenarioMode: args.scenario as 'sandbox' | 'standard' | 'critical' })
     console.log(`\n✅ SCALE Engine initialized for ${args.agent} (scenario: ${args.scenario})`)
@@ -719,8 +746,11 @@ const init = defineCommand({
       for (const f of result.skipped) console.log(`   - ${f}`)
     }
     console.log(`\n🔧 Settings: ${result.settingsPath}`)
-    console.log(`📖 Knowledge: ${result.knowledgeDocPath}`)
-    console.log(`📂 Data dir:  ${result.scaleDir}`)
+    console.log(`\n📖 Knowledge: ${result.knowledgeDocPath}`)
+    console.log(`\n📂 Data dir:  ${result.scaleDir}`)
+    console.log(`\n📋 Next steps:`)
+    console.log(`   → scale doctor`)
+    console.log(`   → scale create Spec "<feature name>"`)
   },
 })
 
