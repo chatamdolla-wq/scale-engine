@@ -698,6 +698,16 @@ export const SCENARIO_MODE_CONFIGS: Record<ScenarioMode, ScenarioModeConfig> = {
 // 13. Skill Ecosystem 类型
 // ============================================================================
 
+/** Development phase for phase-based skill organization */
+export type DevelopmentPhase =
+  | 'DEFINE'
+  | 'PLAN'
+  | 'BUILD'
+  | 'VERIFY'
+  | 'REVIEW'
+  | 'SHIP'
+  | 'ANTI-PATTERNS'
+
 /** Agent 平台类型 */
 export type AgentPlatform =
   | 'claude-code'
@@ -720,6 +730,7 @@ export interface SkillRef {
   platform: AgentPlatform
   path: string
   enabled: boolean
+  phase?: DevelopmentPhase
 }
 
 /** Skill 目录扫描结果 */

@@ -8,7 +8,17 @@ import { homedir } from 'node:os'
 import type { IEventBus } from '../core/eventBus.js'
 import type { SkillRegistry } from './SkillRegistry.js'
 import type { SkillInstallConfig, ISkillInstaller, InstallMethod } from './SkillInstaller.js'
-import type { AgentPlatform, SkillRef, SkillScanResult } from '../artifact/types.js'
+import type { AgentPlatform, SkillRef, SkillScanResult, DevelopmentPhase } from '../artifact/types.js'
+
+// Phase-based skill directory structure
+const PHASE_DIRS: DevelopmentPhase[] = ['DEFINE', 'PLAN', 'BUILD', 'VERIFY', 'REVIEW', 'SHIP', 'ANTI-PATTERNS']
+
+/** Phase-based skill scan result */
+export interface PhaseSkillScanResult {
+  phase: DevelopmentPhase
+  skills: SkillRef[]
+  count: number
+}
 
 // ============================================================================
 // 技能来源知识库 - Agent 知道去哪里找优秀技能
@@ -68,6 +78,8 @@ export interface ISkillDiscovery {
   periodicScan(): Promise<DiscoveryResult[]>
   checkDuringExecution(taskType: string, capabilities: string[]): Promise<DiscoveryResult[]>
   scanSkills(platform: AgentPlatform): SkillScanResult
+  scanPhaseSkills(projectDir?: string): Map<DevelopmentPhase, PhaseSkillScanResult>
+  getSkillsForPhase(phase: DevelopmentPhase, projectDir?: string): SkillRef[]
   detectPlatform(): AgentPlatform | null
 }
 
@@ -255,6 +267,93 @@ export class SkillDiscovery implements ISkillDiscovery {
     return sections.join('\n')
   }
 
+  // ========== Phase-based Skill Scanning ==========
+
+  /**
+   * Scan skills organized by development phase
+   * @param projectDir - Project directory containing skills/ folder
+   * @returns Map of phase to skill scan results
+   */
+  scanPhaseSkills(projectDir?: string): Map<DevelopmentPhase, PhaseSkillScanResult> {
+    const dir = projectDir ?? this.projectDir
+    const result = new Map<DevelopmentPhase, PhaseSkillScanResult>()
+
+    for (const phase of PHASE_DIRS) {
+      const phaseDir = join(dir, 'skills', phase)
+      const skills: SkillRef[] = []
+
+      if (existsSync(phaseDir)) {
+        try {
+          for (const entry of readdirSync(phaseDir)) {
+            if (entry.endsWith('.md')) {
+              const skillPath = join(phaseDir, entry)
+              const skillName = entry.replace('.md', '')
+              skills.push({
+                id: `phase-${phase.toLowerCase()}-${skillName}`,
+                name: skillName,
+                description: this.extractSkillDescription(skillPath),
+                platform: 'claude-code',
+                path: skillPath,
+                enabled: true,
+                phase,
+              })
+            }
+          }
+        } catch { /* Permission error */ }
+      }
+
+      result.set(phase, { phase, skills, count: skills.length })
+    }
+
+    return result
+  }
+
+  /**
+   * Get skills available for a specific development phase
+   * @param phase - Development phase (DEFINE, PLAN, BUILD, VERIFY, REVIEW, SHIP, ANTI-PATTERNS)
+   * @param projectDir - Project directory
+   * @returns List of skills for the phase
+   */
+  getSkillsForPhase(phase: DevelopmentPhase, projectDir?: string): SkillRef[] {
+    const scanResult = this.scanPhaseSkills(projectDir)
+    return scanResult.get(phase)?.skills ?? []
+  }
+
+  /**
+   * Generate phase-based skills index markdown
+   */
+  generatePhaseSkillsMd(scanResult: Map<DevelopmentPhase, PhaseSkillScanResult>): string {
+    const sections = ['# Phase-Based Skills Index\n\n']
+    sections.push('> Skills organized by development phase for intuitive discovery.\n\n')
+
+    const phaseDescriptions: Record<DevelopmentPhase, string> = {
+      'DEFINE': 'Requirements capture, ambiguity scoring, spec generation',
+      'PLAN': 'Architecture design, task breakdown, risk assessment',
+      'BUILD': 'TDD implementation, code style, feature development',
+      'VERIFY': 'Unit testing, integration testing, coverage analysis',
+      'REVIEW': 'Code review, security audit, quality gates',
+      'SHIP': 'Git commit, release management, deployment',
+      'ANTI-PATTERNS': 'Common pitfalls to avoid across all phases',
+    }
+
+    for (const phase of PHASE_DIRS) {
+      const result = scanResult.get(phase)
+      if (result && result.count > 0) {
+        sections.push(`## ${phase}\n\n${phaseDescriptions[phase]}\n\n`)
+        for (const skill of result.skills) {
+          const desc = skill.description ? ` — ${skill.description}` : ''
+          sections.push(`- ✅ **${skill.name}**${desc}\n`)
+        }
+        sections.push('\n')
+      }
+    }
+
+    sections.push('---\n\n')
+    sections.push('*Use `scale <phase>` commands to invoke phase workflows.*\n')
+
+    return sections.join('')
+  }
+
   // ========== Private Methods ==========
 
   private matchCategory(taskType: string, keywords: string[]): string | null {
@@ -304,6 +403,16 @@ export class SkillDiscovery implements ISkillDiscovery {
       sourceUrl: candidate.source,
       command,
       verification: `test -f ~/.claude/skills/${candidate.id}/SKILL.md`,
+    }
+  }
+
+  private extractSkillDescription(skillPath: string): string {
+    try {
+      const content = readFileSync(skillPath, 'utf-8')
+      const purposeMatch = content.match(/Purpose:\s*(.+)/)
+      return purposeMatch ? purposeMatch[1].trim() : ''
+    } catch {
+      return ''
     }
   }
 }
