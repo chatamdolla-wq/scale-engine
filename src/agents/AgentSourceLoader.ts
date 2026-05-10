@@ -1,4 +1,4 @@
-// SCALE Engine — Agent Source Loader (v0.9.0)
+// SCALE Engine — Agent Source Loader (v0.10.0)
 // 从外部 YAML 文件加载 Agent Profile 定义
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'

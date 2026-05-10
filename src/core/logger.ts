@@ -1,8 +1,14 @@
-// SCALE Engine — Logger
+// SCALE Engine - Logger
 import pino from 'pino'
 
+function resolveLogLevel(): string {
+  if (process.env.SCALE_LOG_LEVEL) return process.env.SCALE_LOG_LEVEL
+  if (process.argv.includes('--json')) return 'silent'
+  return 'info'
+}
+
 export const logger = pino({
-  level: process.env.SCALE_LOG_LEVEL ?? 'info',
+  level: resolveLogLevel(),
   transport:
     process.env.NODE_ENV === 'production'
       ? undefined

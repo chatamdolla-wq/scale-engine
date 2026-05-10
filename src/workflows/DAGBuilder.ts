@@ -1,4 +1,4 @@
-// SCALE Engine — DAG Builder (v0.9.0)
+// SCALE Engine — DAG Builder (v0.10.0)
 // DAG 工作流构建器：解析依赖关系、检测并行执行机会
 
 import type { WorkflowStepDef, DAGNode, DAGExecutionGraph } from '../agents/types.js'

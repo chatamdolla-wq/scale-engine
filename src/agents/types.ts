@@ -40,7 +40,7 @@ export interface CollaborationSpec {
 }
 
 // ============================================================================
-// Agent Persona Types (v0.9.0 — inspired by agency-agents-zh)
+// Agent Persona Types (v0.10.0 — inspired by agency-agents-zh)
 // ============================================================================
 
 /** Agent 人设定义 */
@@ -87,7 +87,7 @@ export interface AgentSuccessMetric {
   measurement: string           // 如何测量
 }
 
-/** Agent Profile：专业 Agent 定义 (v0.9.0 增强) */
+/** Agent Profile：专业 Agent 定义 (v0.10.0 增强) */
 export interface AgentProfile {
   // ========== 基础标识 ==========
   id: string                    // 'frontend-agent' | 'backend-agent'
@@ -291,7 +291,7 @@ export interface AgentStatusReport {
 }
 
 // ============================================================================
-// 6. YAML Workflow Types (v0.9.0 — DAG-based Orchestration)
+// 6. YAML Workflow Types (v0.10.0 — DAG-based Orchestration)
 // ============================================================================
 
 /** LLM Provider 配置 */

@@ -2,7 +2,7 @@
 // Integrates WebSearch/WebFetch for internet search
 
 import type { IEventBus } from '../core/eventBus.js'
-import type { SearchResult, CapabilityResult, ISearchCapability, CapabilityConfig } from './types.js'
+import type { SearchResult, CapabilityResult, ISearchCapability, IExaCapability, ExaSearchResult, CapabilityConfig } from './types.js'
 
 export class WebSearchCapability implements ISearchCapability {
   readonly name = 'websearch'
@@ -51,5 +51,58 @@ export class Context7SearchCapability implements ISearchCapability {
 
   async fetch(url: string): Promise<CapabilityResult<{ content: string }>> {
     return { success: true, data: { content: '' }, durationMs: 0 }
+  }
+}
+
+export class ExaCapability implements IExaCapability {
+  readonly name = 'exa-search'
+  readonly category = 'exa' as const
+  private eventBus: IEventBus
+  private apiKey?: string
+
+  constructor(eventBus: IEventBus, apiKey?: string) {
+    this.eventBus = eventBus
+    this.apiKey = apiKey
+  }
+
+  isAvailable(): boolean {
+    // Exa requires API key from ~/.claude.json MCP config
+    return !!this.apiKey
+  }
+
+  async initialize(): Promise<boolean> {
+    return this.isAvailable()
+  }
+
+  async shutdown(): Promise<void> {}
+
+  async webSearch(query: string, options?: { numResults?: number; category?: string }): Promise<CapabilityResult<ExaSearchResult[]>> {
+    const start = Date.now()
+    // Note: Real implementation requires MCP tool: web_search_exa
+    // This is a placeholder that documents the expected behavior
+    // Actual invocation happens via MCP server when configured in ~/.claude.json
+    if (!this.apiKey) {
+      return {
+        success: false,
+        error: 'Exa API key not configured. Add to ~/.claude.json: "exa-web-search": { "env": { "EXA_API_KEY": "your_key" } }',
+        durationMs: Date.now() - start
+      }
+    }
+    // Placeholder results - real invocation via MCP
+    const results: ExaSearchResult[] = []
+    return { success: true, data: results, durationMs: Date.now() - start }
+  }
+
+  async getCodeContext(query: string, options?: { tokensNum?: number }): Promise<CapabilityResult<string>> {
+    const start = Date.now()
+    // Note: Real implementation requires MCP tool: get_code_context_exa
+    if (!this.apiKey) {
+      return {
+        success: false,
+        error: 'Exa API key not configured. Add to ~/.claude.json: "exa-web-search": { "env": { "EXA_API_KEY": "your_key" } }',
+        durationMs: Date.now() - start
+      }
+    }
+    return { success: true, data: '', durationMs: Date.now() - start }
   }
 }

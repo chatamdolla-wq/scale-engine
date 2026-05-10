@@ -19,6 +19,8 @@ import { Doctor } from './doctor.js'
 import { quickStart, detectPlatform } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
+import { EvidenceStore } from '../workflow/EvidenceStore.js'
+import { ReviewStore } from '../workflow/ReviewStore.js'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -698,6 +700,117 @@ const stats = defineCommand({
   },
 })
 
+const status = defineCommand({
+  meta: { name: 'status', description: 'Show current SCALE workflow status' },
+  args: {
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const { store } = getEngine()
+    const evidenceStore = new EvidenceStore(SCALE_DIR)
+    const reviewStore = new ReviewStore(SCALE_DIR)
+    const [specs, plans, tasks, releases] = await Promise.all([
+      store.query({ type: 'Spec', limit: 1 }),
+      store.query({ type: 'Plan', limit: 1 }),
+      store.query({ type: 'Task', limit: 1 }),
+      store.query({ type: 'Release', limit: 1 }),
+    ])
+    const latestEvidence = evidenceStore.listGateResults(5)
+    const latestReviews = reviewStore.listReviews(5)
+    const latestTask = tasks[0]
+    const taskPayload = latestTask?.payload as { verificationEvidenceIds?: string[]; reviewEvidenceIds?: string[]; reviewPassed?: boolean; reviewedAt?: number; verifiedAt?: number; testPassed?: boolean; lintStatus?: string; testCoverage?: number } | undefined
+
+    const blockers: string[] = []
+    const latestBlockingEvidence = latestEvidence.find(record => !record.passed)
+    const latestBlockingReview = latestReviews.find(record => !record.passed)
+    if (latestBlockingEvidence) blockers.push(`${latestBlockingEvidence.gate}: ${latestBlockingEvidence.blockers.join('; ') || latestBlockingEvidence.status}`)
+    if (latestBlockingReview) blockers.push(`Review ${latestBlockingReview.id}: ${latestBlockingReview.summary.critical} critical, ${latestBlockingReview.summary.high} high`)
+    if (latestTask && (!taskPayload?.verificationEvidenceIds || taskPayload.verificationEvidenceIds.length === 0)) {
+      blockers.push(`Task ${latestTask.id} has no persisted verification evidence`)
+    }
+    if (latestTask?.status === 'COMPLETED' && (!taskPayload?.reviewEvidenceIds || taskPayload.reviewEvidenceIds.length === 0)) {
+      blockers.push(`Task ${latestTask.id} has no persisted review evidence`)
+    }
+
+    const nextCommand = (() => {
+      if (!specs[0]) return 'scale define "<feature>" --description "<what to build>"'
+      if (!plans[0]) return `scale plan ${specs[0].id}`
+      if (!latestTask) return `scale build ${plans[0].id}`
+      if (!taskPayload?.verificationEvidenceIds?.length) return `scale verify ${latestTask.id}`
+      if (latestTask.status !== 'COMPLETED') return `scale verify ${latestTask.id}`
+      if (!taskPayload.reviewEvidenceIds?.length || taskPayload.reviewPassed !== true) return `scale review ${latestTask.id}`
+      if (!releases[0]) return `scale ship ${latestTask.id}`
+      return 'scale evidence list'
+    })()
+
+    const result = {
+      artifacts: {
+        latestSpec: specs[0] ? { id: specs[0].id, status: specs[0].status, title: specs[0].title } : null,
+        latestPlan: plans[0] ? { id: plans[0].id, status: plans[0].status, title: plans[0].title } : null,
+        latestTask: latestTask ? {
+          id: latestTask.id,
+          status: latestTask.status,
+          title: latestTask.title,
+          lintStatus: taskPayload?.lintStatus,
+          testPassed: taskPayload?.testPassed,
+          testCoverage: taskPayload?.testCoverage,
+          evidenceIds: taskPayload?.verificationEvidenceIds ?? [],
+          reviewPassed: taskPayload?.reviewPassed,
+          reviewEvidenceIds: taskPayload?.reviewEvidenceIds ?? [],
+        } : null,
+      },
+      recentEvidence: latestEvidence.map(record => ({
+        id: record.id,
+        gate: record.gate,
+        status: record.status,
+        passed: record.passed,
+        blockers: record.blockers,
+        createdAt: record.createdAt,
+      })),
+      recentReviews: latestReviews.map(record => ({
+        id: record.id,
+        taskId: record.taskId,
+        passed: record.passed,
+        summary: record.summary,
+        createdAt: record.createdAt,
+      })),
+      blockers,
+      nextCommand,
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    console.log('\nSCALE Status')
+    console.log('Artifacts:')
+    console.log(`  Spec: ${result.artifacts.latestSpec ? `${result.artifacts.latestSpec.id} (${result.artifacts.latestSpec.status})` : 'none'}`)
+    console.log(`  Plan: ${result.artifacts.latestPlan ? `${result.artifacts.latestPlan.id} (${result.artifacts.latestPlan.status})` : 'none'}`)
+    console.log(`  Task: ${result.artifacts.latestTask ? `${result.artifacts.latestTask.id} (${result.artifacts.latestTask.status})` : 'none'}`)
+
+    if (result.artifacts.latestTask?.evidenceIds.length) {
+      console.log(`  Task evidence: ${result.artifacts.latestTask.evidenceIds.join(', ')}`)
+    }
+
+    console.log('\nRecent Evidence:')
+    if (result.recentEvidence.length === 0) {
+      console.log('  none')
+    } else {
+      for (const record of result.recentEvidence) {
+        console.log(`  ${record.id} ${record.gate} ${record.passed ? 'PASS' : record.status}`)
+      }
+    }
+
+    if (blockers.length > 0) {
+      console.log('\nBlockers:')
+      for (const blocker of blockers) console.log(`  - ${blocker}`)
+    }
+
+    console.log(`\nNext: ${nextCommand}`)
+  },
+})
+
 // ============================================================================
 // init command
 // ============================================================================
@@ -845,6 +958,75 @@ const workflowList = defineCommand({
 const workflow = defineCommand({
   meta: { name: 'workflow', description: 'Workflow preset management' },
   subCommands: { list: workflowList },
+})
+
+const evidenceList = defineCommand({
+  meta: { name: 'list', description: 'List persisted gate evidence records' },
+  args: {
+    limit: { type: 'string', default: '20', description: 'Maximum number of records' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const store = new EvidenceStore(SCALE_DIR)
+    const records = store.listGateResults(parseInt(args.limit, 10) || 20)
+    if (args.json) {
+      console.log(JSON.stringify(records, null, 2))
+      return
+    }
+    if (records.length === 0) {
+      console.log('No evidence records found.')
+      return
+    }
+    console.log('\nSCALE Evidence Records')
+    for (const record of records) {
+      const status = record.passed ? 'PASS' : record.status
+      const blockers = record.blockers.length > 0 ? ` blockers=${record.blockers.length}` : ''
+      console.log(`  ${record.id}  ${record.gate}  ${status}  ${new Date(record.createdAt).toISOString()}${blockers}`)
+    }
+    console.log('\nUsage: scale evidence show <id>')
+  },
+})
+
+const evidenceShow = defineCommand({
+  meta: { name: 'show', description: 'Show a persisted gate evidence record' },
+  args: {
+    id: { type: 'positional', required: true },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const store = new EvidenceStore(SCALE_DIR)
+    const record = store.getGateResult(args.id)
+    if (!record) {
+      console.error(`Evidence record not found: ${args.id}`)
+      process.exit(1)
+    }
+    if (args.json) {
+      console.log(JSON.stringify(record, null, 2))
+      return
+    }
+    console.log(`\nEvidence: ${record.id}`)
+    console.log(`Gate: ${record.gate}`)
+    console.log(`Status: ${record.status}`)
+    console.log(`Passed: ${record.passed}`)
+    console.log(`Created: ${new Date(record.createdAt).toISOString()}`)
+    console.log(`Duration: ${record.durationMs}ms`)
+    if (record.blockers.length > 0) {
+      console.log('\nBlockers:')
+      for (const blocker of record.blockers) console.log(`  - ${blocker}`)
+    }
+    console.log('\nEvidence Items:')
+    for (const item of record.evidenceItems) {
+      const status = item.passed ? 'PASS' : 'FAIL'
+      const target = item.command ?? item.path ?? ''
+      console.log(`  - [${status}] ${item.label}${target ? ` (${target})` : ''}`)
+      console.log(`    ${item.detail}`)
+    }
+  },
+})
+
+const evidence = defineCommand({
+  meta: { name: 'evidence', description: 'Persisted gate evidence inspection' },
+  subCommands: { list: evidenceList, show: evidenceShow },
 })
 
 // ============================================================================
@@ -1016,14 +1198,14 @@ const team = defineCommand({
 // ============================================================================
 
 // ============================================================================
-// Phase-Aligned Commands (v0.9.0) — agent-skills style
+// Phase-Aligned Commands (v0.10.0) - agent-skills style
 // ============================================================================
 
 import * as phaseCommands from '../cli/phaseCommands.js'
 import * as liteCommands from '../cli/liteCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.9.0', description: 'SCALE Engine v0.9.0 CLI — Phase Commands: define/plan/build/verify/review/ship · Lite Mode: scale lite · 11 agents · 10 workflows · 9 detectors' },
+  meta: { name: 'scale', version: '0.10.0', description: 'SCALE Engine v0.10.0 CLI - Phase Commands: define/plan/build/verify/review/ship; Lite Mode: scale lite; 11 agents; 10 workflows; 9 detectors' },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,
@@ -1051,7 +1233,9 @@ const main = defineCommand({
     context,
     evolve,
     stats,
+    status,
     workflow,
+    evidence,
     skill,
     agent,
     team,

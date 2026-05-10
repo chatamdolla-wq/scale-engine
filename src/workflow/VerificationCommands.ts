@@ -1,0 +1,175 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+export interface VerificationCommandConfig {
+  build?: string
+  lint?: string
+  test?: string
+  coverage?: string
+}
+
+export interface ResolvedVerificationCommand {
+  command?: string
+  source: 'override' | 'package-script' | 'fallback' | 'missing'
+  reason: string
+}
+
+export interface ResolvedVerificationCommands {
+  packageManager: string
+  build: ResolvedVerificationCommand
+  lint: ResolvedVerificationCommand
+  test: ResolvedVerificationCommand
+  coverage: ResolvedVerificationCommand
+}
+
+interface PackageJson {
+  packageManager?: string
+  scripts?: Record<string, string>
+}
+
+export function detectVerificationCommands(
+  cwd = process.cwd(),
+  overrides: VerificationCommandConfig = {},
+): ResolvedVerificationCommands {
+  const pkg = readPackageJson(cwd)
+  const scripts = pkg?.scripts ?? {}
+  const packageManager = detectPackageManager(cwd, pkg)
+
+  return {
+    packageManager,
+    build: resolveBuildCommand(packageManager, scripts, overrides.build),
+    lint: resolveScriptCommand(packageManager, scripts, 'lint', overrides.lint),
+    test: resolveScriptCommand(packageManager, scripts, 'test', overrides.test),
+    coverage: resolveCoverageCommand(packageManager, scripts, overrides.coverage),
+  }
+}
+
+function readPackageJson(cwd: string): PackageJson | null {
+  try {
+    return JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8')) as PackageJson
+  } catch {
+    return null
+  }
+}
+
+function detectPackageManager(cwd: string, pkg: PackageJson | null): string {
+  const declared = pkg?.packageManager?.split('@')[0]
+  if (declared) return declared
+
+  if (existsSync(join(cwd, 'package-lock.json'))) return 'npm'
+  if (existsSync(join(cwd, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (existsSync(join(cwd, 'yarn.lock'))) return 'yarn'
+  if (existsSync(join(cwd, 'bun.lock')) || existsSync(join(cwd, 'bun.lockb'))) return 'bun'
+  return 'npm'
+}
+
+function resolveScriptCommand(
+  packageManager: string,
+  scripts: Record<string, string>,
+  scriptName: string,
+  override?: string,
+): ResolvedVerificationCommand {
+  if (override?.trim()) {
+    return {
+      command: override.trim(),
+      source: 'override',
+      reason: `provided by CLI/config override for ${scriptName}`,
+    }
+  }
+
+  if (!scripts[scriptName]) {
+    return {
+      source: 'missing',
+      reason: `package.json has no "${scriptName}" script`,
+    }
+  }
+
+  return {
+    command: runScriptCommand(packageManager, scriptName),
+    source: 'package-script',
+    reason: `detected package.json "${scriptName}" script`,
+  }
+}
+
+function resolveCoverageCommand(
+  packageManager: string,
+  scripts: Record<string, string>,
+  override?: string,
+): ResolvedVerificationCommand {
+  if (override?.trim()) {
+    return {
+      command: override.trim(),
+      source: 'override',
+      reason: 'provided by CLI/config override for coverage',
+    }
+  }
+
+  if (scripts.coverage) {
+    return {
+      command: runScriptCommand(packageManager, 'coverage'),
+      source: 'package-script',
+      reason: 'detected package.json "coverage" script',
+    }
+  }
+
+  if (scripts.test) {
+    return {
+      command: `${runScriptCommand(packageManager, 'test')} -- --coverage`,
+      source: 'fallback',
+      reason: 'no "coverage" script; using test script with coverage flag',
+    }
+  }
+
+  return {
+    source: 'missing',
+    reason: 'package.json has neither "coverage" nor "test" script',
+  }
+}
+
+function resolveBuildCommand(
+  packageManager: string,
+  scripts: Record<string, string>,
+  override?: string,
+): ResolvedVerificationCommand {
+  if (override?.trim()) {
+    return {
+      command: override.trim(),
+      source: 'override',
+      reason: 'provided by CLI/config override for build',
+    }
+  }
+
+  if (scripts.build) {
+    return {
+      command: runScriptCommand(packageManager, 'build'),
+      source: 'package-script',
+      reason: 'detected package.json "build" script',
+    }
+  }
+
+  if (scripts.typecheck) {
+    return {
+      command: runScriptCommand(packageManager, 'typecheck'),
+      source: 'fallback',
+      reason: 'no "build" script; using package.json "typecheck" script',
+    }
+  }
+
+  return {
+    source: 'missing',
+    reason: 'package.json has neither "build" nor "typecheck" script',
+  }
+}
+
+function runScriptCommand(packageManager: string, scriptName: string): string {
+  if (packageManager === 'npm') {
+    return scriptName === 'test' ? 'npm test' : `npm run ${scriptName}`
+  }
+  if (packageManager === 'yarn') {
+    return `yarn ${scriptName}`
+  }
+  if (packageManager === 'bun') {
+    return `bun run ${scriptName}`
+  }
+  return scriptName === 'test' ? `${packageManager} test` : `${packageManager} run ${scriptName}`
+}

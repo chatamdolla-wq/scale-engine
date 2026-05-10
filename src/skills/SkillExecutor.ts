@@ -1,9 +1,9 @@
-// SCALE Engine — Skill Executor (v0.9.0)
+// SCALE Engine — Skill Executor (v0.10.0)
 // 技能执行器：执行不同类型的技能 + MCP 能力集成
 
 import type { IEventBus } from "../core/eventBus.js"
 import type { ISkillRegistry, SkillExecutionType } from "./SkillRegistry.js"
-import type { ICapabilityRegistry, IBrowserCapability, ISearchCapability, IComputerCapability } from "../capabilities/types.js"
+import type { ICapabilityRegistry, IBrowserCapability, ISearchCapability, IComputerCapability, IExaCapability } from "../capabilities/types.js"
 import { skillsInvoker } from "../capabilities/InstalledSkillsIntegration.js"
 import { spawn } from "node:child_process"
 
@@ -103,6 +103,11 @@ export class SkillExecutor implements ISkillExecutor {
           if (!computer) return { skillId: "", type: "mcp-tool", success: false, error: "Computer capability not available", durationMs: Date.now() - start }
           result = await this.executeComputerAction(computer, toolName, input)
           break
+        case 'exa':
+          const exa = this.capabilityRegistry.getExa()
+          if (!exa) return { skillId: "", type: "mcp-tool", success: false, error: "Exa search capability not available. Configure exa-web-search MCP server in ~/.claude.json", durationMs: Date.now() - start }
+          result = await this.executeExaAction(exa, toolName, input)
+          break
         default:
           return { skillId: "", type: "mcp-tool", success: false, error: `Unknown tool category: ${toolName}`, durationMs: Date.now() - start }
       }
@@ -113,8 +118,9 @@ export class SkillExecutor implements ISkillExecutor {
     }
   }
 
-  private getToolCategory(toolName: string): 'browser' | 'search' | 'computer' | 'unknown' {
+  private getToolCategory(toolName: string): 'browser' | 'search' | 'computer' | 'exa' | 'unknown' {
     if (toolName.includes('browser') || toolName.includes('navigate') || toolName.includes('click') || toolName.includes('screenshot')) return 'browser'
+    if (toolName.includes('exa') || toolName.includes('web_search_exa') || toolName.includes('get_code_context')) return 'exa'
     if (toolName.includes('search') || toolName.includes('fetch') || toolName.includes('web')) return 'search'
     if (toolName.includes('computer') || toolName.includes('cua') || toolName.includes('desktop')) return 'computer'
     return 'unknown'
@@ -137,6 +143,16 @@ export class SkillExecutor implements ISkillExecutor {
 
   private async executeComputerAction(computer: IComputerCapability, toolName: string, input: Record<string, unknown>): Promise<unknown> {
     return await computer.execute({ type: this.mapToolToComputerAction(toolName), coordinate: input.coordinate as [number, number], text: input.text as string })
+  }
+
+  private async executeExaAction(exa: IExaCapability, toolName: string, input: Record<string, unknown>): Promise<unknown> {
+    if (toolName.includes('web_search_exa') || toolName.includes('web_search')) {
+      return await exa.webSearch(input.query as string, { numResults: input.numResults as number, category: input.category as string })
+    }
+    if (toolName.includes('get_code_context_exa') || toolName.includes('get_code_context')) {
+      return await exa.getCodeContext(input.query as string, { tokensNum: input.tokensNum as number })
+    }
+    return { error: 'Unknown exa action' }
   }
 
   private mapToolToAction(toolName: string): 'navigate' | 'click' | 'fill' | 'screenshot' | 'snapshot' | 'wait' | 'hover' | 'press_key' {
@@ -175,6 +191,44 @@ export class SkillExecutor implements ISkillExecutor {
     this.registerBuiltinFunction("cua_screenshot", async () => skillsInvoker.cuaScreenshot())
     // graphify knowledge graph
     this.registerBuiltinFunction("graphify_build", async (input) => skillsInvoker.graphifyBuild(input.dir as string))
+    // ========== UI/UX Design Skills ==========
+    // ui-ux-pro-max design system generator
+    this.registerBuiltinFunction("ui_ux_design_system", async (input) => skillsInvoker.uiUxDesignSystem(input.query as string, input.projectName as string))
+    this.registerBuiltinFunction("ui_ux_domain_search", async (input) => skillsInvoker.uiUxDomainSearch(input.query as string, input.domain as string, input.maxResults as number))
+    this.registerBuiltinFunction("ui_ux_stack_guidelines", async (input) => skillsInvoker.uiUxStackGuidelines(input.query as string, input.stack as string))
+    // awesome-design-md brand design installer
+    this.registerBuiltinFunction("awesome_design_install", async (input) => skillsInvoker.awesomeDesignInstall(input.brand as string))
+    // ========== Baoyu Content Creation Skills ==========
+    this.registerBuiltinFunction("baoyu_image_gen", async (input) => skillsInvoker.baoyuImageGen(input.prompt as string, input.options as { model?: string; aspect?: string; output?: string }))
+    this.registerBuiltinFunction("baoyu_infographic", async (input) => skillsInvoker.baoyuInfographic(input.contentPath as string, input.options as { layout?: string; style?: string; aspect?: string; lang?: string }))
+    this.registerBuiltinFunction("baoyu_translate", async (input) => skillsInvoker.baoyuTranslate(input.filePath as string, input.mode as 'quick' | 'normal' | 'refined'))
+    this.registerBuiltinFunction("baoyu_slide_deck", async (input) => skillsInvoker.baoyuSlideDeck(input.contentPath as string, input.options as { style?: string; slides?: number; lang?: string }))
+    this.registerBuiltinFunction("baoyu_article_illustrator", async (input) => skillsInvoker.baoyuArticleIllustrator(input.articlePath as string))
+    this.registerBuiltinFunction("baoyu_comic", async (input) => skillsInvoker.baoyuComic(input.storyPath as string))
+    this.registerBuiltinFunction("baoyu_compress_image", async (input) => skillsInvoker.baoyuCompressImage(input.imagePath as string))
+    this.registerBuiltinFunction("baoyu_cover_image", async (input) => skillsInvoker.baoyuCoverImage(input.articlePath as string))
+    this.registerBuiltinFunction("baoyu_format_markdown", async (input) => skillsInvoker.baoyuFormatMarkdown(input.filePath as string))
+    this.registerBuiltinFunction("baoyu_markdown_to_html", async (input) => skillsInvoker.baoyuMarkdownToHtml(input.filePath as string, input.theme as string))
+    this.registerBuiltinFunction("baoyu_url_to_markdown", async (input) => skillsInvoker.baoyuUrlToMarkdown(input.url as string))
+    this.registerBuiltinFunction("baoyu_x_to_markdown", async (input) => skillsInvoker.baoyuXToMarkdown(input.url as string))
+    this.registerBuiltinFunction("baoyu_xhs_images", async (input) => skillsInvoker.baoyuXhsImages(input.url as string))
+    // ========== Document Processing Skills ==========
+    this.registerBuiltinFunction("pdf_extract", async (input) => skillsInvoker.pdfExtract(input.filePath as string))
+    this.registerBuiltinFunction("pdf_merge", async (input) => skillsInvoker.pdfMerge(input.files as string[], input.outputPath as string))
+    this.registerBuiltinFunction("docx_to_markdown", async (input) => skillsInvoker.docxToMarkdown(input.filePath as string))
+    this.registerBuiltinFunction("xlsx_analyze", async (input) => skillsInvoker.xlsxAnalyze(input.filePath as string))
+    this.registerBuiltinFunction("pptx_to_markdown", async (input) => skillsInvoker.pptxToMarkdown(input.filePath as string))
+    // ========== Deployment Skills ==========
+    this.registerBuiltinFunction("vercel_deploy", async (input) => skillsInvoker.vercelDeploy(input.path as string, input.scope as string))
+    this.registerBuiltinFunction("vercel_whoami", async () => skillsInvoker.vercelWhoami())
+    // ========== Video/Media Skills ==========
+    this.registerBuiltinFunction("remotion_render", async (input) => skillsInvoker.remotionRender(input.projectDir as string, input.composition as string))
+    this.registerBuiltinFunction("manim_render", async (input) => skillsInvoker.manimRender(input.sceneClass as string, input.quality as 'low' | 'medium' | 'high'))
+    // ========== Translation/Search Skills ==========
+    this.registerBuiltinFunction("deepl_translate", async (input) => skillsInvoker.deeplTranslate(input.text as string, input.targetLang as string))
+    // ========== Note: exa-search is MCP-based, not CLI ==========
+    // exa-search uses MCP tools: web_search_exa, get_code_context_exa
+    // These are invoked via executeMCPTool() method, not command line
   }
 
   private runCommand(command: string, timeout: number): Promise<string> {

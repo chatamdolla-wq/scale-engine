@@ -1,4 +1,4 @@
-// SCALE Engine — MCP Capability Types v0.9.0
+// SCALE Engine — MCP Capability Types v0.10.0
 
 export interface BrowserAction {
   type: 'navigate' | 'click' | 'fill' | 'screenshot' | 'snapshot' | 'evaluate' | 'wait' | 'hover' | 'press_key'
@@ -30,7 +30,7 @@ export interface CapabilityResult<T = unknown> {
 
 export interface IMCPCapability {
   readonly name: string
-  readonly category: 'browser' | 'search' | 'computer' | 'ui-ux'
+  readonly category: 'browser' | 'search' | 'computer' | 'exa' | 'ui-ux'
   isAvailable(): boolean
   initialize(): Promise<boolean>
   shutdown(): Promise<void>
@@ -51,6 +51,19 @@ export interface IComputerCapability extends IMCPCapability {
   execute(action: { type: 'click' | 'type' | 'scroll'; coordinate?: [number, number]; text?: string }): Promise<CapabilityResult<void>>
 }
 
+export interface ExaSearchResult {
+  title: string
+  url: string
+  snippet: string
+  publishedDate?: string
+  author?: string
+}
+
+export interface IExaCapability extends IMCPCapability {
+  webSearch(query: string, options?: { numResults?: number; category?: string }): Promise<CapabilityResult<ExaSearchResult[]>>
+  getCodeContext(query: string, options?: { tokensNum?: number }): Promise<CapabilityResult<string>>
+}
+
 export interface CapabilityConfig {
   browser: { enabled: boolean; preferredEngine: 'playwright' | 'chrome-devtools' }
   search: { enabled: boolean; defaultLimit: number }
@@ -67,6 +80,7 @@ export interface ICapabilityRegistry {
   getBrowser(): IBrowserCapability | null
   getSearch(): ISearchCapability | null
   getComputer(): IComputerCapability | null
+  getExa(): IExaCapability | null
   getAll(): IMCPCapability[]
   configure(config: Partial<CapabilityConfig>): void
 }

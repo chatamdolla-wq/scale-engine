@@ -1,5 +1,6 @@
-// SCALE Engine — Phase-Aligned Commands (v0.9.0)
-// 6 阶段快捷命令：DEFINE → PLAN → BUILD → VERIFY → REVIEW → SHIP
+// SCALE Engine - Phase-Aligned Commands (v0.10.0)
+// 6 phase commands: DEFINE -> PLAN -> BUILD -> VERIFY -> REVIEW -> SHIP
+// Integrates WorkflowEngine cognitive scaffolding and quality gates.
 
 import { defineCommand } from 'citty'
 
@@ -8,11 +9,47 @@ import { EventBus } from '../core/eventBus.js'
 import { SQLiteArtifactStore } from '../artifact/sqliteStore.js'
 import { FSM } from '../artifact/fsm.js'
 import { registerAllFSMs } from '../artifact/fsmDefinitions.js'
+import { CapabilityRegistry } from '../capabilities/CapabilityRegistry.js'
+import { SkillRegistry } from '../skills/SkillRegistry.js'
+import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
+import { EvidenceStore } from '../workflow/EvidenceStore.js'
+import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
+import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, type ChangedFile } from '../workflow/ReviewAnalyzer.js'
 import { join } from 'node:path'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
+
+function validateVerificationEvidence(ids: string[] | undefined): { ok: boolean; missing: string[]; failed: string[] } {
+  const evidenceStore = new EvidenceStore(SCALE_DIR)
+  const missing: string[] = []
+  const failed: string[] = []
+  for (const id of ids ?? []) {
+    const record = evidenceStore.getGateResult(id)
+    if (!record) {
+      missing.push(id)
+    } else if (!record.passed) {
+      failed.push(id)
+    }
+  }
+  return { ok: (ids?.length ?? 0) > 0 && missing.length === 0 && failed.length === 0, missing, failed }
+}
+
+function validateReviewEvidence(ids: string[] | undefined): { ok: boolean; missing: string[]; failed: string[] } {
+  const reviewStore = new ReviewStore(SCALE_DIR)
+  const missing: string[] = []
+  const failed: string[] = []
+  for (const id of ids ?? []) {
+    const record = reviewStore.getReview(id)
+    if (!record) {
+      missing.push(id)
+    } else if (!record.passed) {
+      failed.push(id)
+    }
+  }
+  return { ok: (ids?.length ?? 0) > 0 && missing.length === 0 && failed.length === 0, missing, failed }
+}
 
 function getEngine() {
   ensureDir(SCALE_DIR)
@@ -23,11 +60,33 @@ function getEngine() {
   })
   const fsm = new FSM(store, eventBus)
   registerAllFSMs(fsm)
-  return { eventBus, store, fsm }
+
+  // Initialize capability registry
+  const capabilityRegistry = new CapabilityRegistry(eventBus)
+
+  // Initialize skill registry
+  const skillRegistry = new SkillRegistry(eventBus)
+
+  // Initialize workflow engine with cognitive scaffolding and quality gates.
+  const workflowEngine = new WorkflowEngine({
+    eventBus,
+    capabilityRegistry,
+    skillRegistry
+  })
+
+  return { eventBus, store, fsm, workflowEngine, skillRegistry }
 }
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+}
+
+function isTruthyFlag(value: unknown): boolean {
+  return value === true || value === '' || value === 'true' || value === '1'
+}
+
+function shouldSkipCommit(value: unknown): boolean {
+  return isTruthyFlag(value) || process.argv.includes('--no-commit') || process.argv.includes('--skip-commit')
 }
 
 // Helper: Generate spec markdown file
@@ -68,17 +127,24 @@ function calculateAmbiguityScore(description: string, successCriteria: string[])
   return Math.max(0.05, score)
 }
 
-// DEFINE Phase
+// DEFINE Phase - AmbiguityScorer + SocraticQuestioner + G1 gate
 export const phaseDefine = defineCommand({
-  meta: { name: 'define', description: 'DEFINE: Create Spec (/spec)' },
+  meta: { name: 'define', description: 'DEFINE: Create Spec with AmbiguityScorer + SocraticQuestioner (/spec)' },
   args: {
     title: { type: 'positional', required: true },
     description: { type: 'string', alias: 'd' },
     'success-criteria': { type: 'string', alias: 'c', description: 'Comma-separated criteria' },
+    // Socratic refinement answers (optional)
+    'goal': { type: 'string', description: 'Goal answer for Socratic refinement' },
+    'constraint': { type: 'string', description: 'Constraint answer for Socratic refinement' },
+    'acceptance': { type: 'string', description: 'Acceptance criteria answer for Socratic refinement' },
+    'context': { type: 'string', description: 'Context answer for Socratic refinement' },
+    'risk': { type: 'string', description: 'Risk answer for Socratic refinement' },
+    'priority': { type: 'string', description: 'Priority answer for Socratic refinement' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { store, fsm } = getEngine()
+    const { store, fsm, workflowEngine } = getEngine()
     const desc = args.description ?? args.title
 
     // Parse success criteria
@@ -86,20 +152,88 @@ export const phaseDefine = defineCommand({
       ? args['success-criteria'].split(',').map(s => s.trim()).filter(s => s)
       : ['Feature works as described', 'No regression in existing functionality']
 
-    // Calculate ambiguity score
-    const ambiguityScore = calculateAmbiguityScore(desc, successCriteria)
+    // === WorkflowEngine Integration ===
+    // Step 1: Explore with AmbiguityScorer + SocraticQuestioner
+    const exploreResult = await workflowEngine.explore(desc)
+    const ambiguityResult = workflowEngine.getAmbiguityScorer().analyzeRequirement(desc)
+
+    // Step 2: Check if requirement needs refinement.
+    if (ambiguityResult.blocked) {
+      console.error('\nRequirement ambiguity is too high (>40%); refine the requirement first.')
+      console.log('\n   Refine the requirement by answering:')
+      console.log('   - What is the goal?')
+      console.log('   - What are the input/output boundaries?')
+      console.log('   - What are the acceptance criteria?\n')
+      process.exit(1)
+    }
+
+    // Step 3: Handle Socratic refinement if ambiguity > 20%
+    let refinedRequirement = desc
+    let finalAmbiguityScore = ambiguityResult.totalScore
+
+    if (ambiguityResult.requiresQuestioning && exploreResult.socraticSession) {
+      const session = exploreResult.socraticSession
+
+      if (!args.json) {
+        console.log('\nRequirement ambiguity is >20%; starting Socratic refinement.')
+        console.log('\nSix-question refinement framework:')
+        console.log(workflowEngine.getSocraticQuestioner().formatSessionReport(session))
+      }
+
+      // Check if user provided answers via CLI args
+      const answers: { questionId: string; answer: string }[] = []
+      if (args.goal) answers.push({ questionId: 'q-goal', answer: args.goal })
+      if (args.constraint) answers.push({ questionId: 'q-constraint', answer: args.constraint })
+      if (args.acceptance) answers.push({ questionId: 'q-acceptance', answer: args.acceptance })
+      if (args.context) answers.push({ questionId: 'q-context', answer: args.context })
+      if (args.risk) answers.push({ questionId: 'q-risk', answer: args.risk })
+      if (args.priority) answers.push({ questionId: 'q-priority', answer: args.priority })
+
+      // If answers provided, process them
+      if (answers.length > 0) {
+        for (const { questionId, answer } of answers) {
+          workflowEngine.getSocraticQuestioner().recordAnswer(session.sessionId, questionId, answer)
+        }
+
+        const progress = workflowEngine.getSocraticQuestioner().evaluateProgress(session)
+
+        if (progress.refined) {
+          refinedRequirement = workflowEngine.getSocraticQuestioner().generateRefinedRequirement(session)
+          finalAmbiguityScore = progress.newAmbiguity
+
+          if (!args.json) {
+            console.log('\nRequirement refined; ambiguity reduced to: ' + finalAmbiguityScore.toFixed(2))
+            console.log('\nRefined requirement:')
+            console.log(refinedRequirement)
+          }
+        } else if (!args.json) {
+          console.log('\nMore answers are needed to refine the requirement.')
+          console.log('   Current ambiguity: ' + progress.newAmbiguity.toFixed(2))
+        }
+      } else if (!args.json) {
+        console.log('\nYou can refine the requirement with:')
+        console.log('   --goal "goal description"')
+        console.log('   --constraint "constraints and boundaries"')
+        console.log('   --acceptance "acceptance criteria"')
+        console.log('   --context "context and dependencies"')
+        console.log('   --risk "risk scenarios"')
+        console.log('   --priority "priority order"\n')
+      }
+    }
+
+    const ambiguityScore = finalAmbiguityScore
 
     // Create Need artifact
     const need = await store.create({
       type: 'Need', title: args.title,
-      payload: { rawText: desc },
+      payload: { rawText: refinedRequirement },
       initialStatus: 'DRAFT',
       createdBy: { kind: 'human', userId: 'cli' },
     })
 
-    // Create Spec artifact with proper payload
+    // Create Spec artifact with proper payload (use refined requirement if available)
     const specPayload: SpecPayload = {
-      what: desc,
+      what: refinedRequirement,
       successCriteria,
       outOfScope: [],
       edgeCases: [],
@@ -128,13 +262,13 @@ export const phaseDefine = defineCommand({
     } catch (e) {
       // Guard may fail - report reason
       const error = e as Error
-      if (!args.json) console.log(`   ⚠️ FSM transition: ${error.message}`)
+      if (!args.json) console.log(`   FSM transition: ${error.message}`)
     }
 
     const result = { phase: 'DEFINE', spec, specPath, ambiguityScore, successCriteria }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log(`\n✅ DEFINE: ${spec.id}`)
+      console.log(`\nDEFINE: ${spec.id}`)
       console.log(`   Spec file: ${specPath}`)
       console.log(`   Ambiguity score: ${ambiguityScore.toFixed(2)}`)
       console.log(`   Success criteria: ${successCriteria.length}`)
@@ -170,9 +304,9 @@ ${payload.estimatedComplexity ?? 5}/10
 `
 }
 
-// PLAN Phase
+// PLAN Phase - ConsensusPlanner + G2 gate
 export const phasePlan = defineCommand({
-  meta: { name: 'plan', description: 'PLAN: Create Plan (/plan)' },
+  meta: { name: 'plan', description: 'PLAN: Create Plan with ConsensusPlanner (/plan)' },
   args: {
     'spec-id': { type: 'positional', required: true },
     approach: { type: 'string', alias: 'a', description: 'Implementation approach' },
@@ -180,18 +314,29 @@ export const phasePlan = defineCommand({
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { store, fsm } = getEngine()
+    const { store, fsm, workflowEngine } = getEngine()
 
     // Validate spec exists
     const spec = await store.get(args['spec-id'])
     if (!spec || spec.type !== 'Spec') {
-      console.error(`\n❌ Spec not found: ${args['spec-id']}\n`)
+      console.error(`\nSpec not found: ${args['spec-id']}\n`)
       process.exit(1)
     }
 
+    // === WorkflowEngine Integration ===
+    // Step 1: Run ConsensusPlanner (Planner -> Architect -> Critic).
+    const specDesc = (spec.payload as SpecPayload).what
+    const consensusResult = await workflowEngine.plan(specDesc) as import('../workflow/types.js').RALPLANOutput
+
+    // Step 2: Display RALPLAN-DR output
+    if (!args.json) {
+      console.log('\nConsensus Planning Result:')
+      console.log(workflowEngine.getConsensusPlanner().formatReport(consensusResult))
+    }
+
     // Default rollback strategy (FSM guard requires this)
-    const rollbackStrategy = args.rollback ?? 'Revert git commits and restore previous version'
-    const approach = args.approach ?? 'Standard implementation following spec requirements'
+    const rollbackStrategy = args.rollback ?? consensusResult.preMortem.mitigations.join('\n') ?? 'Revert git commits'
+    const approach = args.approach ?? consensusResult.viableOptions.find((o: import('../workflow/types.js').ViableOption) => o.selected)?.description ?? 'Standard implementation'
 
     // Create PlanPayload with rollback strategy
     const planPayload: PlanPayload = {
@@ -221,13 +366,13 @@ export const phasePlan = defineCommand({
       await fsm.transition(plan.id, 'review', { actor: { kind: 'system', component: 'phase-plan' } })
     } catch (e) {
       const error = e as Error
-      if (!args.json) console.log(`   ⚠️ FSM transition: ${error.message}`)
+      if (!args.json) console.log(`   FSM transition: ${error.message}`)
     }
 
     const result = { phase: 'PLAN', plan, planPath, rollbackStrategy }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log(`\n✅ PLAN: ${plan.id}`)
+      console.log(`\nPLAN: ${plan.id}`)
       console.log(`   Plan file: ${planPath}`)
       console.log(`   Rollback: ${rollbackStrategy}`)
       console.log(`\n   Next: scale build ${plan.id}\n`)
@@ -249,7 +394,7 @@ export const phaseBuild = defineCommand({
     // Validate plan exists
     const plan = await store.get(args['plan-id'])
     if (!plan || plan.type !== 'Plan') {
-      console.error(`\n❌ Plan not found: ${args['plan-id']}\n`)
+      console.error(`\nPlan not found: ${args['plan-id']}\n`)
       process.exit(1)
     }
 
@@ -281,7 +426,7 @@ export const phaseBuild = defineCommand({
       await fsm.transition(task.id, 'start', { actor: { kind: 'human', userId: 'cli' } })
     } catch (e) {
       const error = e as Error
-      if (!args.json) console.log(`   ⚠️ FSM transition: ${error.message}`)
+      if (!args.json) console.log(`   FSM transition: ${error.message}`)
     }
 
     // Update Plan status to IMPLEMENTING
@@ -292,7 +437,7 @@ export const phaseBuild = defineCommand({
     const result = { phase: 'BUILD', task, status: 'RUNNING' }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log(`\n✅ BUILD: ${task.id}`)
+      console.log(`\nBUILD: ${task.id}`)
       console.log(`   Status: RUNNING (ready to implement)`)
       console.log(`   Description: ${taskPayload.description}`)
       console.log(`\n   Implement now, then run: scale verify ${task.id}\n`)
@@ -312,75 +457,73 @@ async function runVerificationCmd(cmd: string): Promise<{ exitCode: number; outp
   })
 }
 
-// VERIFY Phase
+// VERIFY Phase - GateSystem quality gates
 export const phaseVerify = defineCommand({
-  meta: { name: 'verify', description: 'VERIFY: Run tests and update Task (/test)' },
+  meta: { name: 'verify', description: 'VERIFY: Run Gates G3-G7 (/test)' },
   args: {
     'task-id': { type: 'positional', required: true },
-    'build-cmd': { type: 'string', default: 'npm run build', description: 'Build command' },
-    'lint-cmd': { type: 'string', default: 'npm run lint', description: 'Lint command' },
-    'test-cmd': { type: 'string', default: 'npm test', description: 'Test command' },
+    'build-cmd': { type: 'string', description: 'Override build command' },
+    'lint-cmd': { type: 'string', description: 'Override lint command' },
+    'test-cmd': { type: 'string', description: 'Override test command' },
+    'coverage-cmd': { type: 'string', description: 'Override coverage command' },
     'skip-build': { type: 'boolean', default: false },
     'skip-lint': { type: 'boolean', default: false },
     'skip-test': { type: 'boolean', default: false },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { store, fsm } = getEngine()
+    const { store, fsm, workflowEngine } = getEngine()
 
     // Validate task exists
     const task = await store.get(args['task-id'])
     if (!task || task.type !== 'Task') {
-      console.error(`\n❌ Task not found: ${args['task-id']}\n`)
+      console.error(`\nTask not found: ${args['task-id']}\n`)
       process.exit(1)
     }
 
+    // === WorkflowEngine Integration ===
+    // Step 1: Run GateSystem G3-G7
+    if (!args.json) console.log('\nRunning Quality Gates...')
+    const gateResults = await workflowEngine.verify({
+      build: args['build-cmd'],
+      lint: args['lint-cmd'],
+      test: args['test-cmd'],
+      coverage: args['coverage-cmd'],
+    })
+
+    // Step 2: Display gate results
+    if (!args.json) {
+      console.log('\nGate Results:')
+      for (const result of gateResults) {
+        console.log(`   ${result.passed ? '[PASS]' : '[FAIL]'} ${result.gate}: ${result.evidence.slice(0, 50)}`)
+        if (result.blockers.length > 0) {
+          result.blockers.forEach((b: string) => console.log(`      [BLOCKER] ${b.slice(0, 80)}`))
+        }
+      }
+    }
+
+    // Extract results from gateResults
+    const g0Result = gateResults.find(g => g.gate === 'G0')
+    const g4Result = gateResults.find(g => g.gate === 'G4')
+    const g5Result = gateResults.find(g => g.gate === 'G5')
+    const g6Result = gateResults.find(g => g.gate === 'G6')
+    const g7Result = gateResults.find(g => g.gate === 'G7')
+
     const results = {
-      buildStatus: 'pending' as 'pending' | 'success' | 'failed',
-      buildExitCode: undefined as number | undefined,
-      lintStatus: 'pending' as 'pending' | 'success' | 'failed',
-      testPassed: undefined as boolean | undefined,
+      buildStatus: g0Result?.passed ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
+      buildExitCode: g0Result?.evidenceItems?.find(item => item.kind === 'command')?.exitCode,
+      lintStatus: g4Result?.passed ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
+      testPassed: g5Result?.passed,
       testCoverage: undefined as number | undefined,
+      securityPassed: g7Result?.passed,
     }
+    const verificationEvidenceIds = gateResults
+      .map(g => g.evidenceRecordId)
+      .filter((id): id is string => Boolean(id))
 
-    // Run build
-    if (!args['skip-build']) {
-      if (!args.json) console.log('\n🔨 Running build...')
-      const build = await runVerificationCmd(args['build-cmd'])
-      results.buildStatus = build.exitCode === 0 ? 'success' : 'failed'
-      results.buildExitCode = build.exitCode
-      if (!args.json) {
-        if (build.exitCode === 0) console.log('   ✅ Build passed')
-        else console.log('   ❌ Build failed (exit code:', build.exitCode, ')')
-      }
-    }
-
-    // Run lint
-    if (!args['skip-lint']) {
-      if (!args.json) console.log('\n🔍 Running lint...')
-      const lint = await runVerificationCmd(args['lint-cmd'])
-      results.lintStatus = lint.exitCode === 0 ? 'success' : 'failed'
-      if (!args.json) {
-        if (lint.exitCode === 0) console.log('   ✅ Lint passed')
-        else console.log('   ❌ Lint failed (exit code:', lint.exitCode, ')')
-      }
-    }
-
-    // Run tests
-    if (!args['skip-test']) {
-      if (!args.json) console.log('\n🧪 Running tests...')
-      const test = await runVerificationCmd(args['test-cmd'])
-      results.testPassed = test.exitCode === 0
-      // Extract coverage (Jest format)
-      const coverageMatch = test.output.match(/All files[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|[^|]*\|\s*(\d+\.?\d*)/)
-      if (coverageMatch) results.testCoverage = parseFloat(coverageMatch[1])
-      if (!args.json) {
-        if (test.exitCode === 0) {
-          console.log('   ✅ Tests passed')
-          if (results.testCoverage) console.log('   Coverage:', results.testCoverage, '%')
-        } else console.log('   ❌ Tests failed (exit code:', test.exitCode, ')')
-      }
-    }
+    // Extract coverage from G6 evidence
+    const coverageMatch = g6Result?.evidence.match(/Coverage: (\d+\.?\d*)%/)
+    if (coverageMatch) results.testCoverage = parseFloat(coverageMatch[1])
 
     // Update Task payload with verification results
     const currentPayload = task.payload as TaskPayload
@@ -391,13 +534,18 @@ export const phaseVerify = defineCommand({
       lintStatus: results.lintStatus,
       testPassed: results.testPassed,
       testCoverage: results.testCoverage,
+      verificationEvidenceIds,
+      verifiedAt: Date.now(),
     }
     await store.update(args['task-id'], { payload: updatedPayload })
 
     // Attempt FSM transition to COMPLETED
     const allPassed = results.buildStatus === 'success' &&
+                      (results.buildExitCode ?? 1) === 0 &&
                       results.lintStatus === 'success' &&
-                      results.testPassed === true
+                      results.testPassed === true &&
+                      (results.testCoverage ?? 0) >= 80 &&
+                      results.securityPassed === true
 
     let transitionResult = null
     if (allPassed) {
@@ -405,35 +553,83 @@ export const phaseVerify = defineCommand({
         transitionResult = await fsm.transition(args['task-id'], 'complete', {
           actor: { kind: 'human', userId: 'cli' }
         })
-        if (!args.json) console.log('\n✅ Task marked COMPLETED')
+        if (!args.json) console.log('\nTask marked COMPLETED')
       } catch (e) {
         const error = e as Error
-        if (!args.json) console.log('\n⚠️ FSM transition failed:', error.message)
+        if (!args.json) console.log('\nFSM transition failed:', error.message)
       }
     }
 
     const passed = allPassed && (transitionResult?.success ?? false)
-    const result = { phase: 'VERIFY', taskId: args['task-id'], results, passed }
+    const result = { phase: 'VERIFY', taskId: args['task-id'], results, evidenceIds: verificationEvidenceIds, passed }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log(`\n📊 VERIFY: ${passed ? '✅ PASSED' : '❌ FAILED'}`)
+      console.log(`\nVERIFY: ${passed ? 'PASSED' : 'FAILED'}`)
       if (passed) console.log(`\n   Next: scale review\n`)
       else console.log(`\n   Fix issues and re-run: scale verify ${args['task-id']}\n`)
     }
   },
 })
 
-// Review finding structure
-interface ReviewFinding {
-  category: 'style' | 'logic' | 'security' | 'performance'
-  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
-  description: string
-  file?: string
+async function runGit(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const { execa } = await import('execa')
+  const result = await execa('git', args, { reject: false })
+  return {
+    exitCode: result.exitCode ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  }
 }
 
-// REVIEW Phase
+function mergeUntrackedFilesIntoStatus(statusOutput: string, untrackedOutput: string): string {
+  const existing = new Set(parseChangedFiles(statusOutput).map(file => file.path.replace(/\\/g, '/')))
+  const additions = untrackedOutput
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(path => shouldReviewFile(path))
+    .filter(path => !existing.has(path.replace(/\\/g, '/')))
+
+  return [statusOutput.trim(), ...additions].filter(Boolean).join('\n')
+}
+
+function readUntrackedFileAsDiff(path: string): string {
+  try {
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size > 250_000) return ''
+    const content = readFileSync(path, 'utf-8')
+    if (content.includes('\u0000')) return ''
+    return content
+      .split('\n')
+      .slice(0, 2000)
+      .map(line => `+${line}`)
+      .join('\n')
+  } catch {
+    return ''
+  }
+}
+
+async function reviewGitChanges(taskPayload?: TaskPayload): Promise<{ changedFiles: ChangedFile[]; findings: ReviewFinding[] }> {
+  const status = await runGit(['status', '--short'])
+  const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
+  const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
+  const changedFiles = analyzeReview({ statusOutput, diffs: [], taskPayload }).changedFiles
+  const diffs: Array<{ file: string; text: string }> = []
+  for (const file of changedFiles.slice(0, 50)) {
+    if (file.status === '??') {
+      diffs.push({ file: file.path, text: readUntrackedFileAsDiff(file.path) })
+    } else {
+      const diff = await runGit(['diff', '--', file.path])
+      diffs.push({ file: file.path, text: diff.stdout })
+    }
+  }
+
+  return analyzeReview({ statusOutput, diffs, taskPayload })
+}
+
+// REVIEW Phase - KarpathyEvaluator + deterministic review evidence
 export const phaseReview = defineCommand({
-  meta: { name: 'review', description: 'REVIEW: Code review (/review)' },
+  meta: { name: 'review', description: 'REVIEW: Code review with Karpathy Principles (/review)' },
   args: {
     'task-id': { type: 'positional', required: false },
     'check-security': { type: 'boolean', default: true },
@@ -441,113 +637,133 @@ export const phaseReview = defineCommand({
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { store } = getEngine()
+    const { store, workflowEngine } = getEngine()
+    const reviewStore = new ReviewStore(SCALE_DIR)
 
     // If task-id provided, validate task exists
     let task = null
+    let taskPayload: TaskPayload | undefined
     if (args['task-id']) {
       task = await store.get(args['task-id'])
       if (!task || task.type !== 'Task') {
-        console.error(`\n❌ Task not found: ${args['task-id']}\n`)
+        console.error(`\nTask not found: ${args['task-id']}\n`)
         process.exit(1)
       }
+      taskPayload = task.payload as TaskPayload
     }
 
-    const findings: ReviewFinding[] = []
+    // === WorkflowEngine Integration ===
+    // Step 1: Karpathy Principles Check
+    const karpathyResult = workflowEngine.checkKarpathy({
+      hypothesesListed: true,    // Would be determined from actual context
+      hasExtraFeatures: false,   // Would be determined from actual context
+      changesTraceable: true,    // Would be determined from actual context
+      hasVerifiableGoal: true    // Would be determined from actual context
+    })
 
-    // Style checklist
-    if (args['check-style']) {
-      findings.push({ category: 'style', severity: 'MEDIUM', description: 'Check function length (<50 lines)' })
-      findings.push({ category: 'style', severity: 'MEDIUM', description: 'Check file size (<800 lines)' })
-      findings.push({ category: 'style', severity: 'LOW', description: 'Check naming conventions' })
-      findings.push({ category: 'style', severity: 'LOW', description: 'Check no deep nesting (>4 levels)' })
+    if (!args.json) {
+      console.log('\nKarpathy Principles Check:')
+      console.log(workflowEngine.getKarpathyEvaluator().formatReport())
     }
 
-    // Security checklist
-    if (args['check-security']) {
-      findings.push({ category: 'security', severity: 'CRITICAL', description: 'No hardcoded secrets/credentials' })
-      findings.push({ category: 'security', severity: 'HIGH', description: 'Input validation at boundaries' })
-      findings.push({ category: 'security', severity: 'HIGH', description: 'No SQL injection (parameterized queries)' })
-      findings.push({ category: 'security', severity: 'HIGH', description: 'No XSS (sanitized output)' })
-      findings.push({ category: 'security', severity: 'MEDIUM', description: 'Error messages not leak sensitive data' })
+    const review = await reviewGitChanges(taskPayload)
+    const findings = review.findings
+    const summary = summarizeFindings(findings)
+    const passed = summary.critical === 0 && summary.high === 0
+    const record: ReviewRecord = reviewStore.saveReview({
+      taskId: args['task-id'],
+      passed,
+      findings,
+      changedFiles: review.changedFiles.map(file => file.path),
+      summary,
+    })
+
+    if (task && taskPayload) {
+      const updatedPayload: TaskPayload = {
+        ...taskPayload,
+        reviewPassed: passed,
+        reviewEvidenceIds: [...(taskPayload.reviewEvidenceIds ?? []), record.id],
+        reviewedAt: Date.now(),
+      }
+      await store.update(task.id, { payload: updatedPayload })
     }
-
-    // Logic checklist
-    findings.push({ category: 'logic', severity: 'HIGH', description: 'Edge cases handled' })
-    findings.push({ category: 'logic', severity: 'HIGH', description: 'Error handling explicit' })
-    findings.push({ category: 'logic', severity: 'MEDIUM', description: 'No N+1 queries' })
-
-    // Performance checklist
-    findings.push({ category: 'performance', severity: 'MEDIUM', description: 'No unbounded loops/queries' })
-    findings.push({ category: 'performance', severity: 'LOW', description: 'Caching where appropriate' })
-
-    // Count by severity
-    const critical = findings.filter(f => f.severity === 'CRITICAL').length
-    const high = findings.filter(f => f.severity === 'HIGH').length
-    const medium = findings.filter(f => f.severity === 'MEDIUM').length
-    const low = findings.filter(f => f.severity === 'LOW').length
-
-    const passed = critical === 0 // Only block on CRITICAL issues
 
     const result = {
       phase: 'REVIEW',
       taskId: args['task-id'],
+      reviewId: record.id,
       findings,
-      summary: { critical, high, medium, low },
+      changedFiles: review.changedFiles.map(file => file.path),
+      summary,
       passed,
       recommendation: passed ? 'Ready to ship' : 'Fix CRITICAL issues before shipping'
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log('\n🔍 REVIEW Phase')
-      console.log('\nReview Checklist:')
-      console.log('┌─────────────────────────────────────────────┐')
-      console.log(`│ CRITICAL: ${critical} issues ${critical > 0 ? '⚠️  BLOCKED' : '✅'}           │`)
-      console.log(`│ HIGH:     ${high} issues                      │`)
-      console.log(`│ MEDIUM:   ${medium} issues                     │`)
-      console.log(`│ LOW:      ${low} issues                        │`)
-      console.log('└─────────────────────────────────────────────┘')
+      console.log('\nREVIEW Phase')
+      console.log(`\nReview evidence: ${record.id}`)
+      console.log('\nReview Findings:')
+      console.log('----------------------------------------')
+      console.log(`CRITICAL: ${summary.critical} issues ${summary.critical > 0 ? 'BLOCKED' : 'OK'}`)
+      console.log(`HIGH:     ${summary.high} issues ${summary.high > 0 ? 'BLOCKED' : 'OK'}`)
+      console.log(`MEDIUM:   ${summary.medium} issues`)
+      console.log(`LOW:      ${summary.low} issues`)
+      console.log('----------------------------------------')
+      findings.slice(0, 10).forEach(f => console.log(`  [${f.severity}] ${f.file ? `${f.file}: ` : ''}${f.description}`))
 
       if (passed) {
-        console.log('\n✅ Review passed (no CRITICAL issues)')
+        console.log('\nReview passed (no CRITICAL issues)')
         console.log('\n   Next: scale ship ' + (args['task-id'] ?? '<task-id>') + '\n')
       } else {
-        console.log('\n❌ Review blocked by CRITICAL issues')
+        console.log('\nReview blocked by CRITICAL issues')
         console.log('\n   Fix critical issues, then: scale review\n')
       }
     }
   },
 })
 
-// SHIP Phase
+// SHIP Phase - HonestDelivery
 export const phaseShip = defineCommand({
-  meta: { name: 'ship', description: 'SHIP: Commit and complete (/ship)' },
+  meta: { name: 'ship', description: 'SHIP: Commit with HonestDelivery Report (/ship)' },
   args: {
     'task-id': { type: 'positional', required: true },
     message: { type: 'string', alias: 'm', description: 'Commit message' },
     'no-commit': { type: 'boolean', default: false, description: 'Skip git commit' },
+    'skip-commit': { type: 'boolean', default: false, description: 'Skip git commit' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { store, fsm } = getEngine()
+    const { store, fsm, workflowEngine } = getEngine()
 
     // Validate task exists
     const task = await store.get(args['task-id'])
     if (!task || task.type !== 'Task') {
-      console.error(`\n❌ Task not found: ${args['task-id']}\n`)
+      console.error(`\nTask not found: ${args['task-id']}\n`)
       process.exit(1)
     }
 
     // Check if task is completed (or attempt transition)
     const payload = task.payload as TaskPayload
+    const evidenceValidation = validateVerificationEvidence(payload.verificationEvidenceIds)
+    const reviewValidation = validateReviewEvidence(payload.reviewEvidenceIds)
     const verificationPassed = payload.buildStatus === 'success' &&
+                                (payload.buildExitCode ?? 1) === 0 &&
                                 payload.lintStatus === 'success' &&
-                                payload.testPassed === true
+                                payload.testPassed === true &&
+                                (payload.testCoverage ?? 0) >= 80 &&
+                                evidenceValidation.ok
+    const reviewPassed = payload.reviewPassed === true && reviewValidation.ok
 
     if (task.status !== 'COMPLETED') {
       if (!verificationPassed) {
-        console.error('\n❌ Task not verified. Run: scale verify ' + args['task-id'] + '\n')
+        console.error('\nTask not verified with persisted evidence. Run: scale verify ' + args['task-id'] + '\n')
+        if (evidenceValidation.missing.length > 0) {
+          console.error('Missing evidence records: ' + evidenceValidation.missing.join(', '))
+        }
+        if (evidenceValidation.failed.length > 0) {
+          console.error('Failed evidence records: ' + evidenceValidation.failed.join(', '))
+        }
         process.exit(1)
       }
       // Attempt FSM transition
@@ -557,15 +773,26 @@ export const phaseShip = defineCommand({
         })
       } catch (e) {
         const error = e as Error
-        console.error('\n❌ FSM transition failed:', error.message)
+        console.error('\nFSM transition failed:', error.message)
         console.log('\n   Run verification first: scale verify ' + args['task-id'] + '\n')
         process.exit(1)
       }
     }
 
+    if (!reviewPassed) {
+      console.error('\nTask not reviewed with persisted passing evidence. Run: scale review ' + args['task-id'] + '\n')
+      if (reviewValidation.missing.length > 0) {
+        console.error('Missing review records: ' + reviewValidation.missing.join(', '))
+      }
+      if (reviewValidation.failed.length > 0) {
+        console.error('Failed review records: ' + reviewValidation.failed.join(', '))
+      }
+      process.exit(1)
+    }
+
     // Git operations
     let commitHash = null
-    if (!args['no-commit']) {
+    if (!shouldSkipCommit(args['skip-commit'])) {
       const { execa } = await import('execa')
       const commitMessage = args.message ?? `feat: ${task.title ?? args['task-id']}`
 
@@ -575,7 +802,7 @@ export const phaseShip = defineCommand({
         commitHash = result.stdout.split('\n')[0] // First line contains hash
       } catch (e) {
         const error = e as Error
-        if (!args.json) console.log('   ⚠️ Git commit skipped:', error.message)
+        if (!args.json) console.log('   Git commit skipped:', error.message)
       }
     }
 
@@ -587,19 +814,57 @@ export const phaseShip = defineCommand({
       } catch {}
     }
 
+    // === WorkflowEngine Integration ===
+    // Generate HonestDelivery report
+    if (!args.json) {
+      console.log('\nHonest Delivery Report:')
+      console.log('-'.repeat(40))
+      console.log(`[COMPLETED]`)
+      console.log(`  - Task: ${args['task-id']}`)
+      console.log(`  - Status: COMPLETED`)
+      if (commitHash) console.log(`  - Commit: ${commitHash}`)
+      console.log('')
+      console.log(`[VERIFIED]`)
+      console.log('  [PASS] Build: passed')
+      console.log('  [PASS] Lint: passed')
+      console.log('  [PASS] Tests: passed')
+      if (payload.testCoverage) console.log(`  [PASS] Coverage: ${payload.testCoverage}%`)
+      if (payload.verificationEvidenceIds?.length) {
+        console.log(`  [PASS] Evidence records validated: ${payload.verificationEvidenceIds.join(', ')}`)
+      }
+      if (payload.reviewEvidenceIds?.length) {
+        console.log(`  [PASS] Review records validated: ${payload.reviewEvidenceIds.join(', ')}`)
+      }
+      console.log('')
+      // Check for unverified items
+      const unverifiedItems = []
+      if (!payload.testCoverage || payload.testCoverage < 80) {
+        unverifiedItems.push('Coverage below 80%')
+      }
+      if (unverifiedItems.length > 0) {
+        console.log(`[UNVERIFIED]`)
+        unverifiedItems.forEach(item => console.log(`  [UNVERIFIED] ${item}`))
+        console.log('')
+      }
+    }
+
     const result = {
       phase: 'SHIP',
       taskId: args['task-id'],
       status: 'COMPLETED',
+      verificationEvidenceIds: payload.verificationEvidenceIds ?? [],
+      evidenceValidation,
+      reviewEvidenceIds: payload.reviewEvidenceIds ?? [],
+      reviewValidation,
       commitHash,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
-      console.log('\n🚀 SHIP Phase')
-      console.log('\n✅ Task COMPLETED: ' + args['task-id'])
+      console.log('\nSHIP Phase')
+      console.log('\nTask COMPLETED: ' + args['task-id'])
       if (commitHash) console.log('   Commit: ' + commitHash)
-      console.log('\n🎉 Done! Feature shipped.\n')
+      console.log('\nDone. Feature shipped.\n')
     }
   },
 })

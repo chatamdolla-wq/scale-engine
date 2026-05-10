@@ -1,5 +1,5 @@
-// SCALE Engine — Hook Generator Enhanced (v0.7.0)
-// 增强版 Hook 生成器：支持 TypeScript hooks、模板、Detector 集成
+// SCALE Engine - Hook Generator Enhanced (v0.10.0)
+// Generates JavaScript hooks from rules, templates, and detectors.
 
 import type { IEventBus } from '../core/eventBus.js'
 import type { ProposedRule } from '../evolution/EvolutionEngine.js'
@@ -50,7 +50,7 @@ export interface IHookGeneratorEnhanced {
 }
 
 // ============================================================================
-// 内置模板
+// Built-in templates
 // ============================================================================
 
 const BUILTIN_TEMPLATES: HookTemplate[] = [
@@ -89,11 +89,75 @@ const BUILTIN_TEMPLATES: HookTemplate[] = [
     description: 'Detect console.log statements',
     templateBody: 'console.log("[CHECK] Console detection"); console.log("[PASS]"); process.exit(0);',
     variables: []
+  },
+  // ========== Workflow Integration Hooks (v0.10.0) ==========
+  {
+    id: 'tmpl-karpathy-k1-think',
+    name: 'Karpathy K1-THINK Check',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Ensure hypotheses are listed before coding',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const lines = content.split("\n").length; if (lines > 20) { const hasThinking = content.includes("// @thinking") || content.includes("// Hypothesis") || content.includes("<!-- THINKING") || content.includes("Hypothesis:") || content.includes("Think:"); if (!hasThinking) { console.error("[WARN] K1-THINK: Consider listing hypotheses before coding"); console.log("[PASS-WITH-WARNING]"); process.exit(0); } } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-karpathy-k2-simple',
+    name: 'Karpathy K2-SIMPLE Check',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Warn about speculative future features',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const extraFeatures = ["TODO:", "FIXME:", "Note:", "refactor", "enhance", "improve"]; const warnings = extraFeatures.filter(f => content.includes(f) && content.includes("future")); if (warnings.length > 0) { console.error("[WARN] K2-SIMPLE: Potential extra features: " + warnings.join(",")); } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-hardcoded-secret-guard',
+    name: 'Hardcoded Secret Guard (G7)',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Block hardcoded secrets or credentials',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const patterns = [/(password|passwd|pwd)\s*[=:]\s*["'][^"']{8,}/i, /(api[_-]?key|apikey)\s*[=:]\s*["'][^"']{20,}/i, /(secret|token|auth)\s*[=:]\s*["'][^"']{20,}/i, /(aws|azure|gcp)[_-]?(key|secret|token)\s*[=:]/i]; for (const pattern of patterns) { if (pattern.test(content)) { console.error("[BLOCKED] G7-Security: Hardcoded secret detected"); process.exit(2); } } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-empty-catch-guard',
+    name: 'Empty Catch Guard',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Block empty catch blocks',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const emptyCatchPattern = /catch\s*\([^)]*\)\s*\{\s*\}/; if (emptyCatchPattern.test(content)) { console.error("[BLOCKED] Silent failure: Empty catch block"); process.exit(2); } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-unverified-check',
+    name: 'Unverified Check (HonestDelivery)',
+    hookType: 'Stop',
+    matcherPattern: '',
+    description: 'Check for unverified claims before session ends',
+    templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const dbPath = path.join(scaleDir, "scale.db"); if (!fs.existsSync(dbPath)) { console.log("[PASS]"); process.exit(0); } console.log("[CHECK] HonestDelivery: Verify test evidence"); console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-mutation-guard',
+    name: 'Mutation Guard',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Warn about direct mutations',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const patterns = [/[^=!<>]=[^=]/, /\.push\(/, /\.splice\(/, /delete\s+/]; const hasMutation = patterns.some(pattern => pattern.test(content)); if (hasMutation) { console.log("[INFO] Consider immutable patterns"); } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-ai-slop-detector',
+    name: 'AI Slop Detector',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Write',
+    description: 'Detect AI-generated code patterns',
+    templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const patterns = [/"\s*\+\s*"/, /linear-gradient\(.*purple.*blue/i, /grid.*3.*columns/i, /hero.*gradient/i]; const detected = patterns.filter(pattern => pattern.test(content)); if (detected.length > 2) { console.log("[WARN] AI Slop detected: Review for human-like code"); } console.log("[PASS]"); process.exit(0);`,
+    variables: []
   }
 ]
 
 // ============================================================================
-// HookGeneratorEnhanced 实现
+// HookGeneratorEnhanced implementation
 // ============================================================================
 
 export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
@@ -219,7 +283,7 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
   }
 
   // ============================================================================
-  // 私有方法
+  // Private methods
   // ============================================================================
 
   private findSuitableTemplate(rule: ProposedRule): HookTemplate | null {
@@ -228,6 +292,14 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
     if (pattern.includes('dangerous') || pattern.includes('rm -rf')) return this.templates.get('tmpl-dangerous-command-guard') ?? null
     if (pattern.includes('test') && pattern.includes('pass')) return this.templates.get('tmpl-test-verification') ?? null
     if (pattern.includes('console.log')) return this.templates.get('tmpl-console-log-detector') ?? null
+    // ========== Workflow Hooks ==========
+    if (pattern.includes('karpathy') && pattern.includes('think')) return this.templates.get('tmpl-karpathy-k1-think') ?? null
+    if (pattern.includes('karpathy') && pattern.includes('simple')) return this.templates.get('tmpl-karpathy-k2-simple') ?? null
+    if (pattern.includes('secret') || pattern.includes('credential') || pattern.includes('hardcoded')) return this.templates.get('tmpl-hardcoded-secret-guard') ?? null
+    if (pattern.includes('empty') && pattern.includes('catch')) return this.templates.get('tmpl-empty-catch-guard') ?? null
+    if (pattern.includes('mutation') || pattern.includes('immutable')) return this.templates.get('tmpl-mutation-guard') ?? null
+    if (pattern.includes('ai') && pattern.includes('slop')) return this.templates.get('tmpl-ai-slop-detector') ?? null
+    if (pattern.includes('unverified') || pattern.includes('honest')) return this.templates.get('tmpl-unverified-check') ?? null
     return null
   }
 

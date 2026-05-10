@@ -206,6 +206,10 @@ export interface TaskPayload {
   testFailed?: number     // 新增：失败测试数
   e2ePassed?: boolean     // 新增：端到端测试通过
   reviewPassed?: boolean  // 新增：评审通过（强制评审阶段）
+  verificationEvidenceIds?: string[]
+  verifiedAt?: Timestamp
+  reviewEvidenceIds?: string[]
+  reviewedAt?: Timestamp
 }
 
 /** Change —— 实际代码变更 */
@@ -318,6 +322,20 @@ export type EventType =
   | 'gate.checked'
   | 'gate.passed'
   | 'gate.failed'
+  | 'gate.executed'
+  | 'gate.blocked'
+  // Workflow
+  | 'consensus.round'
+  | 'ralph.iteration'
+  | 'ralph.story.start'
+  | 'ralph.story.end'
+  | 'ralph.deslop.start'
+  | 'ralph.deslop.end'
+  | 'ultrawork.task.start'
+  | 'ultrawork.task.end'
+  | 'socratic.session.started'
+  | 'socratic.answer.recorded'
+  | 'socratic.session.blocked'
   // 行为模式
   | 'behavior.brute_retry'
   | 'behavior.idle_tool'
@@ -417,15 +435,15 @@ export type EventType =
   | 'team.progress_updated'
   | 'team.completed'
   | 'team.failed'
-  // Review System (v0.9.0)
+  // Review System (v0.10.0)
   | 'review.required'
   | 'review.passed'
   | 'review.failed'
   | 'task.review_failed'
-  // Pattern Extraction (v0.9.0)
+  // Pattern Extraction (v0.10.0)
   | 'pattern.extracted'
   | 'pattern.verified'
-  // Skill Creation (v0.9.0)
+  // Skill Creation (v0.10.0)
   | 'skill.proposed'
   | 'skill.published'
   // Ubiquitous Language (v0.10.0 - mattpoclock/skills)

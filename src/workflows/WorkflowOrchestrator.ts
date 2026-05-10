@@ -1,4 +1,4 @@
-// SCALE Engine — Workflow Orchestrator (v0.9.0)
+// SCALE Engine — Workflow Orchestrator (v0.10.0)
 // DAG 工作流编排器：解析 YAML 工作流、并行执行步骤、管理状态
 
 import type {

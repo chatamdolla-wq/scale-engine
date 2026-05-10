@@ -837,10 +837,24 @@ console.log('生成的配置文件:', initResult.files)
 | 🔧 **Gitee** | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像 |
 | 📦 **npm** | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | 包下载 |
 
+### 社区交流群
+
+<p align="center">
+  <a href="https://qm.qq.com/q/RuCfOyaOUm">
+    <img src="https://img.shields.io/badge/QQ群-628043364-blue.svg?style=for-the-badge" alt="加入QQ群" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>飞书群</strong><br/>
+  <img src="https://cdn.nlark.com/yuque/0/2026/jpeg/1698739/1778311890484-5f96693f-745c-4ed5-950a-c3143de40811.jpeg" alt="飞书群二维码" width="300" />
+</p>
+
 ### 微信公众号
 
 <p align="center">
-  <img src="/image/wechat-public.jpg" alt="鸿枫技术栈" width="200" />
+  <strong>鸿枫技术栈</strong><br/>
+  <img src="https://cdn.nlark.com/yuque/0/2026/png/1698739/1778312235122-cfa7ad6c-7420-40dd-9741-2254f6fef5b0.png" alt="微信公众号" width="300" />
 </p>
 
 关注「**鸿枫技术栈**」公众号，获取最新动态和工程化实践文章。

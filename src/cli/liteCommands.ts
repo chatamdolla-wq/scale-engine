@@ -1,4 +1,4 @@
-// SCALE Engine Lite Mode Commands (v0.9.0)
+// SCALE Engine Lite Mode Commands (v0.10.0)
 import { defineCommand } from 'citty'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import type { DevelopmentPhase } from '../artifact/types.js'

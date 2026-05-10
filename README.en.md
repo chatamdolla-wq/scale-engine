@@ -195,9 +195,26 @@ await dispatcher.dispatch(taskId, ['frontend-agent', 'backend-agent'])
 | **Gitee (Mirror)** | https://gitee.com/hongmaple/scale-engine |
 | **npm** | https://www.npmjs.com/package/@hongmaple0820/scale-engine |
 
+### Community Groups
+
+<p align="center">
+  <a href="https://qm.qq.com/q/RuCfOyaOUm">
+    <img src="https://img.shields.io/badge/QQ-628043364-blue.svg?style=for-the-badge" alt="Join QQ Group" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Feishu Group</strong><br/>
+  <img src="https://cdn.nlark.com/yuque/0/2026/jpeg/1698739/1778311890484-5f96693f-745c-4ed5-950a-c3143de40811.jpeg" alt="Feishu QR" width="300" />
+</p>
+
 ### WeChat
 
-- **Public Account**: Search "鸿枫技术栈"
+<p align="center">
+  <strong>Public Account: 鸿枫技术栈</strong><br/>
+  <img src="https://cdn.nlark.com/yuque/0/2026/png/1698739/1778312235122-cfa7ad6c-7420-40dd-9741-2254f6fef5b0.png" alt="WeChat QR" width="300" />
+</p>
+
 - **Group Chat**: Add **mapleCx330** to join discussion group
 - **Email**: 2496155694@qq.com
 

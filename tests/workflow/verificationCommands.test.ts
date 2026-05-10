@@ -1,0 +1,80 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { afterEach, describe, expect, it } from 'vitest'
+import { detectVerificationCommands } from '../../src/workflow/VerificationCommands.js'
+
+let dirs: string[] = []
+
+function makeProject(packageJson: Record<string, unknown>, files: Record<string, string> = {}): string {
+  const dir = mkdtempSync(join(tmpdir(), 'scale-commands-'))
+  dirs.push(dir)
+  writeFileSync(join(dir, 'package.json'), JSON.stringify(packageJson, null, 2), 'utf-8')
+  for (const [file, content] of Object.entries(files)) {
+    writeFileSync(join(dir, file), content, 'utf-8')
+  }
+  return dir
+}
+
+afterEach(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  dirs = []
+})
+
+describe('detectVerificationCommands', () => {
+  it('uses npm when package-lock is present', () => {
+    const dir = makeProject({
+      scripts: { build: 'tsc', lint: 'eslint .', test: 'vitest' },
+    }, { 'package-lock.json': '{}' })
+
+    const commands = detectVerificationCommands(dir)
+
+    expect(commands.packageManager).toBe('npm')
+    expect(commands.build.command).toBe('npm run build')
+    expect(commands.lint.command).toBe('npm run lint')
+    expect(commands.test.command).toBe('npm test')
+    expect(commands.coverage.command).toBe('npm test -- --coverage')
+  })
+
+  it('honors declared packageManager before lockfiles', () => {
+    const dir = makeProject({
+      packageManager: 'pnpm@9.0.0',
+      scripts: { typecheck: 'tsc --noEmit', test: 'vitest' },
+    }, { 'package-lock.json': '{}', 'pnpm-lock.yaml': '' })
+
+    const commands = detectVerificationCommands(dir)
+
+    expect(commands.packageManager).toBe('pnpm')
+    expect(commands.build.command).toBe('pnpm run typecheck')
+    expect(commands.build.source).toBe('fallback')
+    expect(commands.test.command).toBe('pnpm test')
+  })
+
+  it('returns missing commands when package scripts are absent', () => {
+    const dir = makeProject({ scripts: {} })
+
+    const commands = detectVerificationCommands(dir)
+
+    expect(commands.lint.source).toBe('missing')
+    expect(commands.test.source).toBe('missing')
+    expect(commands.coverage.source).toBe('missing')
+  })
+
+  it('uses overrides over detected scripts', () => {
+    const dir = makeProject({
+      scripts: { build: 'tsc', lint: 'eslint .', test: 'vitest', coverage: 'vitest --coverage' },
+    })
+
+    const commands = detectVerificationCommands(dir, {
+      build: 'custom build',
+      lint: 'custom lint',
+      test: 'custom test',
+      coverage: 'custom coverage',
+    })
+
+    expect(commands.build.command).toBe('custom build')
+    expect(commands.lint.command).toBe('custom lint')
+    expect(commands.test.command).toBe('custom test')
+    expect(commands.coverage.command).toBe('custom coverage')
+  })
+})
