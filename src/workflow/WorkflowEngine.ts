@@ -123,7 +123,7 @@ export class WorkflowEngine {
     if (commandOverrides) {
       this.gateSystem = new GateSystem(this.eventBus, commandOverrides)
     }
-    const results = await this.gateSystem.executeAll(['G0', 'G4', 'G5', 'G6', 'G7'])
+    const results = await this.gateSystem.executeAll(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
     return results
   }
 

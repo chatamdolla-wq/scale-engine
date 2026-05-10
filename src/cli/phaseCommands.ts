@@ -14,7 +14,7 @@ import { SkillRegistry } from '../skills/SkillRegistry.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
-import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, type ChangedFile } from '../workflow/ReviewAnalyzer.js'
+import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, type ChangedFile, type VerificationEvidenceSummary } from '../workflow/ReviewAnalyzer.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
@@ -49,6 +49,21 @@ function validateReviewEvidence(ids: string[] | undefined): { ok: boolean; missi
     }
   }
   return { ok: (ids?.length ?? 0) > 0 && missing.length === 0 && failed.length === 0, missing, failed }
+}
+
+function getValidatedReviewRecords(ids: string[] | undefined): ReviewRecord[] {
+  const reviewStore = new ReviewStore(SCALE_DIR)
+  return (ids ?? [])
+    .map(id => reviewStore.getReview(id))
+    .filter((record): record is ReviewRecord => Boolean(record?.passed))
+}
+
+function getVerificationEvidenceSummary(ids: string[] | undefined): VerificationEvidenceSummary[] {
+  const evidenceStore = new EvidenceStore(SCALE_DIR)
+  return (ids ?? [])
+    .map(id => evidenceStore.getGateResult(id))
+    .filter((record): record is NonNullable<ReturnType<EvidenceStore['getGateResult']>> => Boolean(record))
+    .map(record => ({ gate: record.gate, passed: record.passed }))
 }
 
 function getEngine() {
@@ -87,6 +102,10 @@ function isTruthyFlag(value: unknown): boolean {
 
 function shouldSkipCommit(value: unknown): boolean {
   return isTruthyFlag(value) || process.argv.includes('--no-commit') || process.argv.includes('--skip-commit')
+}
+
+function normalizeGitPath(path: string): string {
+  return path.replace(/\\/g, '/')
 }
 
 // Helper: Generate spec markdown file
@@ -466,6 +485,8 @@ export const phaseVerify = defineCommand({
     'lint-cmd': { type: 'string', description: 'Override lint command' },
     'test-cmd': { type: 'string', description: 'Override test command' },
     'coverage-cmd': { type: 'string', description: 'Override coverage command' },
+    'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
+    'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
     'skip-build': { type: 'boolean', default: false },
     'skip-lint': { type: 'boolean', default: false },
     'skip-test': { type: 'boolean', default: false },
@@ -489,6 +510,8 @@ export const phaseVerify = defineCommand({
       lint: args['lint-cmd'],
       test: args['test-cmd'],
       coverage: args['coverage-cmd'],
+      tddEvidence: args['tdd-evidence'],
+      tddStrict: isTruthyFlag(args['tdd-strict']),
     })
 
     // Step 2: Display gate results
@@ -613,7 +636,8 @@ async function reviewGitChanges(taskPayload?: TaskPayload): Promise<{ changedFil
   const status = await runGit(['status', '--short'])
   const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
   const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
-  const changedFiles = analyzeReview({ statusOutput, diffs: [], taskPayload }).changedFiles
+  const verificationEvidence = getVerificationEvidenceSummary(taskPayload?.verificationEvidenceIds)
+  const changedFiles = analyzeReview({ statusOutput, diffs: [], taskPayload, verificationEvidence }).changedFiles
   const diffs: Array<{ file: string; text: string }> = []
   for (const file of changedFiles.slice(0, 50)) {
     if (file.status === '??') {
@@ -624,7 +648,54 @@ async function reviewGitChanges(taskPayload?: TaskPayload): Promise<{ changedFil
     }
   }
 
-  return analyzeReview({ statusOutput, diffs, taskPayload })
+  return analyzeReview({ statusOutput, diffs, taskPayload, verificationEvidence })
+}
+
+function collectReviewedFiles(records: ReviewRecord[]): Set<string> {
+  const reviewed = new Set<string>()
+  for (const record of records) {
+    if (!record.passed) continue
+    for (const file of record.changedFiles) {
+      if (shouldReviewFile(file)) reviewed.add(normalizeGitPath(file))
+    }
+  }
+  return reviewed
+}
+
+async function getReviewableGitChanges(): Promise<ChangedFile[]> {
+  const status = await runGit(['status', '--short'])
+  const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
+  const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
+  return parseChangedFiles(statusOutput).filter(file => shouldReviewFile(file.path))
+}
+
+async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stagedFiles: string[]; unreviewedFiles: string[] }> {
+  const reviewedFiles = collectReviewedFiles(reviewRecords)
+  const currentChanges = await getReviewableGitChanges()
+  const stagedFiles: string[] = []
+  const unreviewedFiles: string[] = []
+
+  for (const file of currentChanges) {
+    const normalizedPath = normalizeGitPath(file.path)
+    if (reviewedFiles.has(normalizedPath)) {
+      stagedFiles.push(file.path)
+    } else {
+      unreviewedFiles.push(file.path)
+    }
+  }
+
+  if (unreviewedFiles.length > 0) {
+    return { stagedFiles: [], unreviewedFiles }
+  }
+
+  if (stagedFiles.length > 0) {
+    const gitAdd = await runGit(['add', '--', ...stagedFiles])
+    if (gitAdd.exitCode !== 0) {
+      throw new Error(gitAdd.stderr || 'git add failed')
+    }
+  }
+
+  return { stagedFiles, unreviewedFiles: [] }
 }
 
 // REVIEW Phase - KarpathyEvaluator + deterministic review evidence
@@ -792,17 +863,36 @@ export const phaseShip = defineCommand({
 
     // Git operations
     let commitHash = null
+    let stagedFiles: string[] = []
     if (!shouldSkipCommit(args['skip-commit'])) {
-      const { execa } = await import('execa')
       const commitMessage = args.message ?? `feat: ${task.title ?? args['task-id']}`
 
       try {
-        await execa('git', ['add', '.'])
-        const result = await execa('git', ['commit', '-m', commitMessage])
-        commitHash = result.stdout.split('\n')[0] // First line contains hash
+        const reviewRecords = getValidatedReviewRecords(payload.reviewEvidenceIds)
+        const stageResult = await stageReviewedFiles(reviewRecords)
+        if (stageResult.unreviewedFiles.length > 0) {
+          console.error('\nUnreviewed working tree changes detected. Re-run scale review before shipping.')
+          stageResult.unreviewedFiles.forEach(file => console.error('  - ' + file))
+          console.error('\nUse scale ship ' + args['task-id'] + ' --no-commit to generate the delivery report without committing.\n')
+          process.exit(1)
+        }
+
+        stagedFiles = stageResult.stagedFiles
+        const result = await runGit(['commit', '-m', commitMessage])
+        if (result.exitCode !== 0) {
+          const message = result.stderr || result.stdout || 'git commit failed'
+          if (/nothing to commit|no changes added/i.test(message)) {
+            if (!args.json) console.log('   Git commit skipped: nothing to commit')
+          } else {
+            throw new Error(message)
+          }
+        } else {
+          commitHash = result.stdout.split('\n')[0] // First line contains hash
+        }
       } catch (e) {
         const error = e as Error
-        if (!args.json) console.log('   Git commit skipped:', error.message)
+        console.error('\nGit commit failed:', error.message)
+        process.exit(1)
       }
     }
 
@@ -823,6 +913,7 @@ export const phaseShip = defineCommand({
       console.log(`  - Task: ${args['task-id']}`)
       console.log(`  - Status: COMPLETED`)
       if (commitHash) console.log(`  - Commit: ${commitHash}`)
+      if (stagedFiles.length) console.log(`  - Files committed: ${stagedFiles.length}`)
       console.log('')
       console.log(`[VERIFIED]`)
       console.log('  [PASS] Build: passed')
@@ -857,6 +948,7 @@ export const phaseShip = defineCommand({
       reviewEvidenceIds: payload.reviewEvidenceIds ?? [],
       reviewValidation,
       commitHash,
+      stagedFiles,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))

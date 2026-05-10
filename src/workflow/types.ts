@@ -16,6 +16,13 @@ export interface GateEvidence {
   exitCode?: number
   path?: string
   durationMs?: number
+  cwd?: string
+  startedAt?: number
+  endedAt?: number
+  stdoutTail?: string
+  stderrTail?: string
+  outputHash?: string
+  source?: string
 }
 
 export interface GateResult {

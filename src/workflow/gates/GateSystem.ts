@@ -6,6 +6,7 @@ import type { GateStage, GateResult, GateStatus, GateEvidence } from '../types.j
 import { EvidenceStore } from '../EvidenceStore.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig } from '../VerificationCommands.js'
 import { execa } from 'execa'
+import { createHash } from 'node:crypto'
 
 export interface IGate {
   stage: GateStage
@@ -22,10 +23,48 @@ interface CommandResult {
   stdout: string
   stderr: string
   durationMs: number
+  startedAt: number
+  endedAt: number
+  cwd: string
+}
+
+type SecuritySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+
+interface SecurityScanFinding {
+  ruleId: string
+  severity: SecuritySeverity
+  description: string
+  file: string
+  line: number
+  evidence: string
+}
+
+interface SecurityRule {
+  id: string
+  severity: SecuritySeverity
+  description: string
+  pattern: RegExp
+}
+
+export interface SecurityGateOptions {
+  rootDir?: string
+  scanDirs?: string[]
+  maxFileBytes?: number
+  maxFindings?: number
+  strict?: boolean
+}
+
+function tail(value: string, maxLength = 1000): string {
+  return value.length > maxLength ? value.slice(-maxLength) : value
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
 }
 
 export async function runShellCommand(command: string, timeout: number): Promise<CommandResult> {
   const start = Date.now()
+  const cwd = process.cwd()
   try {
     const result = await execa(command, {
       shell: true,
@@ -38,6 +77,9 @@ export async function runShellCommand(command: string, timeout: number): Promise
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
       durationMs: Date.now() - start,
+      startedAt: start,
+      endedAt: Date.now(),
+      cwd,
     }
   } catch (error) {
     return {
@@ -45,6 +87,9 @@ export async function runShellCommand(command: string, timeout: number): Promise
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - start,
+      startedAt: start,
+      endedAt: Date.now(),
+      cwd,
     }
   }
 }
@@ -163,7 +208,7 @@ export class GateSystem {
   private registerDefaultGates(): void {
     this.registerGate(new ExplorationGate())
     this.registerGate(new PlanningGate())
-    this.registerGate(new TDDGate())
+    this.registerGate(new TDDGate(this.commands.tddEvidence, this.commands.tddStrict))
     this.registerGate(new BuildGate(this.commands.build))
     this.registerGate(new LintGate(this.commands.lint))
     this.registerGate(new TestGate(this.commands.test))
@@ -190,6 +235,34 @@ function missingCommandResult(stage: GateStage, label: string, command: Resolved
     blockers: [command.reason],
     durationMs: 0,
   }
+}
+
+function commandEvidence(
+  label: string,
+  command: ResolvedVerificationCommand,
+  passed: boolean,
+  commandResult: CommandResult | null,
+  fallbackDetail = 'command did not complete',
+): GateEvidence {
+  const output = commandResult ? `${commandResult.stdout}\n${commandResult.stderr}` : ''
+  return createEvidence({
+    kind: 'command',
+    label,
+    passed,
+    command: command.command,
+    exitCode: commandResult?.code,
+    durationMs: commandResult?.durationMs,
+    cwd: commandResult?.cwd,
+    startedAt: commandResult?.startedAt,
+    endedAt: commandResult?.endedAt,
+    stdoutTail: commandResult ? tail(commandResult.stdout) : undefined,
+    stderrTail: commandResult ? tail(commandResult.stderr) : undefined,
+    outputHash: output ? sha256(output) : undefined,
+    source: command.source,
+    detail: commandResult
+      ? `${command.reason}\n${tail(commandResult.stdout || commandResult.stderr || `exit code ${commandResult.code}`, 500)}`
+      : fallbackDetail,
+  })
 }
 
 export class ExplorationGate implements IGate {
@@ -304,27 +377,88 @@ export class PlanningGate implements IGate {
 export class TDDGate implements IGate {
   stage = 'G3' as GateStage
   name = 'TDD'
-  description = 'RED->GREEN->REFACTOR寰幆'
+  description = 'RED -> GREEN -> REFACTOR evidence check'
   requiredLevel: RequiredLevel = 'CRITICAL'
 
+  constructor(private evidencePath?: string, private strict = false) {}
+
   async execute(): Promise<GateResult> {
-    // TDD gate requires manual verification in CRITICAL mode
+    if (this.evidencePath) {
+      return this.verifyEvidenceFile(this.evidencePath)
+    }
+
+    const detail = this.strict
+      ? 'TDD evidence file is required in strict mode'
+      : 'TDD cycle not strictly verified; provide --tdd-evidence or use --tdd-strict to enforce'
     const evidenceItems = [
       createEvidence({
         kind: 'manual',
         label: 'TDD cycle',
-        passed: true,
-        detail: 'TDD cycle marked as manually verified',
+        passed: !this.strict,
+        detail,
+        source: 'tdd-gate',
       }),
     ]
     return {
       gate: this.stage,
-      status: 'PASSED',
-      passed: true,
+      status: this.strict ? 'BLOCKED' : 'PASSED',
+      passed: !this.strict,
       evidence: textEvidence(evidenceItems),
       evidenceItems,
-      blockers: [],
+      blockers: this.strict ? [detail] : [],
       durationMs: 0
+    }
+  }
+
+  private async verifyEvidenceFile(path: string): Promise<GateResult> {
+    const fs = await import('fs/promises')
+    const blockers: string[] = []
+    let parsed: unknown
+    let content = ''
+
+    try {
+      content = await fs.readFile(path, 'utf-8')
+      parsed = JSON.parse(content)
+    } catch (error) {
+      blockers.push(`TDD evidence could not be read: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    const evidence = parsed as Partial<{
+      red: unknown
+      green: unknown
+      refactor: unknown
+      testFirst: unknown
+      verifiedAt: unknown
+    }>
+
+    if (!blockers.length) {
+      if (evidence.red !== true) blockers.push('TDD evidence missing red=true')
+      if (evidence.green !== true) blockers.push('TDD evidence missing green=true')
+      if (evidence.refactor !== true) blockers.push('TDD evidence missing refactor=true')
+      if (evidence.testFirst !== true) blockers.push('TDD evidence missing testFirst=true')
+    }
+
+    const passed = blockers.length === 0
+    const evidenceItems = [
+      createEvidence({
+        kind: 'file',
+        label: 'TDD evidence',
+        passed,
+        path,
+        detail: passed ? 'TDD evidence contains red/green/refactor/testFirst=true' : blockers.join('; '),
+        outputHash: content ? sha256(content) : undefined,
+        source: 'tdd-evidence',
+      }),
+    ]
+
+    return {
+      gate: this.stage,
+      status: passed ? 'PASSED' : 'BLOCKED',
+      passed,
+      evidence: textEvidence(evidenceItems),
+      evidenceItems,
+      blockers,
+      durationMs: 0,
     }
   }
 }
@@ -354,17 +488,7 @@ export class BuildGate implements IGate {
     }
     const passed = blockers.length === 0
     const evidenceItems = [
-      createEvidence({
-        kind: 'command',
-        label: 'Build command',
-        passed,
-        command: this.command.command,
-        exitCode: commandResult?.code,
-        durationMs: commandResult?.durationMs,
-        detail: commandResult
-          ? `${this.command.reason}\n${(commandResult.stdout || commandResult.stderr || `exit code ${commandResult.code}`).slice(-500)}`
-          : 'command did not complete',
-      }),
+      commandEvidence('Build command', this.command, passed, commandResult),
     ]
     return {
       gate: this.stage,
@@ -403,17 +527,7 @@ export class LintGate implements IGate {
     }
     const passed = blockers.length === 0
     const evidenceItems = [
-      createEvidence({
-        kind: 'command',
-        label: 'Lint command',
-        passed,
-        command: this.command.command,
-        exitCode: commandResult?.code,
-        durationMs: commandResult?.durationMs,
-        detail: commandResult
-          ? `${this.command.reason}\n${(commandResult.stdout || commandResult.stderr || `exit code ${commandResult.code}`).slice(-500)}`
-          : 'command did not complete',
-      }),
+      commandEvidence('Lint command', this.command, passed, commandResult),
     ]
     return {
       gate: this.stage,
@@ -452,17 +566,7 @@ export class TestGate implements IGate {
     }
     const passed = blockers.length === 0
     const evidenceItems = [
-      createEvidence({
-        kind: 'command',
-        label: 'Test command',
-        passed,
-        command: this.command.command,
-        exitCode: commandResult?.code,
-        durationMs: commandResult?.durationMs,
-        detail: commandResult
-          ? `${this.command.reason}\n${(commandResult.stdout || commandResult.stderr || `exit code ${commandResult.code}`).slice(-500)}`
-          : 'command did not complete',
-      }),
+      commandEvidence('Test command', this.command, passed, commandResult),
     ]
     return {
       gate: this.stage,
@@ -513,15 +617,10 @@ export class CoverageGate implements IGate {
     }
     const passed = blockers.length === 0
     const evidenceItems = [
-      createEvidence({
-        kind: 'command',
-        label: 'Coverage command',
-        passed,
-        command: this.command.command,
-        exitCode: commandResult?.code,
-        durationMs: commandResult?.durationMs,
+      {
+        ...commandEvidence('Coverage command', this.command, passed, commandResult),
         detail: detail ? `${this.command.reason}\n${detail}` : 'command did not complete',
-      }),
+      },
     ]
     return {
       gate: this.stage,
@@ -538,24 +637,49 @@ export class CoverageGate implements IGate {
 export class SecurityGate implements IGate {
   stage = 'G7' as GateStage
   name = 'Security'
-  description = 'Hardcoded secret and OWASP-oriented security checks'
+  description = 'Built-in OWASP-oriented security scan'
   requiredLevel: RequiredLevel = 'ALWAYS'
 
+  private rootDir: string
+  private scanDirs: string[]
+  private maxFileBytes: number
+  private maxFindings: number
+  private strict: boolean
+
+  constructor(options: SecurityGateOptions = {}) {
+    this.rootDir = options.rootDir ?? process.cwd()
+    this.scanDirs = options.scanDirs ?? ['src']
+    this.maxFileBytes = options.maxFileBytes ?? 300_000
+    this.maxFindings = options.maxFindings ?? 50
+    this.strict = options.strict ?? false
+  }
+
   async execute(): Promise<GateResult> {
-    const blockers: string[] = []
-    const hasHardcodedSecrets = await this.detectSecrets()
-    if (hasHardcodedSecrets) {
-      blockers.push('Hardcoded secrets detected')
-    }
+    const findings = await this.scan()
+    const blockers = findings
+      .filter(finding => finding.severity === 'CRITICAL' || (this.strict && finding.severity === 'HIGH'))
+      .map(finding => `${finding.severity} ${finding.ruleId} in ${finding.file}:${finding.line} - ${finding.description}`)
     const passed = blockers.length === 0
+    const summary = this.summarize(findings)
     const evidenceItems = [
       createEvidence({
         kind: 'scan',
-        label: 'Secret scan',
+        label: 'Security scan',
         passed,
-        path: 'src',
-        detail: hasHardcodedSecrets ? 'hardcoded secret pattern detected' : 'no hardcoded secret patterns detected',
+        path: this.scanDirs.join(','),
+        detail: findings.length > 0
+          ? `${findings.length} finding(s): critical=${summary.CRITICAL}, high=${summary.HIGH}, medium=${summary.MEDIUM}, low=${summary.LOW}, strict=${this.strict}`
+          : 'no built-in security findings detected',
+        source: 'built-in-security-scan',
       }),
+      ...findings.slice(0, this.maxFindings).map(finding => createEvidence({
+        kind: 'scan' as const,
+        label: `Security finding ${finding.ruleId}`,
+        passed: finding.severity !== 'CRITICAL' && finding.severity !== 'HIGH',
+        path: finding.file,
+        detail: `${finding.severity} line ${finding.line}: ${finding.description}; ${finding.evidence}`,
+        source: 'built-in-security-scan',
+      })),
     ]
     return {
       gate: this.stage,
@@ -567,24 +691,56 @@ export class SecurityGate implements IGate {
     } as GateResult
   }
 
-  private async detectSecrets(): Promise<boolean> {
+  private async scan(): Promise<SecurityScanFinding[]> {
+    const findings: SecurityScanFinding[] = []
     try {
       const fs = await import('fs/promises')
-      const { join } = await import('path')
-      const files = await this.walkDir('src', '.ts')
-      for (const file of files) {
-        const content = await fs.readFile(join('src', file), 'utf-8')
-        if (this.containsSecret(content)) {
-          return true
-        }
+      const { join, relative } = await import('path')
+      const files: string[] = []
+      for (const dir of this.scanDirs) {
+        files.push(...await this.walkDir(join(this.rootDir, dir)))
       }
-      return false
+
+      for (const file of files) {
+        if (findings.length >= this.maxFindings) break
+        const stat = await fs.stat(file)
+        if (!stat.isFile() || stat.size > this.maxFileBytes) continue
+        const content = await fs.readFile(file, 'utf-8')
+        if (content.includes('\u0000')) continue
+        const displayPath = relative(this.rootDir, file).replace(/\\/g, '/')
+        findings.push(...this.scanFile(displayPath, content).slice(0, this.maxFindings - findings.length))
+      }
     } catch {
-      return false
+      // A missing scan directory should not mask the rest of the verification run.
     }
+    return findings
   }
 
-  private async walkDir(dir: string, ext: string): Promise<string[]> {
+  private scanFile(file: string, content: string): SecurityScanFinding[] {
+    const findings: SecurityScanFinding[] = []
+    const lines = content.split('\n')
+    for (const rule of this.rulesForFile(file)) {
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index]
+        if (this.isRuleDefinition(file, line) || this.isSecurityTestFixture(file, line)) continue
+        rule.pattern.lastIndex = 0
+        if (rule.pattern.test(line)) {
+          findings.push({
+            ruleId: rule.id,
+            severity: rule.severity,
+            description: rule.description,
+            file,
+            line: index + 1,
+            evidence: line.trim().slice(0, 180),
+          })
+        }
+      }
+    }
+    findings.push(...this.findEmptyCatchBlocks(file, lines))
+    return findings
+  }
+
+  private async walkDir(dir: string): Promise<string[]> {
     const fs = await import('fs/promises')
     const { join } = await import('path')
     const results: string[] = []
@@ -593,26 +749,133 @@ export class SecurityGate implements IGate {
       for (const entry of entries) {
         const fullPath = join(dir, entry.name)
         if (entry.isDirectory()) {
-          const subFiles = await this.walkDir(fullPath, ext)
-          results.push(...subFiles.map(f => join(entry.name, f)))
-        } else if (entry.name.endsWith(ext)) {
+          if (['node_modules', 'dist', '.git', '.scale', 'coverage'].includes(entry.name)) continue
+          results.push(...await this.walkDir(fullPath))
+        } else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
           results.push(fullPath)
         }
       }
     } catch {
-      // Ignore errors
+      // Ignore unreadable directories.
     }
     return results
   }
 
-  private containsSecret(content: string): boolean {
-    const patterns = [
-      /password\s*=\s*['"][^'"]+['"]/i,
-      /api[_-]?key\s*=\s*['"][^'"]+['"]/i,
-      /secret\s*=\s*['"][^'"]+['"]/i,
-      /token\s*=\s*['"][^'"]+['"]/i,
-      /auth\s*=\s*['"][^'"]+['"]/i,
+  private rulesForFile(file: string): SecurityRule[] {
+    const rules: SecurityRule[] = [
+      {
+        id: 'secret.assignment',
+        severity: 'CRITICAL',
+        description: 'Hardcoded credential or token assignment',
+        pattern: /\b(password|passwd|api[_-]?key|secret|token|auth[_-]?token|access[_-]?token|refresh[_-]?token|private[_-]?key)\b\s*[:=]\s*['"`][^'"`]{6,}['"`]/i,
+      },
+      {
+        id: 'secret.private-key',
+        severity: 'CRITICAL',
+        description: 'Private key material appears in source',
+        pattern: /-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/,
+      },
+      {
+        id: 'security.tls-disabled',
+        severity: 'HIGH',
+        description: 'TLS certificate verification is disabled',
+        pattern: /NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"`]0['"`]|rejectUnauthorized\s*:\s*false|strictSSL\s*:\s*false/i,
+      },
+      {
+        id: 'injection.eval',
+        severity: 'HIGH',
+        description: 'Dynamic code execution can enable injection',
+        pattern: /\beval\s*\(|new\s+Function\s*\(/,
+      },
+      {
+        id: 'xss.raw-html',
+        severity: 'HIGH',
+        description: 'Raw HTML rendering can enable XSS',
+        pattern: /dangerouslySetInnerHTML|\.innerHTML\s*=/,
+      },
+      {
+        id: 'command.dangerous',
+        severity: 'HIGH',
+        description: 'Dangerous shell or Git command pattern',
+        pattern: /\bgit\s+add\s+\.(?=$|[\s'"`),;])|rm\s+-rf\s+(?:\/|~|\*|\.)|curl\b.*\|.*\b(?:bash|sh|pwsh|powershell|cmd)\b|Invoke-WebRequest\b.*\|\s*iex\b/i,
+      },
+      {
+        id: 'command.shell-exec',
+        severity: 'MEDIUM',
+        description: 'Shell execution requires argument control review',
+        pattern: /\bshell\s*:\s*true\b|\bexecSync\s*\(|\bchild_process\.exec\s*\(/,
+      },
+      {
+        id: 'types.ts-ignore',
+        severity: 'MEDIUM',
+        description: 'TypeScript error suppression can hide unsafe code',
+        pattern: /^\s*(?:\/\/|\/\*)\s*@ts-ignore\b/,
+      },
     ]
-    return patterns.some(p => p.test(content))
+    return this.isTestPath(file)
+      ? rules.filter(rule => rule.severity === 'CRITICAL' || rule.id === 'command.dangerous')
+      : rules
+  }
+
+  private findEmptyCatchBlocks(file: string, lines: string[]): SecurityScanFinding[] {
+    if (this.isTestPath(file)) return []
+    const findings: SecurityScanFinding[] = []
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index]
+      if (/catch\s*(?:\([^)]*\))?\s*\{\s*(?:\/\*.*?\*\/|\/\/.*)?\s*\}/.test(line)) {
+        findings.push({
+          ruleId: 'logic.empty-catch',
+          severity: 'HIGH',
+          description: 'Empty or comment-only catch block suppresses failures',
+          file,
+          line: index + 1,
+          evidence: line.trim().slice(0, 180),
+        })
+        continue
+      }
+      if (!/catch\s*(?:\([^)]*\))?\s*\{\s*$/.test(line)) continue
+      for (let probe = index + 1; probe < Math.min(lines.length, index + 8); probe += 1) {
+        const trimmed = lines[probe].trim()
+        if (trimmed === '' || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('*/')) {
+          continue
+        }
+        if (/^}\s*[),;]?$/.test(trimmed)) {
+          findings.push({
+            ruleId: 'logic.empty-catch',
+            severity: 'HIGH',
+            description: 'Empty or comment-only catch block suppresses failures',
+            file,
+            line: index + 1,
+            evidence: line.trim().slice(0, 180),
+          })
+        }
+        break
+      }
+    }
+    return findings
+  }
+
+  private summarize(findings: SecurityScanFinding[]): Record<SecuritySeverity, number> {
+    return {
+      CRITICAL: findings.filter(f => f.severity === 'CRITICAL').length,
+      HIGH: findings.filter(f => f.severity === 'HIGH').length,
+      MEDIUM: findings.filter(f => f.severity === 'MEDIUM').length,
+      LOW: findings.filter(f => f.severity === 'LOW').length,
+    }
+  }
+
+  private isTestPath(file: string): boolean {
+    return /(^|\/)(tests?|__tests__)\//i.test(file) || /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file)
+  }
+
+  private isRuleDefinition(file: string, line: string): boolean {
+    const trimmed = line.trim()
+    return file.endsWith('GateSystem.ts') && (/^pattern:\s*\/.*\/[dgimsuy]*,?$/.test(trimmed) || /^id:\s*['"`][^'"`]+['"`],?$/.test(trimmed))
+  }
+
+  private isSecurityTestFixture(file: string, line: string): boolean {
+    if (!this.isTestPath(file)) return false
+    return /\b(?:text|content|diff|source)\b\s*[:=]/.test(line) &&
+      /['"`].*(?:password|api[_-]?key|secret|token|auth|credential|private[_-]?key|git add|shell: true|@ts-ignore|catch)/i.test(line)
   }
 }

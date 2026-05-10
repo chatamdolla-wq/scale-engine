@@ -1,237 +1,168 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.8.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.10.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/platforms-11-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-9-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-410-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.8.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/tests-461-passing-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/npm-0.10.1-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.8.0
+# SCALE Engine v0.10.1
 
-> **S**caffold · **C**ontrol · **A**rtifact · **L**earn · **E**volve
->
-> AI Engineering Scaffold Engine — Enforce engineering constraints physically, not via prompt "self-discipline"
+SCALE Engine is an AI engineering workflow runtime for agentic coding tools. It turns prompt-level engineering rules into stateful workflow gates, persisted evidence, review records, and release checks.
 
----
+Repository: https://github.com/hongmaple0820/scale-engine
+Mirror: https://gitee.com/hongmaple/scale-engine
+npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
+Language: [English](README.en.md) | [Chinese](README.md)
 
-## 📦 Repository
+## Why It Exists
 
-| Platform | URL |
-|----------|-----|
-| **GitHub** | https://github.com/hongmaple0820/scale-engine |
-| **Gitee (Mirror)** | https://gitee.com/hongmaple/scale-engine |
-| **npm** | https://www.npmjs.com/package/@hongmaple0820/scale-engine |
+Prompt instructions are advisory. Production engineering needs mechanisms:
 
-**Language:** [English](README.en.md) | [中文文档](README.md)
+- A model can claim tests passed; SCALE stores verification evidence.
+- A model can skip review; SCALE blocks `ship` without persisted review records.
+- A model can stage unrelated files; SCALE now stages only reviewed files.
+- A model can lose workflow state; SCALE stores artifacts and FSM transitions under `.scale`.
 
----
+## Current Release
 
-## 📖 Table of Contents
+v0.10.1 hardens the phase-aligned delivery workflow:
 
-- [Introduction](#-introduction)
-- [Architecture](#-architecture)
-- [Features](#-features)
-- [Quick Start](#-quick-start)
-- [API Reference](#-api-reference)
-- [CHANGELOG](#-changelog)
-- [License](#-license)
+- `define -> plan -> build -> verify -> review -> ship`
+- FSM-backed artifacts for specs, plans, and tasks
+- persisted gate evidence and review records
+- deterministic review scanner blocks empty `catch`, `@ts-ignore`, focused tests, dangerous shell/Git commands, and security-sensitive changes without G7 evidence
+- built-in G7 security scanning records explainable file/line evidence, blocks CRITICAL by default, and can block HIGH findings in strict mode
+- optional strict TDD evidence gate with `--tdd-evidence` and `--tdd-strict`
+- `ship --no-commit` delivery reports
+- review-gated release commits
+- 11 platform adapters and 12 professional agent profiles
+- Exa/search capability integration
+- 461 Vitest tests passing after scoped ship, TDD evidence, review scanner, and G7 security scan hardening
 
----
-
-## 🎯 Introduction
-
-### What is SCALE Engine?
-
-SCALE Engine is an **AI Engineering Scaffold** that provides physical constraint layers for AI Agents (Claude Code, Codex CLI, OpenCode, Cursor, Gemini CLI, etc.), ensuring engineering standards are enforced through mechanisms, not prompt instructions.
-
-### Why Do You Need It?
-
-The core contradiction of AI coding:
-
-```
-❌ Prompt says "run tests"           → AI can fake it
-❌ Prompt says "don't hardcode keys" → AI can ignore rules
-❌ Prompt says "don't brute retry"   → AI can retry indefinitely
-❌ Prompt says "plan before code"    → AI can skip planning
-```
-
-**Root Problem**: Prompts are "suggestions" that AI can choose to ignore.
-
-SCALE Engine's solution: **Physical Constraints**.
-
-```
-✅ Stop Hook checks "no tests run"  → AI physically cannot skip
-✅ PreTool Hook blocks dangerous commands → AI physically cannot execute
-✅ FSM controls workflow states      → AI physically cannot skip steps
-✅ Role Gate limits tool permissions → AI physically cannot overstep
-✅ Detectors catch abnormal behaviors → AI physically cannot hide
-```
-
-### How Does It Work?
-
-SCALE Engine implements AI engineering through **Six Layers**:
-
-| Layer | Responsibility | Core Mechanism |
-|-------|----------------|----------------|
-| **L1 Context** | Context Building | Token budget + Philosophy injection + Scenario awareness |
-| **L2 Guardrails** | Safety Guardrails | 9 Detectors + Role Gate + Cascade escalation |
-| **L3 Observability** | Observability | EventBus + BehaviorTracker + Pattern detection |
-| **L4 Orchestration** | Task Orchestration | TaskEngine + Effects + 10 Workflows |
-| **L5 Memory** | Knowledge Memory | KnowledgeBase + Decay algorithm + Skill discovery |
-| **L6 Evolution** | Self-Evolution | Defect→Lesson→Rule→Hook closed loop |
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        L6 Evolution                             │
-│  Defect → Lesson → Rule → Hook (Self-improvement closed loop)  │
-├─────────────────────────────────────────────────────────────────┤
-│                        L5 Memory                                │
-│  KnowledgeBase + Decay + TF-IDF Recall + Skill Discovery       │
-├─────────────────────────────────────────────────────────────────┤
-│                     L4 Orchestration                            │
-│  TaskEngine + FSM + 10 Workflows + Multi-Agent Collaboration   │
-├─────────────────────────────────────────────────────────────────┤
-│                    L3 Observability                             │
-│  EventBus + BehaviorTracker + 9 Detectors + Pattern Detection  │
-├─────────────────────────────────────────────────────────────────┤
-│                     L2 Guardrails                               │
-│  Role Gate + PreTool/PostTool Hooks + Cascade Escalation       │
-├─────────────────────────────────────────────────────────────────┤
-│                      L1 Context                                 │
-│  Token Budget + Philosophy Injection + Scenario Awareness      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## ✨ Features
-
-### v0.8.0 Highlights
-
-**Multi-Agent Collaboration System (Phase 4-9)**
-- 12 Professional Agent Profiles: frontend, backend, test, ui-design, ops, product, code-review, security, database, performance, docs, architect
-- AgentPool: Instance lifecycle management
-- AgentDispatcher: Automatic task distribution
-- AgentChannel: Inter-agent messaging
-- AgentCoordinator: Team task orchestration
-
-**Workflow Enhancements (Phase 1-3)**
-- SessionStart Hook: Automatic FSM state injection
-- AutoDefectCreator: Automatic defect creation from detector events
-- TF-IDF Memory Recall: Text similarity-based knowledge retrieval
-
-**Karpathy Anti-Patterns**
-- Brute Retry, Blame Shift, Tool Idle, Busy Illusion, Passive Wait countermeasures
-
----
-
-## 🚀 Quick Start
-
-### Installation
+## Installation
 
 ```bash
-npm install @hongmaple0820/scale-engine
+npm install -g @hongmaple0820/scale-engine
+scale --version
 ```
 
-### CLI Usage
+Node.js 20 or newer is required.
+
+## Phase Workflow
 
 ```bash
-scale init --scenario standard
-scale doctor
-scale agent spawn --profile frontend
-scale team create --profiles frontend,backend,test --task "Implement auth"
-scale workflow list
+scale define "Scoped release workflow" \
+  --description "Implement a TypeScript CLI workflow with verification evidence, review records, rollback constraints, and release safety checks." \
+  --success-criteria "verify evidence is persisted,review evidence is persisted,ship blocks unreviewed files"
+
+scale plan <spec-id> --rollback "Revert the release commit and remove generated artifacts"
+scale build <plan-id> --description "Implement scoped release workflow"
+scale verify <task-id>
+scale review <task-id>
+scale ship <task-id> --message "feat(workflow): add scoped release workflow"
 ```
 
-### Programmatic Usage
+Use `scale ship <task-id> --no-commit` to generate the delivery report without creating a Git commit.
 
-```typescript
-import { AgentPool, AgentDispatcher, KnowledgeBase } from '@hongmaple0820/scale-engine'
+Strict TDD evidence can be enforced when needed:
 
-const pool = new AgentPool(eventBus, modelRouter)
-const agent = pool.spawn('frontend-agent')
-await dispatcher.dispatch(taskId, ['frontend-agent', 'backend-agent'])
+```bash
+scale verify <task-id> --tdd-strict --tdd-evidence .scale/tdd/<task-id>.json
 ```
 
----
+The TDD evidence JSON must include `red`, `green`, `refactor`, and `testFirst` set to `true`.
 
-## 📋 CHANGELOG
+## Safety Model
 
-### v0.8.0 (2026-05-08)
+SCALE Engine uses multiple enforcement layers:
 
-- Multi-Agent Collaboration System (12 profiles, AgentPool, Dispatcher, Channel, Coordinator)
-- TF-IDF Memory Recall
-- SessionStart Hook, AutoDefectCreator, BehaviorTracker.autoEvolve
-- Karpathy Anti-Patterns
-- Tests: 410 passed (32 files)
+| Layer | Purpose |
+| --- | --- |
+| FSM | Prevents invalid artifact lifecycle transitions |
+| GateSystem | Runs build, lint, test, coverage, and security gates |
+| EvidenceStore | Persists verification evidence for audit and release gating |
+| ReviewStore | Persists deterministic review records |
+| ReviewAnalyzer | Scans diffs for high-risk code, process debt, and missing security evidence |
+| Detectors | Detects brute retry, premature completion, blame shifting, busy loops, and related failure modes |
+| Ship gate | Requires passing verification and review evidence before release |
 
-### v0.7.1 (2026-05-06)
+The `ship` command no longer stages the whole workspace. It stages only files covered by passing review records and blocks if new reviewable files appear after review.
 
-- SessionStart hook, AutoDefectCreator, ContextBuilder enhancements
-- Tests: 323 passed
+G7 `SecurityGate` includes a lightweight built-in scan for hardcoded secrets, private keys, disabled TLS verification, `eval`/`Function`, raw HTML injection, dangerous shell commands, shell execution, and empty `catch` blocks. Compatibility mode blocks CRITICAL findings; strict mode also blocks HIGH findings.
 
-### v0.6.0 (2026-04-29)
+## Supported Platforms
 
-- SQLiteKnowledgeBase, FSM concurrency locks, ScopeCreepDetector
+SCALE Engine includes adapters for 11 agent platforms, including Claude Code, Codex CLI, OpenCode, Cursor, Gemini CLI, OpenClaw, Hermes, Trae, WorkBuddy, VS Code Copilot CLI, and QCoder.
 
-### v0.5.0 (2026-04-22)
+It also includes 12 professional agent profiles:
 
-- 7 Agent adapters, 3 Scenario modes, 10 Workflows, Skill ecosystem
+- frontend
+- backend
+- testing
+- UI design
+- operations
+- product
+- code review
+- security
+- database
+- performance
+- documentation
+- architecture
 
----
+## Project Layout
 
-## 🌐 Community
+```text
+src/api/cli.ts                 CLI entrypoint
+src/cli/phaseCommands.ts       DEFINE/PLAN/BUILD/VERIFY/REVIEW/SHIP
+src/workflow/gates/            Quality gates and persisted evidence
+src/workflow/ReviewAnalyzer.ts Deterministic review analysis
+src/workflow/ReviewStore.ts    Review record persistence
+src/workflow/EvidenceStore.ts  Gate evidence persistence
+src/artifact/                  Artifact store and FSM definitions
+src/guardrails/                Detector and gateway logic
+src/evolution/                 Defect/Lesson/Rule/Hook evolution layer
+tests/                         Vitest test suites
+```
 
-### Links
+## Development
 
-| Platform | URL |
-|----------|-----|
-| **GitHub** | https://github.com/hongmaple0820/scale-engine |
-| **Gitee (Mirror)** | https://gitee.com/hongmaple/scale-engine |
-| **npm** | https://www.npmjs.com/package/@hongmaple0820/scale-engine |
+```bash
+npm install
+npm run build
+npx vitest run
+npm pack --dry-run
+```
 
-### Community Groups
+Targeted workflow tests:
 
-<p align="center">
-  <a href="https://qm.qq.com/q/RuCfOyaOUm">
-    <img src="https://img.shields.io/badge/QQ-628043364-blue.svg?style=for-the-badge" alt="Join QQ Group" />
-  </a>
-</p>
+```bash
+npx vitest run tests/workflow/phaseCli.test.ts
+npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.test.ts tests/workflow/gateSystem.test.ts
+```
 
-<p align="center">
-  <strong>Feishu Group</strong><br/>
-  <img src="https://cdn.nlark.com/yuque/0/2026/jpeg/1698739/1778311890484-5f96693f-745c-4ed5-950a-c3143de40811.jpeg" alt="Feishu QR" width="300" />
-</p>
+## Release Notes
 
-### WeChat
+### v0.10.1
 
-<p align="center">
-  <strong>Public Account: 鸿枫技术栈</strong><br/>
-  <img src="https://cdn.nlark.com/yuque/0/2026/png/1698739/1778312235122-cfa7ad6c-7420-40dd-9741-2254f6fef5b0.png" alt="WeChat QR" width="300" />
-</p>
+- Hardened `ship` so release commits stage only files covered by passing review records.
+- Added `ship --no-commit` delivery reports for reviewable output without creating a Git commit.
+- Added optional strict TDD evidence verification with `--tdd-evidence` and `--tdd-strict`.
+- Added richer command evidence metadata: working directory, timestamps, stdout/stderr tails, and output hashes.
+- Hardened deterministic review scanning for empty `catch`, `@ts-ignore`, focused tests, dangerous shell/Git commands, and security-sensitive changes without G7 evidence.
+- Hardened built-in G7 security scanning with explainable file/line evidence and compatibility vs strict blocking modes.
+- Added CLI/unit regression tests for `review -> ship`, unreviewed-file blocking, and security-scanner false-positive boundaries.
+- Verified `npm run build`, full Vitest suite, and `npm pack --dry-run` before release.
 
-- **Group Chat**: Add **mapleCx330** to join discussion group
-- **Email**: 2496155694@qq.com
+### v0.10.0
 
-### Knowledge Planet (¥99/year)
+- Added phase-aligned workflow commands with FSM integration.
+- Added persisted verification evidence and review records.
+- Published `@hongmaple0820/scale-engine@0.10.0`.
+- Verified `npm run build`, full Vitest suite, and `npm pack --dry-run` before release.
 
-- Exclusive skill packs and configuration templates
-- Deep case study breakdowns
-- 1v1 Q&A with community experts
-- Early access to new features
+## License
 
-> Join: https://t.zsxq.com/6T5Eq
-
----
-
-### ❤️ Support Open Source
-
-<p align="center">
-  <img src="/image/wxPay.jpg" alt="WeChat Pay" width="150" />
-  <img src="/image/zfb.jpg" alt="Alipay" width="150" />
-</p>
+MIT

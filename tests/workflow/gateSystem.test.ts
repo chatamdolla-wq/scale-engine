@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import { BuildGate, CoverageGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { afterEach, describe, expect, it } from 'vitest'
+import { BuildGate, CoverageGate, SecurityGate, TDDGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
+
+let dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  dirs = []
+})
 
 function nodePrintCommand(text: string): string {
   const codes = Array.from(text).map(char => char.charCodeAt(0)).join(',')
@@ -37,6 +47,10 @@ describe('BuildGate', () => {
     expect(result.passed).toBe(true)
     expect(result.status).toBe('PASSED')
     expect(result.evidenceItems?.[0].command).toBe('node -v')
+    expect(result.evidenceItems?.[0].cwd).toBe(process.cwd())
+    expect(result.evidenceItems?.[0].startedAt).toBeTypeOf('number')
+    expect(result.evidenceItems?.[0].endedAt).toBeTypeOf('number')
+    expect(result.evidenceItems?.[0].outputHash).toMatch(/^[a-f0-9]{64}$/)
   })
 
   it('fails when the build command exits non-zero', async () => {
@@ -51,6 +65,49 @@ describe('BuildGate', () => {
     expect(result.passed).toBe(false)
     expect(result.status).toBe('FAILED')
     expect(result.blockers[0]).toContain('Build failed')
+  })
+})
+
+describe('TDDGate', () => {
+  it('passes non-strict mode while marking TDD as not strictly verified', async () => {
+    const gate = new TDDGate()
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.status).toBe('PASSED')
+    expect(result.evidenceItems?.[0].detail).toContain('not strictly verified')
+  })
+
+  it('blocks strict mode without evidence', async () => {
+    const gate = new TDDGate(undefined, true)
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(false)
+    expect(result.status).toBe('BLOCKED')
+    expect(result.blockers[0]).toContain('TDD evidence file is required')
+  })
+
+  it('passes when evidence file contains the full TDD cycle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-tdd-'))
+    dirs.push(dir)
+    const evidencePath = join(dir, 'tdd.json')
+    writeFileSync(evidencePath, JSON.stringify({
+      red: true,
+      green: true,
+      refactor: true,
+      testFirst: true,
+      verifiedAt: Date.now(),
+    }), 'utf-8')
+    const gate = new TDDGate(evidencePath, true)
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.status).toBe('PASSED')
+    expect(result.evidenceItems?.[0].path).toBe(evidencePath)
+    expect(result.evidenceItems?.[0].outputHash).toMatch(/^[a-f0-9]{64}$/)
   })
 })
 
@@ -95,5 +152,93 @@ describe('CoverageGate', () => {
     expect(result.passed).toBe(false)
     expect(result.status).toBe('FAILED')
     expect(result.blockers).toContain('Coverage percentage could not be parsed')
+  })
+})
+
+describe('SecurityGate', () => {
+  function createSecurityFixture(files: Record<string, string>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-security-'))
+    dirs.push(dir)
+    for (const [relativePath, content] of Object.entries(files)) {
+      const fullPath = join(dir, relativePath)
+      mkdirSync(dirname(fullPath), { recursive: true })
+      writeFileSync(fullPath, content, 'utf-8')
+    }
+    return dir
+  }
+
+  it('passes when source files contain no built-in security findings', async () => {
+    const rootDir = createSecurityFixture({
+      'src/index.ts': 'export const value = process.env.SAFE_VALUE ?? "fallback"\n',
+    })
+    const gate = new SecurityGate({ rootDir })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.status).toBe('PASSED')
+    expect(result.evidenceItems?.[0].detail).toContain('no built-in security findings')
+  })
+
+  it('blocks hardcoded secrets with file and line evidence', async () => {
+    const rootDir = createSecurityFixture({
+      'src/config.ts': 'export const apiKey = "abc123456789"\n',
+    })
+    const gate = new SecurityGate({ rootDir })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(false)
+    expect(result.status).toBe('FAILED')
+    expect(result.blockers[0]).toContain('secret.assignment')
+    expect(result.blockers[0]).toContain('src/config.ts:1')
+    expect(result.evidenceItems?.some(item => item.detail.includes('CRITICAL line 1'))).toBe(true)
+  })
+
+  it('records high-risk findings without blocking in compatibility mode', async () => {
+    const rootDir = createSecurityFixture({
+      'src/run.ts': [
+        'try {',
+        '  runUserInput()',
+        '} catch (error) {',
+        '}',
+        'await execa(command, { shell: true })',
+        'document.body.innerHTML = userHtml',
+      ].join('\n'),
+    })
+    const gate = new SecurityGate({ rootDir })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.blockers).toEqual([])
+    expect(result.evidenceItems?.some(item => item.detail.includes('HIGH line'))).toBe(true)
+    expect(result.evidence).toContain('high=')
+  })
+
+  it('blocks high-risk findings in strict mode', async () => {
+    const rootDir = createSecurityFixture({
+      'src/run.ts': 'try { risky() } catch (error) {}\n',
+    })
+    const gate = new SecurityGate({ rootDir, strict: true })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(false)
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining('logic.empty-catch'),
+    ]))
+  })
+
+  it('does not treat test fixtures as real security findings', async () => {
+    const rootDir = createSecurityFixture({
+      'tests/security.test.ts': 'const text = \'+const apiKey = "abc123456789"\\n\'\n',
+      'src/index.ts': 'export const ok = true\n',
+    })
+    const gate = new SecurityGate({ rootDir, scanDirs: ['src', 'tests'] })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
   })
 })

@@ -6,6 +6,8 @@ export interface VerificationCommandConfig {
   lint?: string
   test?: string
   coverage?: string
+  tddEvidence?: string
+  tddStrict?: boolean
 }
 
 export interface ResolvedVerificationCommand {
@@ -20,6 +22,8 @@ export interface ResolvedVerificationCommands {
   lint: ResolvedVerificationCommand
   test: ResolvedVerificationCommand
   coverage: ResolvedVerificationCommand
+  tddEvidence?: string
+  tddStrict?: boolean
 }
 
 interface PackageJson {
@@ -41,6 +45,8 @@ export function detectVerificationCommands(
     lint: resolveScriptCommand(packageManager, scripts, 'lint', overrides.lint),
     test: resolveScriptCommand(packageManager, scripts, 'test', overrides.test),
     coverage: resolveCoverageCommand(packageManager, scripts, overrides.coverage),
+    tddEvidence: overrides.tddEvidence,
+    tddStrict: overrides.tddStrict,
   }
 }
 

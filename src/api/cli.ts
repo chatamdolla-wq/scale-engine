@@ -1198,14 +1198,14 @@ const team = defineCommand({
 // ============================================================================
 
 // ============================================================================
-// Phase-Aligned Commands (v0.10.0) - agent-skills style
+// Phase-Aligned Commands (v0.10.1) - agent-skills style
 // ============================================================================
 
 import * as phaseCommands from '../cli/phaseCommands.js'
 import * as liteCommands from '../cli/liteCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.10.0', description: 'SCALE Engine v0.10.0 CLI - Phase Commands: define/plan/build/verify/review/ship; Lite Mode: scale lite; 11 agents; 10 workflows; 9 detectors' },
+  meta: { name: 'scale', version: '0.10.1', description: 'SCALE Engine v0.10.1 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Lite Mode: scale lite; 11 agents; 10 workflows; 9 detectors' },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,

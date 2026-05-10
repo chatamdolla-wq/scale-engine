@@ -1,5 +1,51 @@
 # @hongmaple0820/scale-engine CHANGELOG
 
+## 0.10.1 - 2026-05-10
+
+### Phase workflow hardening
+
+**Added:**
+
+- `ship --no-commit` delivery reports without creating a Git commit.
+- Optional strict TDD evidence gate with `--tdd-evidence` and `--tdd-strict`.
+- Review analyzer regression coverage for empty `catch`, `@ts-ignore`, focused tests, dangerous shell/Git commands, G7 security evidence, scanner regex definitions, and risky test fixtures.
+- Built-in G7 security scan with explainable file/line evidence for secrets, private keys, disabled TLS verification, unsafe runtime execution, raw HTML injection, dangerous shell commands, shell execution, and empty `catch` blocks.
+
+**Changed:**
+
+- `ship` now requires both passing verification evidence and passing review evidence.
+- `ship` stages only files covered by passing review records instead of staging the whole workspace.
+- `ship` blocks when new reviewable files appear after review.
+- Gate command evidence now records cwd, timestamps, stdout/stderr tails, and output hashes.
+- Deterministic review scanning now blocks high-risk source and process patterns before `ship`.
+- G7 security scan blocks CRITICAL findings by default and can block HIGH findings in strict mode.
+- README Chinese and English release docs now describe the hardened workflow and current test count.
+
+**Verified:**
+
+- `npm run build`
+- `npx vitest run` - 461 tests passed
+- `git diff --check`
+- `npm pack --dry-run`
+
+## 0.10.0 - 2026-05-10
+
+### Phase workflow gates and scoped release safety
+
+**Added:**
+
+- Phase-aligned CLI workflow: `define -> plan -> build -> verify -> review -> ship`.
+- FSM-backed Spec, Plan, and Task artifacts for the phase workflow.
+- Persisted verification evidence under `.scale/evidence`.
+- Persisted deterministic review records under `.scale/reviews`.
+- npm package metadata normalized for the `scale` binary.
+
+**Verified:**
+
+- `npm run build`
+- `npx vitest run`
+- `npm pack --dry-run`
+
 ## 0.7.1 - 2026-05-06
 
 ### 工作流优化：SessionStart Hook 增强 + 自进化闭环自动化 + 记忆利用率提升
