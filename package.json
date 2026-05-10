@@ -4,7 +4,7 @@
   "description": "SCALE Engine v0.10.0 - AI engineering scaffold: phase-aligned commands (DEFINE -> PLAN -> BUILD -> VERIFY -> REVIEW -> SHIP) with FSM integration, 11 platform adapters with skills directory support, artifact lifecycle management, and auto-evolution loop",
   "type": "module",
   "bin": {
-    "scale": "./dist/api/cli.js"
+    "scale": "dist/api/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
