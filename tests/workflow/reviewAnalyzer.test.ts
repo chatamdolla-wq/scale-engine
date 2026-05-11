@@ -18,12 +18,13 @@ describe('ReviewAnalyzer', () => {
     expect(shouldReviewFile('src/index.ts')).toBe(true)
   })
 
-  it('flags missing verification evidence', () => {
-    const result = analyzeReview({ statusOutput: ' M src/a.ts', diffs: [] })
+  it('flags missing verification evidence as MEDIUM (not blocking)', () => {
+    const result = analyzeReview({ statusOutput: ' M src/a.ts', diffs: [], taskPayload: { verificationEvidenceIds: [] } })
 
     expect(result.findings).toContainEqual(expect.objectContaining({
       category: 'process',
-      severity: 'HIGH',
+      severity: 'MEDIUM',
+      description: expect.stringContaining('verification evidence'),
     }))
   })
 

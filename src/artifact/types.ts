@@ -467,6 +467,46 @@ export type EventType =
   // Anti-Pattern Detection (v0.10.0 - andrej-karpathy-skills)
   | 'antipattern.detected'
   | 'antipattern.registered'
+  // Security Detection (v0.10.0)
+  | 'security.owasp_critical'
+  | 'security.owasp_high'
+  | 'security.owasp_info'
+  // Browser QA (v0.10.0)
+  | 'qa.test.start'
+  | 'qa.test.end'
+  | 'qa.test.error'
+  | 'qa.accessibility.start'
+  | 'qa.accessibility.end'
+  | 'qa.performance.start'
+  | 'qa.performance.end'
+  | 'qa.tests.summary'
+  // E2E Testing (v0.10.0)
+  | 'e2e.start'
+  | 'e2e.end'
+  | 'e2e.flow.attempt'
+  | 'e2e.flow.retry'
+  | 'e2e.accessibility.check'
+  | 'e2e.performance.check'
+  | 'e2e.quick.empty'
+  // Lesson Extraction (v0.10.0)
+  | 'lesson.extract.start'
+  | 'lesson.extract.end'
+  | 'lesson.extract.empty'
+  // Defect Events (v0.10.0)
+  | 'defect.opened'
+  | 'defect.resolved'
+  // Self-Improve Engine (v0.10.0)
+  | 'self-improve.start'
+  | 'self-improve.end'
+  | 'self-improve.phase.extract'
+  | 'self-improve.phase.verify'
+  | 'self-improve.phase.activate'
+  | 'self-improve.phase.hooks'
+  | 'self-improve.lesson.promoted'
+  | 'self-improve.rule.activated'
+  | 'self-improve.hook.generated'
+  | 'self-improve.reset'
+  | 'rule.hit'
 
 export interface Event<TPayload = unknown> {
   id: EventId

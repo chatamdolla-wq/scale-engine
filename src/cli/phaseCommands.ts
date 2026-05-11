@@ -275,13 +275,32 @@ export const phaseDefine = defineCommand({
     writeFileSync(specPath, generateSpecMarkdown(spec.id, args.title, specPayload))
 
     // FSM transitions: DRAFT -> REVIEWING -> FROZEN
-    try {
-      await fsm.transition(spec.id, 'refine', { actor: { kind: 'system', component: 'phase-define' } })
-      await fsm.transition(spec.id, 'approve', { actor: { kind: 'system', component: 'phase-define' } })
-    } catch (e) {
-      // Guard may fail - report reason
-      const error = e as Error
-      if (!args.json) console.log(`   FSM transition: ${error.message}`)
+    // Phase 1: refine (DRAFT -> REVIEWING) - no guards
+    const refineResult = await fsm.canTransition(spec.id, 'refine')
+    if (!refineResult.allowed) {
+      if (!args.json) {
+        console.error('\nFSM transition blocked: DRAFT -> REVIEWING')
+        refineResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+      }
+      process.exit(1)
+    }
+    await fsm.transition(spec.id, 'refine', { actor: { kind: 'system', component: 'phase-define' } })
+
+    // Phase 2: approve (REVIEWING -> FROZEN) - guards: ambiguityScore <= 0.2, has successCriteria
+    const approveResult = await fsm.canTransition(spec.id, 'approve')
+    if (!approveResult.allowed) {
+      if (!args.json) {
+        console.error('\nFSM transition blocked: REVIEWING -> FROZEN')
+        console.error('   Spec cannot be frozen due to:')
+        approveResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+        console.error('\n   Resolve issues before proceeding.')
+      }
+      process.exit(1)
+    }
+    await fsm.transition(spec.id, 'approve', { actor: { kind: 'system', component: 'phase-define' } })
+
+    if (!args.json) {
+      console.log('   FSM: DRAFT -> REVIEWING -> FROZEN ✓')
     }
 
     const result = { phase: 'DEFINE', spec, specPath, ambiguityScore, successCriteria }
@@ -380,12 +399,20 @@ export const phasePlan = defineCommand({
     const planPath = join(plansDir, `${plan.id}.md`)
     writeFileSync(planPath, generatePlanMarkdown(plan.id, args['spec-id'], planPayload))
 
-    // FSM transition: DRAFT -> APPROVED (requires rollbackStrategy)
-    try {
-      await fsm.transition(plan.id, 'review', { actor: { kind: 'system', component: 'phase-plan' } })
-    } catch (e) {
-      const error = e as Error
-      if (!args.json) console.log(`   FSM transition: ${error.message}`)
+    // FSM transition: DRAFT -> APPROVED (requires rollbackStrategy guard)
+    const reviewResult = await fsm.canTransition(plan.id, 'review')
+    if (!reviewResult.allowed) {
+      if (!args.json) {
+        console.error('\nFSM transition blocked: DRAFT -> APPROVED')
+        console.error('   Plan cannot be approved due to:')
+        reviewResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+        console.error('\n   Provide rollback strategy: --rollback "Revert strategy description"')
+      }
+      process.exit(1)
+    }
+    await fsm.transition(plan.id, 'review', { actor: { kind: 'system', component: 'phase-plan' } })
+    if (!args.json) {
+      console.log('   FSM: DRAFT -> APPROVED ✓')
     }
 
     const result = { phase: 'PLAN', plan, planPath, rollbackStrategy }
@@ -440,18 +467,28 @@ export const phaseBuild = defineCommand({
     })
 
     // FSM transitions: PENDING -> READY -> RUNNING
-    try {
-      await fsm.transition(task.id, 'schedule', { actor: { kind: 'system', component: 'phase-build' } })
-      await fsm.transition(task.id, 'start', { actor: { kind: 'human', userId: 'cli' } })
-    } catch (e) {
-      const error = e as Error
-      if (!args.json) console.log(`   FSM transition: ${error.message}`)
+    // Phase 1: schedule (PENDING -> READY) - no guards
+    const scheduleResult = await fsm.canTransition(task.id, 'schedule')
+    if (!scheduleResult.allowed) {
+      if (!args.json) {
+        console.error('\nFSM transition blocked: PENDING -> READY')
+        scheduleResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+      }
+      process.exit(1)
+    }
+    await fsm.transition(task.id, 'schedule', { actor: { kind: 'system', component: 'phase-build' } })
+
+    // Phase 2: start (READY -> RUNNING) - no guards
+    await fsm.transition(task.id, 'start', { actor: { kind: 'human', userId: 'cli' } })
+    if (!args.json) {
+      console.log('   FSM: PENDING -> READY -> RUNNING ✓')
     }
 
     // Update Plan status to IMPLEMENTING
-    try {
+    const implResult = await fsm.canTransition(args['plan-id'], 'implement')
+    if (implResult.allowed) {
       await fsm.transition(args['plan-id'], 'implement', { actor: { kind: 'system', component: 'phase-build' } })
-    } catch {}
+    }
 
     const result = { phase: 'BUILD', task, status: 'RUNNING' }
     if (args.json) console.log(JSON.stringify(result, null, 2))
@@ -563,6 +600,7 @@ export const phaseVerify = defineCommand({
     await store.update(args['task-id'], { payload: updatedPayload })
 
     // Attempt FSM transition to COMPLETED
+    // Guards: build_passed, lint_passed, tests_passed
     const allPassed = results.buildStatus === 'success' &&
                       (results.buildExitCode ?? 1) === 0 &&
                       results.lintStatus === 'success' &&
@@ -572,15 +610,22 @@ export const phaseVerify = defineCommand({
 
     let transitionResult = null
     if (allPassed) {
-      try {
+      const completeResult = await fsm.canTransition(args['task-id'], 'complete')
+      if (!completeResult.allowed) {
+        if (!args.json) {
+          console.error('\nFSM transition blocked: RUNNING -> COMPLETED')
+          console.error('   Task cannot be completed due to:')
+          completeResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+        }
+        // Don't exit - allow user to see what passed and fix issues
+      } else {
         transitionResult = await fsm.transition(args['task-id'], 'complete', {
           actor: { kind: 'human', userId: 'cli' }
         })
-        if (!args.json) console.log('\nTask marked COMPLETED')
-      } catch (e) {
-        const error = e as Error
-        if (!args.json) console.log('\nFSM transition failed:', error.message)
+        if (!args.json) console.log('\n   FSM: RUNNING -> COMPLETED ✓')
       }
+    } else if (!args.json) {
+      console.log('\n   Verification requirements not met - cannot complete Task')
     }
 
     const passed = allPassed && (transitionResult?.success ?? false)
@@ -837,17 +882,17 @@ export const phaseShip = defineCommand({
         }
         process.exit(1)
       }
-      // Attempt FSM transition
-      try {
-        await fsm.transition(args['task-id'], 'complete', {
-          actor: { kind: 'human', userId: 'cli' }
-        })
-      } catch (e) {
-        const error = e as Error
-        console.error('\nFSM transition failed:', error.message)
+      // FSM transition with guard check
+      const completeResult = await fsm.canTransition(args['task-id'], 'complete')
+      if (!completeResult.allowed) {
+        console.error('\nFSM transition blocked: RUNNING -> COMPLETED')
+        completeResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
         console.log('\n   Run verification first: scale verify ' + args['task-id'] + '\n')
         process.exit(1)
       }
+      await fsm.transition(args['task-id'], 'complete', {
+        actor: { kind: 'human', userId: 'cli' }
+      })
     }
 
     if (!reviewPassed) {
