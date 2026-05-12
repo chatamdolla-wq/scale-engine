@@ -6,6 +6,8 @@ import type { ArtifactId, SessionId, ScenarioMode, KnowledgeEntry } from '../art
 import type { IArtifactStore } from '../artifact/store.js'
 import type { IKnowledgeBase } from '../knowledge/KnowledgeBase.js'
 import type { IEventBus } from '../core/eventBus.js'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 export interface ContextLayer {
   name: string
@@ -277,6 +279,32 @@ export class ContextBuilder implements IContextBuilder {
       priority: 1,
       estimatedTokens: 2000,
     })
+
+
+    // P1.9: Project Glossary (mattpocock/skills CONTEXT.md style)
+    // Reads .scale/GLOSSARY.md for domain terminology injection
+    try {
+      const glossaryPath = join(process.env.SCALE_DIR ?? '.scale', 'GLOSSARY.md')
+      if (existsSync(glossaryPath)) {
+        const glossaryContent = readFileSync(glossaryPath, 'utf-8')
+        const terms = glossaryContent
+          .split('## Language')[1]
+          ?.split('## ')[0]
+          ?.split('\n')
+          ?.filter(l => l.startsWith('**') && l.includes(':'))
+          ?.map(l => l.replace(/\*\*/g, '').trim())
+          ?.slice(0, 12)
+          .join('\n') ?? ''
+        if (terms) {
+          layers.push({
+            name: 'project_glossary',
+            content: `## Project Glossary\n${terms}\n\nUse these domain terms exactly. Do not substitute synonyms.`,
+            priority: 1,
+            estimatedTokens: 600,
+          })
+        }
+      }
+    } catch { /* glossary optional */ }
 
     // P2: Role prompt
     if (opts.roleId) {

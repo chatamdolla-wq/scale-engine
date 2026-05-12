@@ -1,3 +1,20 @@
+## 0.12.1 - 2026-05-12
+
+### ContextBuilder glossary injection
+
+**Added:**
+
+- ContextBuilder P1.9 layer: auto-injects `.scale/GLOSSARY.md` domain terms into every session context
+- Agent sees "Use these domain terms exactly. Do not substitute synonyms." constraint
+- 12 core terms (Artifact, FSM, Gate, Evidence, Detector, Hook, etc.) surfaced automatically
+
+**Verified:**
+
+- `npm run build` — tsc zero errors
+- `npx vitest run tests/context/contextBuilder.test.ts` — 13 tests passed
+
+---
+
 ## 0.12.0 - 2026-05-12
 
 ### DeepSeek TUI adapter + mattpocock/skills integration
