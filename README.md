@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.12.1-orange?style=flat-square" alt="version" />
-  <img src="https://img.shields.io/badge/platforms-13-blue?style=flat-square" alt="platforms" />
+  <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
@@ -61,7 +61,7 @@ v0.11.1 新增四大优先级改进：
 - 可选严格 TDD evidence 门禁：`--tdd-evidence` 和 `--tdd-strict`
 - `ship --no-commit` 交付报告
 - `ship` 发布前强制验证 review evidence
-- 13 个平台适配器，12 个专业 Agent Profile
+- 16 个平台适配器，12 个专业 Agent Profile
 - Browser QA Capability (Playwright MCP)
 - Evolution 自改进闭环
 - 本轮加固后，499 个 Vitest 测试通过
@@ -144,7 +144,7 @@ G7 `SecurityGate` 内置轻量安全扫描，覆盖硬编码密钥、私钥、TL
 
 ## 支持的平台与角色
 
-SCALE Engine 内置 13 个平台适配器，包括 Claude Code、Codex CLI、OpenCode、Cursor、Gemini CLI、OpenClaw、Hermes、Trae、WorkBuddy、VS Code Copilot CLI、QCoder、DeepSeek-TUI、Aider。
+SCALE Engine 内置 16 个平台适配器，包括 Claude Code、Codex CLI、OpenCode、Cursor、Gemini CLI、OpenClaw、Hermes、Trae、WorkBuddy、VS Code Copilot CLI、QCoder、DeepSeek-TUI、Aider、Windsurf、Kimi、Doubao。
 
 内置 12 个专业 Agent Profile：
 
