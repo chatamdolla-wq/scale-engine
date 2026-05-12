@@ -805,6 +805,7 @@ export type AgentPlatform =
   | 'vsc'
   | 'qcoder'
   | 'deepseek-tui'
+  | 'aider'
 
 /** Skill 引用 */
 export interface SkillRef {

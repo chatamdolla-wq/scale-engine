@@ -14,6 +14,7 @@ import { WorkBuddyAdapter } from './WorkBuddyAdapter.js'
 import { VSCAdapter } from './VSCAdapter.js'
 import { QCoderAdapter } from './QCoderAdapter.js'
 import { DeepSeekTuiAdapter } from './DeepSeekTuiAdapter.js'
+import { AiderAdapter } from './AiderAdapter.js'
 import type { AgentPlatform } from '../artifact/types.js'
 
 // Re-export all adapters and shared types
@@ -30,6 +31,7 @@ export { WorkBuddyAdapter } from './WorkBuddyAdapter.js'
 export { VSCAdapter } from './VSCAdapter.js'
 export { QCoderAdapter } from './QCoderAdapter.js'
 export { DeepSeekTuiAdapter } from './DeepSeekTuiAdapter.js'
+export { AiderAdapter } from './AiderAdapter.js'
 
 // ============================================================================
 // Adapter Registry
@@ -48,6 +50,7 @@ const ADAPTER_MAP: Record<AgentPlatform, new () => IAgentAdapter> = {
   'vsc': VSCAdapter,
   'qcoder': QCoderAdapter,
   'deepseek-tui': DeepSeekTuiAdapter,
+  'aider': AiderAdapter,
 }
 
 /** All supported agent type identifiers */
