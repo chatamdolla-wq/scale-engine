@@ -1,3 +1,59 @@
+## 0.12.0 - 2026-05-12
+
+### DeepSeek TUI adapter + mattpocock/skills integration
+
+**New platform adapter:**
+
+- **DeepSeek TUI adapter** (13th platform) — `scale init --agent deepseek-tui`
+  - Per-project config.toml overlay (#485) with sandbox_mode, approval_policy, allow_shell
+  - `.deepseek/instructions.md` injection with SCALE phase workflow guide
+  - Hook configuration guidance (global-only per deepseek-tui design)
+  - Platform detection via `.deepseek/instructions.md`
+  - `DeepSeekTuiAdapter` implements `IAgentAdapter` interface
+
+**New features (inspired by mattpocock/skills):**
+
+- **Out-of-Scope knowledge base** — Persistent rejected concept records (`.scale/out-of-scope/`)
+  - `scale out-of-scope add|check|list|remove` CLI commands
+  - Fuzzy concept matching by description keywords
+  - Markdown format with title, reason, technical context, prior requests
+
+- **Agent Brief structure** — Standardized agent-executable work specification
+  - `AgentBrief` type: category, current/desired behavior, key interfaces, acceptance criteria, out-of-scope
+  - Auto-generated during `scale build` phase
+  - No file paths or line numbers (durability over precision)
+
+- **Dual-axis Review — Spec dimension** — Check diff against original Spec/PRD requirements
+  - `analyzeSpecConformance()`: keyword extraction, coverage scoring, missing/extra/mismatched detection
+  - Integrated into `scale review` phase alongside existing Standards analysis
+  - Stop word filtering, PascalCase + quoted term extraction
+
+- **Project glossary** — Domain language system (mirrors CONTEXT.md)
+  - `.scale/GLOSSARY.md` with 17 terms + 7 relationships + 3 flagged ambiguities
+  - `scale context glossary` command (human + JSON output)
+
+**Quality improvements:**
+
+- 4 empty catch blocks fixed (AgentSourceLoader, phaseCommands, dashboard, SkillDiscovery)
+- 63 new tests: phaseValidation (21), deepseek-adapter (18), outOfScopeStore (14), specConformance (9), shouldSkipCommit (1)
+- deepseek-adapter Windows EBUSY file lock fix with retry mechanism
+
+**Changes:**
+
+- `AgentPlatform` type extended with `'deepseek-tui'`
+- `TaskPayload` extended with `agentBrief?: AgentBrief`
+- `ReviewRecord` extended with `specFindings?: string[]` and `specCoverage?: number`
+- `SUPPORTED_AGENTS` now includes `'deepseek-tui'` (13 total)
+- `SkillDiscovery` and `quickstart` updated for deepseek-tui detection
+
+**Verified:**
+
+- `npm run build` — tsc zero errors
+- `npx vitest run` — 562 tests passed
+- `scale context glossary` smoke test
+
+---
+
 # @hongmaple0820/scale-engine CHANGELOG
 
 ## 0.10.1 - 2026-05-10

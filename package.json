@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.11.2",
-  "description": "SCALE Engine v0.11.1 - AI engineering workflow with FSM blocking, OWASP Top 10 detector (19 patterns), Browser QA (Playwright MCP), Evolution self-improve loop, 11 platform adapters, 12 agent profiles, 499 tests",
+  "version": "0.12.0",
+  "description": "SCALE Engine v0.12.0 - AI engineering workflow with FSM blocking, OWASP Top 10 detector (19 patterns), Browser QA (Playwright MCP), Evolution self-improve loop, 11 platform adapters, 12 agent profiles, 499 tests",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"

@@ -9,6 +9,7 @@ import type { IEventBus } from '../core/eventBus.js'
 import type { SkillRegistry } from './SkillRegistry.js'
 import type { SkillInstallConfig, ISkillInstaller, InstallMethod } from './SkillInstaller.js'
 import type { AgentPlatform, SkillRef, SkillScanResult, DevelopmentPhase } from '../artifact/types.js'
+import { logger } from '../core/logger.js'
 
 // Phase-based skill directory structure
 const PHASE_DIRS: DevelopmentPhase[] = ['DEFINE', 'PLAN', 'BUILD', 'VERIFY', 'REVIEW', 'SHIP', 'ANTI-PATTERNS']
@@ -88,7 +89,7 @@ export interface ISkillDiscovery {
 // ============================================================================
 
 /** 全局级平台：skills 目录在 homedir 下 */
-const GLOBAL_PLATFORMS: AgentPlatform[] = ['claude-code', 'codex', 'opencode']
+const GLOBAL_PLATFORMS: AgentPlatform[] = ['claude-code', 'codex', 'opencode', 'deepseek-tui']
 
 /** 项目级平台：skills 目录在项目目录下 */
 const PROJECT_PLATFORMS: AgentPlatform[] = ['cursor', 'gemini', 'openclaw', 'hermes', 'trae', 'workbuddy', 'vsc', 'qcoder']
@@ -107,6 +108,7 @@ const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string> = {
   'workbuddy': join('.workbuddy', 'skills'),
   'vsc': join('.vscode', 'skills'),
   'qcoder': join('.qwen', 'skills'),
+  'deepseek-tui': join(homedir(), '.deepseek', 'skills'),
 }
 
 export class SkillDiscovery implements ISkillDiscovery {
@@ -227,6 +229,7 @@ export class SkillDiscovery implements ISkillDiscovery {
       { platform: 'workbuddy', paths: [join(this.projectDir, '.workbuddy', 'settings.json')] },
       { platform: 'vsc', paths: [join(this.projectDir, '.vscode', 'scale.json')] },
       { platform: 'qcoder', paths: [join(this.projectDir, '.qwen', 'settings.json')] },
+      { platform: 'deepseek-tui', paths: [join(this.projectDir, '.deepseek', 'instructions.md')] },
     ]
     for (const check of checks) {
       if (check.paths.some(p => existsSync(p))) return check.platform
@@ -253,7 +256,7 @@ export class SkillDiscovery implements ISkillDiscovery {
           skills.push({ id: `${platform}-${entry}`, name: entry, description: '', platform, path: entryPath, enabled: true })
         }
       }
-    } catch { /* Permission error */ }
+    } catch (error) { logger.warn({ error }, 'Permission error scanning skills directory') }
 
     return { platform, skillsDir: resolvedDir, skills, exists: true }
   }
@@ -310,7 +313,7 @@ export class SkillDiscovery implements ISkillDiscovery {
               })
             }
           }
-        } catch { /* Permission error */ }
+        } catch (error) { logger.warn({ error }, 'Permission error scanning skills directory') }
       }
 
       result.set(phase, { phase, skills, count: skills.length })

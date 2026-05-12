@@ -60,7 +60,7 @@ export class DashboardServer {
     try {
       const content = await readFile(join(this.viewsDir, viewFile), 'utf-8')
       res.setHeader('Content-Type', 'text/html'); res.end(content)
-    } catch { res.statusCode = 404; res.end('Not found') }
+    } catch (error) { logger.warn({ error, viewFile }, 'View file not found'); res.statusCode = 404; res.end('Not found') }
   }
 
   private async handleApi(url: string, res: any): Promise<void> {

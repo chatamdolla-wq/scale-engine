@@ -14,7 +14,7 @@ import { SkillRegistry } from '../skills/SkillRegistry.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
-import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, type ChangedFile, type VerificationEvidenceSummary } from '../workflow/ReviewAnalyzer.js'
+import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
@@ -456,6 +456,15 @@ export const phaseBuild = defineCommand({
       lintStatus: 'pending',
       testPassed: undefined,
       testCoverage: undefined,
+      agentBrief: {
+        category: 'enhancement',
+        summary: args.description ?? `Implement ${plan.title}`,
+        currentBehavior: 'Feature not yet implemented',
+        desiredBehavior: `Implement: ${plan.title}`,
+        keyInterfaces: [],
+        acceptanceCriteria: [],
+        outOfScope: [],
+      },
     }
 
     const task = await store.create({
@@ -946,7 +955,7 @@ export const phaseShip = defineCommand({
       const planId = task.parents[0]
       try {
         await fsm.transition(planId, 'complete', { actor: { kind: 'system', component: 'phase-ship' } })
-      } catch {}
+      } catch (e) { console.error("Warning: Plan completion transition failed:", (e as Error).message) }
     }
 
     // === WorkflowEngine Integration ===

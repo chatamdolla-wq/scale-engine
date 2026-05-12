@@ -26,6 +26,10 @@ export interface ReviewRecord {
   findings: ReviewFinding[]
   changedFiles: string[]
   summary: ReviewSummary
+  /** Spec维度：diff 是否匹配原始 Spec/PRD 要求 */
+  specFindings?: string[]
+  /** Spec关键词覆盖率 0..1 */
+  specCoverage?: number
   createdAt: number
 }
 

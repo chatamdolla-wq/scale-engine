@@ -343,3 +343,133 @@ export function analyzeReview(input: ReviewAnalysisInput): { changedFiles: Chang
 
   return { changedFiles, findings }
 }
+
+
+// ============================================================================
+// Spec Dimension — 借鉴 mattpocock/skills 的双轴 Review（Standards × Spec）
+// 检查 diff 是否匹配原始 Spec/PRD 要求的内容
+// ============================================================================
+
+export interface SpecAnalysisInput {
+  /** Spec or PRD content to validate against */
+  specContent: string
+  /** Changed files from git status */
+  changedFiles: ChangedFile[]
+  /** The diff content */
+  diffs: DiffInput[]
+  /** Task description for semantic matching */
+  taskDescription?: string
+}
+
+export interface SpecFinding {
+  /** missing — spec asks for this but it's absent; extra — diff has this but spec didn't ask; mismatched — looks wrong */
+  type: 'missing' | 'extra' | 'mismatched'
+  /** Human-readable description */
+  description: string
+  /** Related spec line or requirement */
+  specReference?: string
+  /** Related file path */
+  file?: string
+}
+
+/**
+ * Analyze whether the diff changes match what the Spec/PRD asked for.
+ * This implements the "Spec axis" of mattpocock's dual-axis review.
+ *
+ * The approach is keyword-driven: extract key terms from the spec,
+ * then check whether the diff touches modules related to those terms.
+ * This is intentionally simple — no LLM semantic analysis.
+ */
+export function analyzeSpecConformance(input: SpecAnalysisInput): {
+  specFindings: SpecFinding[]
+  coverageScore: number  // 0..1: what fraction of spec keywords appear in diffs
+} {
+  const findings: SpecFinding[] = []
+
+  // Extract key terms from spec (nouns, module names, feature keywords)
+  const specKeywords = extractSpecKeywords(input.specContent, input.taskDescription)
+
+  // Check which keywords appear in changed files and diffs
+  const diffText = [
+    ...input.changedFiles.map(f => f.path),
+    ...input.diffs.map(d => d.text.slice(0, 5000))
+  ].join(' ').toLowerCase()
+
+  let matchedKeywords = 0
+  for (const keyword of specKeywords) {
+    if (diffText.includes(keyword.toLowerCase())) {
+      matchedKeywords++
+    } else {
+      // Keyword not found — might indicate missing implementation
+      const inFiles = input.changedFiles.some(f => f.path.toLowerCase().includes(keyword.toLowerCase()))
+      if (!inFiles) {
+        findings.push({
+          type: 'missing',
+          description: `Spec mentions "${keyword}" but no changed file or diff references it`,
+          specReference: keyword,
+        })
+      }
+    }
+  }
+
+  // Check for scope creep: files changed that don't relate to spec keywords
+  const unrelatedFiles = input.changedFiles.filter(file => {
+    const path = file.path.toLowerCase()
+    // Ignore known runtime/artifact dirs
+    if (path.includes('.scale/') || path.includes('node_modules/') || path.includes('dist/')) return false
+    return !specKeywords.some(kw => path.includes(kw.toLowerCase()))
+  })
+
+  if (unrelatedFiles.length > 0) {
+    findings.push({
+      type: 'extra',
+      description: `${unrelatedFiles.length} changed file(s) not clearly related to spec keywords: ${unrelatedFiles.map(f => f.path).slice(0, 5).join(', ')}`,
+      file: unrelatedFiles[0]?.path,
+    })
+  }
+
+  const coverageScore = specKeywords.length > 0 ? matchedKeywords / specKeywords.length : 1.0
+
+  return { specFindings: findings, coverageScore }
+}
+
+/**
+ * Extract meaningful keywords from spec content.
+ * Filters out common stop words and keeps nouns/technical terms.
+ */
+function extractSpecKeywords(specContent: string, taskDescription?: string): string[] {
+  const text = (specContent + ' ' + (taskDescription ?? '')).toLowerCase()
+
+  // Extract quoted terms, capitalized words, and CamelCase identifiers
+  const patterns = [
+    /"([^"]+)"/g,           // "quoted terms"
+    /'([^']+)'/g,           // 'quoted terms'
+    /([A-Z][a-z]+(?:[A-Z][a-z]+)+)/g,  // PascalCase
+    /verification|evidence|review|ship|deploy|release/g,
+  ]
+
+  const keywords = new Set<string>()
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const kw = (match[1] || match[0]).toLowerCase()
+      if (kw.length > 2 && !STOP_WORDS.has(kw)) {
+        keywords.add(kw)
+      }
+    }
+  }
+
+  // Also extract significant nouns (words > 5 chars, not stop words)
+  const words = text.split(/\W+/).filter(w => w.length > 5 && !STOP_WORDS.has(w))
+  for (const w of words.slice(0, 10)) {
+    keywords.add(w)
+  }
+
+  return [...keywords]
+}
+
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'that', 'this', 'with', 'from', 'have', 'will',
+  'should', 'must', 'need', 'when', 'where', 'which', 'what', 'into',
+  'implement', 'implementation', 'create', 'support', 'feature',
+  'description', 'requirement', 'solution', 'approach',
+])

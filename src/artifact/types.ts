@@ -186,6 +186,28 @@ export interface TestSpec {
 }
 
 /** Task —— 原子可执行单元 */
+
+/** Agent Brief — 借鉴 mattpocock/skills 的 AGENT-BRIEF.md 设计
+ *  标准化的 Agent 可执行工单格式。
+ *  禁止引用文件路径和行号（会过时），描述行为而非实现步骤。
+ */
+export interface AgentBrief {
+  /** bug | enhancement */
+  category: 'bug' | 'enhancement'
+  /** 一句话描述 */
+  summary: string
+  /** 当前行为（bug 时为错误行为，enhancement 时为现状） */
+  currentBehavior: string
+  /** 期望行为（完成后系统应如何表现） */
+  desiredBehavior: string
+  /** 关键接口：需变更的类型/函数/配置 */
+  keyInterfaces: string[]
+  /** 可独立验证的验收标准 */
+  acceptanceCriteria: string[]
+  /** 明确排除的范围 */
+  outOfScope: string[]
+}
+
 export interface TaskPayload {
   description: string
   estimatedTokens?: number
@@ -210,6 +232,8 @@ export interface TaskPayload {
   verifiedAt?: Timestamp
   reviewEvidenceIds?: string[]
   reviewedAt?: Timestamp
+  /** Agent Brief — 标准化的 Agent 可执行工单（借鉴 mattpocock/skills） */
+  agentBrief?: AgentBrief
 }
 
 /** Change —— 实际代码变更 */
@@ -780,6 +804,7 @@ export type AgentPlatform =
   | 'workbuddy'
   | 'vsc'
   | 'qcoder'
+  | 'deepseek-tui'
 
 /** Skill 引用 */
 export interface SkillRef {

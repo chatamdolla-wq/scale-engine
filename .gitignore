@@ -20,3 +20,4 @@ docs/promote-article-*.html
 scale-engine-compare
 .claude/
 .baoyu-skills/
+tmp/

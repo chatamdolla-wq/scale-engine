@@ -113,10 +113,15 @@ export {
   WorkBuddyAdapter,
   VSCAdapter,
   QCoderAdapter,
+  DeepSeekTuiAdapter,
   createAdapter,
   SUPPORTED_AGENTS,
 } from './adapters/index.js'
 export type { IAgentAdapter, AdapterConfig, InitResult, SettingsJson, HookEntry } from './adapters/ClaudeCodeAdapter.js'
+
+// Out-of-Scope Knowledge Base
+export { OutOfScopeStore } from './workflow/OutOfScopeStore.js'
+export type { OutOfScopeEntry } from './workflow/OutOfScopeStore.js'
 
 // Workflow Presets
 export {

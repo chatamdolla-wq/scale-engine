@@ -17,6 +17,7 @@ export function detectPlatform(projectDir: string = '.'): PlatformDetectionResul
     { platform: 'codex', paths: [join(projectDir, '.codex', 'config.toml')] },
     { platform: 'cursor', paths: [join(projectDir, '.cursorrules')] },
     { platform: 'gemini', paths: [join(projectDir, '.gemini', 'settings.json')] },
+    { platform: 'deepseek-tui', paths: [join(projectDir, '.deepseek', 'instructions.md')] },
   ]
   for (const check of checks) {
     for (const p of check.paths) if (existsSync(p)) return { platform: check.platform, confidence: 1.0, suggestions: [] }

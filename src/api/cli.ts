@@ -20,8 +20,9 @@ import { quickStart, detectPlatform } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
+import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
 import { ReviewStore } from '../workflow/ReviewStore.js'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ============================================================================
@@ -680,9 +681,52 @@ function formatContextSummary(ctx: { artifacts: FSMContextSnapshot[]; recommenda
   return lines.join('\n')
 }
 
+const contextGlossary = defineCommand({
+  meta: { name: 'glossary', description: 'Show project domain glossary (借鉴 mattpocock/skills CONTEXT.md)' },
+  args: {
+    json: { type: 'boolean', default: false, description: 'JSON output' },
+  },
+  run({ args }) {
+    const glossaryPath = join(SCALE_DIR, 'GLOSSARY.md')
+    if (!existsSync(glossaryPath)) {
+      if (args.json) console.log(JSON.stringify({ ok: false, message: 'GLOSSARY.md not found in SCALE_DIR. Run scale init to generate it.' }))
+      else console.log('GLOSSARY.md not found. Run scale init to generate it.')
+      return
+    }
+    const content = readFileSync(glossaryPath, 'utf-8')
+    // Parse terms: **Term**: definition
+    const termMatch = /\*\*(\w[^*]+)\*\*\s*:\s*(.+)/g
+    const terms: Record<string, string> = {}
+    let m: RegExpExecArray | null
+    while ((m = termMatch.exec(content)) !== null) {
+      terms[m[1].trim()] = m[2].trim().replace(/_Avoid_/, 'Avoid:')
+    }
+    // Parse relationships
+    const relSection = content.split('## Relationships')[1]?.split('## ')[0] ?? ''
+    const relationships = relSection.split('\n').filter((l: string) => l.trim().startsWith('- ')).map((l: string) => l.replace(/^- /, '').trim())
+
+    if (args.json) {
+      console.log(JSON.stringify({ ok: true, terms, relationships, count: Object.keys(terms).length }))
+    } else {
+      console.log('=== SCALE Engine Domain Glossary ===\n')
+      console.log(`Terms (${Object.keys(terms).length}):\n`)
+      for (const [term, def] of Object.entries(terms)) {
+        console.log(`  **${term}**: ${def}`)
+      }
+      if (relationships.length > 0) {
+        console.log(`\nRelationships (${relationships.length}):`)
+        for (const rel of relationships) {
+          console.log(`  - ${rel}`)
+        }
+      }
+    }
+  },
+})
+
+
 const context = defineCommand({
   meta: { name: 'context', description: 'Context assembly' },
-  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject },
+  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary },
 })
 
 // ============================================================================
@@ -1030,6 +1074,79 @@ const evidence = defineCommand({
 })
 
 // ============================================================================
+// out-of-scope command — 借鉴 mattpocock/skills 的 .out-of-scope/ 设计
+// ============================================================================
+
+const outOfScopeAdd = defineCommand({
+  meta: { name: 'add', description: 'Record a rejected concept to the out-of-scope knowledge base' },
+  args: {
+    concept: { type: 'positional', required: true, description: 'kebab-case concept name' },
+    title: { type: 'string', required: true, description: 'Human-readable title' },
+    reason: { type: 'string', required: true, description: 'Why this was rejected' },
+    'tech-context': { type: 'string', description: 'Technical constraints that led to rejection' },
+    'prior-requests': { type: 'string', description: 'Comma-separated issue IDs or URLs' },
+  },
+  run({ args }) {
+    ensureDir(SCALE_DIR)
+    const store = new OutOfScopeStore(SCALE_DIR)
+    const entry = store.add({
+      concept: args.concept,
+      title: args.title,
+      reason: args.reason,
+      technicalContext: args['tech-context'],
+      priorRequests: args['prior-requests']?.split(',').map(s => s.trim()) ?? [],
+    })
+    console.log(JSON.stringify({ ok: true, concept: entry.concept, title: entry.title, priorRequests: entry.priorRequests.length }, null, 2))
+  },
+})
+
+const outOfScopeCheck = defineCommand({
+  meta: { name: 'check', description: 'Check if a concept matches any existing out-of-scope entry' },
+  args: {
+    concept: { type: 'positional', required: true, description: 'Concept name to check' },
+    description: { type: 'string', description: 'Optional description for fuzzy matching' },
+  },
+  run({ args }) {
+    ensureDir(SCALE_DIR)
+    const store = new OutOfScopeStore(SCALE_DIR)
+    const match = store.check(args.concept, args.description)
+    if (match) {
+      console.log(JSON.stringify({ ok: true, matched: true, concept: match.concept, title: match.title, reason: match.reason, priorRequests: match.priorRequests }, null, 2))
+    } else {
+      console.log(JSON.stringify({ ok: true, matched: false }, null, 2))
+    }
+  },
+})
+
+const outOfScopeList = defineCommand({
+  meta: { name: 'list', description: 'List all out-of-scope entries' },
+  run() {
+    ensureDir(SCALE_DIR)
+    const store = new OutOfScopeStore(SCALE_DIR)
+    const entries = store.list()
+    console.log(JSON.stringify({ ok: true, total: entries.length, entries: entries.map(e => ({ concept: e.concept, title: e.title, priorRequests: e.priorRequests.length, updatedAt: new Date(e.updatedAt).toISOString() })) }, null, 2))
+  },
+})
+
+const outOfScopeRemove = defineCommand({
+  meta: { name: 'remove', description: 'Remove an out-of-scope entry (concept reconsidered)' },
+  args: {
+    concept: { type: 'positional', required: true, description: 'Concept name to remove' },
+  },
+  run({ args }) {
+    ensureDir(SCALE_DIR)
+    const store = new OutOfScopeStore(SCALE_DIR)
+    const removed = store.remove(args.concept)
+    console.log(JSON.stringify({ ok: removed, concept: args.concept }, null, 2))
+  },
+})
+
+const outOfScope = defineCommand({
+  meta: { name: 'out-of-scope', description: 'Manage out-of-scope knowledge base (rejected concepts with institutional memory)' },
+  subCommands: { add: outOfScopeAdd, check: outOfScopeCheck, list: outOfScopeList, remove: outOfScopeRemove },
+})
+
+// ============================================================================
 // skill command — 技能发现
 // ============================================================================
 
@@ -1240,6 +1357,7 @@ const main = defineCommand({
     agent,
     team,
     'create-prd': createPRD,
+    'out-of-scope': outOfScope,
   },
 })
 

@@ -55,7 +55,7 @@ export class AgentSourceLoader implements IAgentSourceLoader {
   
   loadFromFile(filePath: string): AgentProfile | null {
     if (!existsSync(filePath)) return null
-    try { return this.loadFromYAML(readFileSync(filePath, 'utf-8')) } catch { return null }
+    try { return this.loadFromYAML(readFileSync(filePath, 'utf-8')) } catch (error) { logger.error({ error }, "Failed to parse YAML agent definition"); return null }
   }
   
   loadFromYAML(content: string): AgentProfile | null {
@@ -63,7 +63,7 @@ export class AgentSourceLoader implements IAgentSourceLoader {
       const def = yaml.load(content) as YAMLAgentDefinition
       if (!this.validateDefinition(def)) return null
       return this.convertDefinition(def)
-    } catch { return null }
+    } catch (error) { logger.error({ error }, "Failed to parse YAML agent definition"); return null }
   }
   
   validateDefinition(def: YAMLAgentDefinition): boolean {
