@@ -15,6 +15,9 @@ import { VSCAdapter } from './VSCAdapter.js'
 import { QCoderAdapter } from './QCoderAdapter.js'
 import { DeepSeekTuiAdapter } from './DeepSeekTuiAdapter.js'
 import { AiderAdapter } from './AiderAdapter.js'
+import { WindsurfAdapter } from './WindsurfAdapter.js'
+import { KimiAdapter } from './KimiAdapter.js'
+import { DoubaoAdapter } from './DoubaoAdapter.js'
 import type { AgentPlatform } from '../artifact/types.js'
 
 // Re-export all adapters and shared types
@@ -32,6 +35,9 @@ export { VSCAdapter } from './VSCAdapter.js'
 export { QCoderAdapter } from './QCoderAdapter.js'
 export { DeepSeekTuiAdapter } from './DeepSeekTuiAdapter.js'
 export { AiderAdapter } from './AiderAdapter.js'
+export { WindsurfAdapter } from './WindsurfAdapter.js'
+export { KimiAdapter } from './KimiAdapter.js'
+export { DoubaoAdapter } from './DoubaoAdapter.js'
 
 // ============================================================================
 // Adapter Registry
@@ -51,6 +57,9 @@ const ADAPTER_MAP: Record<AgentPlatform, new () => IAgentAdapter> = {
   'qcoder': QCoderAdapter,
   'deepseek-tui': DeepSeekTuiAdapter,
   'aider': AiderAdapter,
+  'windsurf': WindsurfAdapter,
+  'kimi': KimiAdapter,
+  'doubao': DoubaoAdapter,
 }
 
 /** All supported agent type identifiers */

@@ -19,11 +19,14 @@ export function detectPlatform(projectDir: string = '.'): PlatformDetectionResul
     { platform: 'gemini', paths: [join(projectDir, '.gemini', 'settings.json')] },
     { platform: 'aider', paths: [join(projectDir, '.aider.conf.yml')] },
     { platform: 'deepseek-tui', paths: [join(projectDir, '.deepseek', 'instructions.md')] },
+    { platform: 'windsurf', paths: [join(projectDir, '.windsurf', 'settings.json'), join(projectDir, '.windsurfrc')] },
+    { platform: 'kimi', paths: [join(projectDir, '.kimi', 'settings.json')] },
+    { platform: 'doubao', paths: [join(projectDir, '.doubao', 'settings.json')] },
   ]
   for (const check of checks) {
     for (const p of check.paths) if (existsSync(p)) return { platform: check.platform, confidence: 1.0, suggestions: [] }
   }
-  return { platform: null, confidence: 0, suggestions: ['claude-code', 'cursor', 'aider'] }
+  return { platform: null, confidence: 0, suggestions: ['claude-code', 'cursor', 'aider', 'windsurf'] }
 }
 
 export const PHYSICAL_CONSTRAINTS = [

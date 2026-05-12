@@ -806,6 +806,9 @@ export type AgentPlatform =
   | 'qcoder'
   | 'deepseek-tui'
   | 'aider'
+  | 'windsurf'
+  | 'kimi'
+  | 'doubao'
 
 /** Skill 引用 */
 export interface SkillRef {
