@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.12.2-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.12.3-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/npm-0.12.2-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.12.2
+# SCALE Engine v0.12.3
 
 SCALE Engine 是一个面向 AI 编码 Agent 的工程化工作流运行时。它把提示词里的工程纪律，下沉为状态机、质量门禁、持久化证据、确定性 review 记录和发布检查。
 
