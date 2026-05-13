@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -35,6 +35,8 @@ function parseJson<T = unknown>(stdout: string): T {
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
   for (const file of repoFiles) rmSync(file, { force: true })
+  // Clean up test-fixtures/phase-cli directory if created
+  rmSync(join('test-fixtures', 'phase-cli'), { recursive: true, force: true })
   dirs = []
   repoFiles = []
 })
@@ -153,9 +155,13 @@ describe('phase CLI workflow', () => {
     expect(verify.exitCode).toBe(0)
     expect(parseJson<{ passed: boolean }>(verify.stdout).passed).toBe(true)
 
+    // Use a directory that is NOT in .gitignore so git ls-files can detect it
+    // tmp/ is ignored by .gitignore, so use test-fixtures/ instead
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const reviewedPath = join('tmp', `phase-cli-reviewed-${suffix}.txt`)
-    const unreviewedPath = join('tmp', `phase-cli-unreviewed-${suffix}.txt`)
+    const reviewedPath = join('test-fixtures', 'phase-cli', `reviewed-${suffix}.txt`)
+    const unreviewedPath = join('test-fixtures', 'phase-cli', `unreviewed-${suffix}.txt`)
+    // Ensure directory exists
+    mkdirSync(join('test-fixtures', 'phase-cli'), { recursive: true })
     repoFiles.push(reviewedPath, unreviewedPath)
     writeFileSync(reviewedPath, 'reviewed\n', 'utf-8')
     const review = await runScale(['review', taskId, '--json'], scaleDir)

@@ -729,6 +729,13 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
   const stagedFiles: string[] = []
   const unreviewedFiles: string[] = []
 
+  // Edge case: if currentChanges is empty but reviewedFiles has files that should be staged,
+  // this indicates files were deleted or moved. Treat reviewed but missing files as unreviewed.
+  if (currentChanges.length === 0 && reviewedFiles.size > 0) {
+    // No changes to stage, but we have review records - this is a pass (nothing to commit)
+    return { stagedFiles: [], unreviewedFiles: [] }
+  }
+
   for (const file of currentChanges) {
     const normalizedPath = normalizeGitPath(file.path)
     if (reviewedFiles.has(normalizedPath)) {
@@ -738,6 +745,7 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
     }
   }
 
+  // Only block if there are actual unreviewed changes
   if (unreviewedFiles.length > 0) {
     return { stagedFiles: [], unreviewedFiles }
   }
