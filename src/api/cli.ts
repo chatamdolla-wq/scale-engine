@@ -1320,12 +1320,18 @@ const team = defineCommand({
 
 import * as phaseCommands from '../cli/phaseCommands.js'
 import * as liteCommands from '../cli/liteCommands.js'
+import * as vibeCommands from '../cli/vibeCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.10.1', description: 'SCALE Engine v0.10.1 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Lite Mode: scale lite; 11 agents; 10 workflows; 9 detectors' },
+  meta: { name: 'scale', version: '0.12.2', description: 'SCALE Engine v0.12.2 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Vibe templates: scale vibe; 16 platform adapters; 12 agents; 10 workflows; 19 detectors' },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,
+
+    // Vibe Templates (one-click prompt workflow)
+    vibe: vibeCommands.vibeCommand,
+    'vibe-next': vibeCommands.vibeNextCommand,
+    'vibe-index': vibeCommands.vibeIndexCommand,
 
     // Phase-Aligned Commands (agent-skills style)
     define: phaseCommands.phaseDefine,

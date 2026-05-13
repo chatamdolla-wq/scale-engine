@@ -75,6 +75,34 @@ scale --version
 
 需要 Node.js 20 或更高版本。
 
+## Vibe Templates（一键启动）
+
+内置高质量提示词模板，无需输入复杂指令：
+
+```bash
+# 查看所有模板
+scale vibe
+
+# 使用组合包启动完整 MVP 流程
+scale vibe --pack full-mvp --app "MyExpenseTracker"
+
+# 单阶段生成提示词
+scale vibe --phase prd --app "MyApp" --output docs/PRD-MyApp.md
+```
+
+**6 阶段流程**：
+
+| 阶段 | 命令 | 预估时间 |
+|------|------|----------|
+| idea | `scale vibe --phase idea` | 15-20 min |
+| research | `scale vibe --phase research` | 20-30 min |
+| prd | `scale vibe --phase prd` | 15-20 min |
+| design | `scale vibe --phase design` | 15-20 min |
+| agents | `scale vibe --phase agents` | 1-2 min |
+| build | `scale vibe --phase build` | 1-3 hrs |
+
+详见 [Vibe Templates 文档](docs/VIBE-TEMPLATES.md)。
+
 ## 阶段工作流
 
 ```bash
