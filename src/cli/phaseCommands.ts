@@ -807,7 +807,7 @@ export const phaseReview = defineCommand({
       taskId: args['task-id'],
       passed,
       findings,
-      changedFiles: review.changedFiles.map(file => file.path),
+      changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
     })
 
@@ -826,7 +826,7 @@ export const phaseReview = defineCommand({
       taskId: args['task-id'],
       reviewId: record.id,
       findings,
-      changedFiles: review.changedFiles.map(file => file.path),
+      changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
       passed,
       recommendation: passed ? 'Ready to ship' : 'Fix CRITICAL issues before shipping'
