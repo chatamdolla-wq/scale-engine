@@ -729,6 +729,12 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
   const stagedFiles: string[] = []
   const unreviewedFiles: string[] = []
 
+  // Debug: log reviewedFiles and currentChanges
+  if (process.env.SCALE_DEBUG_STAGE === '1') {
+    console.error('[DEBUG] reviewedFiles:', [...reviewedFiles])
+    console.error('[DEBUG] currentChanges:', currentChanges.map(f => f.path))
+  }
+
   // Edge case: if currentChanges is empty but reviewedFiles has files that should be staged,
   // this indicates files were deleted or moved. Treat reviewed but missing files as unreviewed.
   if (currentChanges.length === 0 && reviewedFiles.size > 0) {
