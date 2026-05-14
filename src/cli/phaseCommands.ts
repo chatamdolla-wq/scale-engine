@@ -11,10 +11,16 @@ import { FSM } from '../artifact/fsm.js'
 import { registerAllFSMs } from '../artifact/fsmDefinitions.js'
 import { CapabilityRegistry } from '../capabilities/CapabilityRegistry.js'
 import { SkillRegistry } from '../skills/SkillRegistry.js'
+import { registerCoreSkills } from '../skills/coreSkills.js'
+import { registerExternalSkills } from '../skills/ExternalSkills.js'
+import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, type SkillGateResult, type SkillPlan } from '../skills/routing/index.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
+import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
+import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
+import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -23,6 +29,7 @@ import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
 import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
+const PROJECT_DIR = process.env.SCALE_PROJECT_DIR ?? process.cwd()
 
 function validateVerificationEvidence(ids: string[] | undefined): { ok: boolean; missing: string[]; failed: string[] } {
   const evidenceStore = new EvidenceStore(SCALE_DIR)
@@ -84,12 +91,15 @@ function getEngine() {
 
   // Initialize skill registry
   const skillRegistry = new SkillRegistry(eventBus)
+  registerCoreSkills(skillRegistry)
+  registerExternalSkills(skillRegistry, eventBus)
 
   // Initialize workflow engine with cognitive scaffolding and quality gates.
   const workflowEngine = new WorkflowEngine({
     eventBus,
     capabilityRegistry,
-    skillRegistry
+    skillRegistry,
+    scaleDir: SCALE_DIR,
   })
 
   return { eventBus, store, fsm, workflowEngine, skillRegistry }
@@ -109,6 +119,164 @@ function shouldSkipCommit(value: unknown): boolean {
 
 function normalizeGitPath(path: string): string {
   return path.replace(/\\/g, '/')
+}
+
+type WorkflowTaskLevel = NonNullable<TaskPayload['workflowLevel']>
+
+function normalizeWorkflowLevel(value: unknown): WorkflowTaskLevel {
+  const normalized = String(value ?? 'M').trim().toUpperCase()
+  if (normalized === 'S' || normalized === 'M' || normalized === 'L' || normalized === 'CRITICAL') {
+    return normalized
+  }
+  throw new Error(`Invalid workflow level "${String(value)}"; expected S, M, L, or CRITICAL.`)
+}
+
+function metricLevelFromPayload(payload: TaskPayload): MetricTaskLevel | null {
+  const level = normalizeWorkflowLevel(payload.workflowLevel ?? 'M')
+  return level === 'S' ? null : level
+}
+
+function normalizeServices(value: unknown): string[] {
+  if (!value) return []
+  return String(value)
+    .split(',')
+    .map(service => service.trim())
+    .filter(Boolean)
+}
+
+function isWorkflowGeneratedArtifact(path: string): boolean {
+  return path.replace(/\\/g, '/').startsWith('docs/worklog/tasks/')
+}
+
+function checkCurrentTaskArtifacts(level: MetricTaskLevel): TaskArtifactCheckResult {
+  const state = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
+  return checkTaskArtifactCompleteness({
+    projectDir: PROJECT_DIR,
+    artifactsDir: state?.artifactsDir,
+    level,
+    skillRequiredArtifacts: state?.requiredSkillArtifacts,
+  })
+}
+
+function planSkillsForTask(options: {
+  taskId: string
+  taskName: string
+  description: string
+  level: WorkflowTaskLevel
+  services?: string[]
+  files?: string[]
+}): SkillPlan {
+  return createSkillPlan({
+    taskId: options.taskId,
+    taskName: options.taskName,
+    description: options.description,
+    level: options.level,
+    services: options.services ?? [],
+    files: options.files ?? [],
+    policy: loadSkillRoutingPolicy(PROJECT_DIR, SCALE_DIR),
+  })
+}
+
+interface ArtifactGateStatus {
+  mode: VerificationArtifactGateMode
+  levels: string[]
+  applies: boolean
+  checked: boolean
+  complete?: boolean
+  blocked: boolean
+}
+
+function normalizeArtifactGateMode(value: unknown): VerificationArtifactGateMode | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'off' || normalized === 'warn' || normalized === 'block') return normalized
+  throw new Error(`Invalid artifact gate mode "${String(value)}"; expected off, warn, or block.`)
+}
+
+function artifactGateLevels(policy: VerificationPolicy): string[] {
+  return policy.artifactGateLevels?.length ? policy.artifactGateLevels : ['M', 'L', 'CRITICAL']
+}
+
+function assumeVerificationArtifactWillBeWritten(check: TaskArtifactCheckResult): TaskArtifactCheckResult {
+  if (!check.artifactsDir) return check
+  const missing = check.missing.filter(file => file !== 'verification.md')
+  const incomplete = check.incomplete.filter(item => item.file !== 'verification.md')
+  return {
+    ...check,
+    missing,
+    incomplete,
+    complete: missing.length === 0 && incomplete.length === 0,
+  }
+}
+
+function evaluateArtifactGate(options: {
+  policy: VerificationPolicy
+  level: MetricTaskLevel | null
+  check?: TaskArtifactCheckResult
+  cliMode?: unknown
+  requireArtifacts?: unknown
+}): ArtifactGateStatus {
+  const mode = isTruthyFlag(options.requireArtifacts)
+    ? 'block'
+    : normalizeArtifactGateMode(options.cliMode) ?? options.policy.artifactGate ?? 'warn'
+  const levels = artifactGateLevels(options.policy)
+  const applies = Boolean(options.level && levels.includes(options.level))
+  const checked = applies && mode !== 'off' && Boolean(options.check)
+  const complete = checked ? options.check?.complete : undefined
+  return {
+    mode,
+    levels,
+    applies,
+    checked,
+    complete,
+    blocked: mode === 'block' && checked && complete === false,
+  }
+}
+
+async function countChangedFiles(taskPayload: TaskPayload): Promise<number> {
+  if (taskPayload.filesInvolved.length > 0) return new Set(taskPayload.filesInvolved.map(normalizeGitPath)).size
+  try {
+    const status = await runGit(['status', '--short'])
+    const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
+    const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
+    return parseChangedFiles(statusOutput)
+      .filter(file => shouldReviewFile(file.path))
+      .filter(file => !isWorkflowGeneratedArtifact(file.path))
+      .length
+  } catch {
+    return 0
+  }
+}
+
+async function recordVerificationMetric(options: {
+  taskId: string
+  taskName: string
+  taskPayload: TaskPayload
+  passed: boolean
+  serviceNames?: string[]
+  artifactCheck?: TaskArtifactCheckResult
+  finalGateStatus?: 'passed' | 'failed' | 'blocked'
+}): Promise<ReturnType<TaskMetricsStore['recordVerification']> | null> {
+  const level = metricLevelFromPayload(options.taskPayload)
+  if (!level) return null
+  const services = options.taskPayload.servicesTouched?.length
+    ? options.taskPayload.servicesTouched
+    : options.serviceNames ?? []
+  const metricsStore = new TaskMetricsStore(SCALE_DIR)
+  const artifactCheck = options.artifactCheck ?? checkCurrentTaskArtifacts(level)
+  const record = metricsStore.recordVerification({
+    taskId: options.taskId,
+    taskName: options.taskName,
+    level,
+    services,
+    filesChanged: await countChangedFiles(options.taskPayload),
+    passed: options.passed,
+    artifactComplete: artifactCheck.complete,
+    residualRisk: options.taskPayload.residualRisk,
+    finalGateStatus: options.finalGateStatus,
+  })
+  metricsStore.writeMarkdownReport(PROJECT_DIR)
+  return record
 }
 
 // Helper: Generate spec markdown file
@@ -178,7 +346,7 @@ export const phaseDefine = defineCommand({
 
     // === WorkflowEngine Integration ===
     // Step 1: Explore with AmbiguityScorer + SocraticQuestioner
-    const exploreResult = await workflowEngine.explore(desc)
+    const exploreResult = await workflowEngine.explore(desc, { persistArtifact: false, runGate: false })
     const ambiguityResult = workflowEngine.getAmbiguityScorer().analyzeRequirement(desc)
 
     // Step 2: Check if requirement needs refinement.
@@ -408,7 +576,7 @@ export const phasePlan = defineCommand({
     // === WorkflowEngine Integration ===
     // Step 1: Run ConsensusPlanner (Planner -> Architect -> Critic).
     const specDesc = (spec.payload as SpecPayload).what
-    const consensusResult = await workflowEngine.plan(specDesc) as import('../workflow/types.js').RALPLANOutput
+    const consensusResult = await workflowEngine.plan(specDesc, { persistArtifact: false, runGate: false }) as import('../workflow/types.js').RALPLANOutput
 
     // Step 2: Display RALPLAN-DR output
     if (!args.json) {
@@ -514,6 +682,9 @@ export const phaseBuild = defineCommand({
   args: {
     'plan-id': { type: 'positional', required: true },
     description: { type: 'string', alias: 'd', description: 'Task description' },
+    level: { type: 'string', default: 'M', description: 'Workflow task level: S, M, L, or CRITICAL' },
+    service: { type: 'string', description: 'Comma-separated service names touched by this task' },
+    'residual-risk': { type: 'string', description: 'Known residual risk statement for metrics' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -526,9 +697,20 @@ export const phaseBuild = defineCommand({
       process.exit(1)
     }
 
+    let workflowLevel: WorkflowTaskLevel
+    try {
+      workflowLevel = normalizeWorkflowLevel(args.level)
+    } catch (e) {
+      console.error(`\n${(e as Error).message}\n`)
+      process.exit(1)
+    }
+
     // Create TaskPayload
     const taskPayload: TaskPayload = {
       description: args.description ?? `Implement ${plan.title}`,
+      workflowLevel,
+      servicesTouched: normalizeServices(args.service),
+      residualRisk: args['residual-risk'],
       filesInvolved: [],
       dependsOn: [],
       requiredRole: 'implementer',
@@ -549,12 +731,62 @@ export const phaseBuild = defineCommand({
       },
     }
 
+    const taskTitle = `Task for ${plan.title}`
     const task = await store.create({
-      type: 'Task', title: `Task for ${plan.title}`,
+      type: 'Task', title: taskTitle,
       payload: taskPayload,
       parents: [args['plan-id']],
       initialStatus: 'PENDING',
       createdBy: { kind: 'human', userId: 'cli' },
+    })
+
+    const skillPlan = planSkillsForTask({
+      taskId: task.id,
+      taskName: taskTitle,
+      description: taskPayload.description,
+      level: workflowLevel,
+      services: taskPayload.servicesTouched,
+      files: taskPayload.filesInvolved,
+    })
+    const taskPayloadWithSkills: TaskPayload = {
+      ...taskPayload,
+      skillIntents: skillPlan.intents.map(intent => intent.domain),
+      skillRoutingMode: skillPlan.mode,
+      skillPlanRequired: skillPlan.required,
+      requiredSkills: skillPlan.requiredSkills,
+      recommendedSkills: skillPlan.recommendedSkills,
+      requiredSkillArtifacts: skillPlan.requiredArtifacts,
+      requiredSkillVerification: skillPlan.requiredVerification,
+    }
+    await store.update(task.id, { payload: taskPayloadWithSkills })
+
+    let taskArtifacts: TaskArtifactScaffoldResult | undefined
+    if (workflowLevel !== 'S') {
+      taskArtifacts = scaffoldTaskArtifacts({
+        projectDir: PROJECT_DIR,
+        taskId: task.id,
+        taskName: task.title,
+        description: taskPayloadWithSkills.description,
+        level: workflowLevel,
+        services: taskPayloadWithSkills.servicesTouched,
+        skillPlan,
+      })
+    }
+
+    new WorkflowArtifactWriter(SCALE_DIR).updateCurrentState({
+      taskId: task.id,
+      level: workflowLevel,
+      phase: 'build',
+      lastTaskId: task.id,
+      artifactsDir: taskArtifacts?.relativeDir,
+      skillIntents: skillPlan.intents.map(intent => intent.domain),
+      skillRoutingMode: skillPlan.mode,
+      skillPlanRequired: skillPlan.required,
+      skillPlanPath: taskArtifacts?.relativeDir ? `${taskArtifacts.relativeDir}/skill-plan.md` : undefined,
+      requiredSkills: skillPlan.requiredSkills,
+      recommendedSkills: skillPlan.recommendedSkills,
+      requiredSkillArtifacts: skillPlan.requiredArtifacts,
+      requiredSkillVerification: skillPlan.requiredVerification,
     })
 
     // FSM transitions: PENDING -> READY -> RUNNING
@@ -581,12 +813,16 @@ export const phaseBuild = defineCommand({
       await fsm.transition(args['plan-id'], 'implement', { actor: { kind: 'system', component: 'phase-build' } })
     }
 
-    const result = { phase: 'BUILD', task, status: 'RUNNING' }
+    const result = { phase: 'BUILD', task: { ...task, payload: taskPayloadWithSkills }, status: 'RUNNING', artifactDir: taskArtifacts?.relativeDir, artifactFiles: taskArtifacts?.created ?? [], skillPlan }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nBUILD: ${task.id}`)
       console.log(`   Status: RUNNING (ready to implement)`)
-      console.log(`   Description: ${taskPayload.description}`)
+      console.log(`   Description: ${taskPayloadWithSkills.description}`)
+      if (skillPlan.intents.length) console.log(`   Skill intents: ${skillPlan.intents.map(intent => intent.domain).join(', ')}`)
+      if (skillPlan.requiredSkills.length) console.log(`   Required skills: ${skillPlan.requiredSkills.join(', ')}`)
+      if (skillPlan.recommendedSkills.length) console.log(`   Recommended skills: ${skillPlan.recommendedSkills.join(', ')}`)
+      if (taskArtifacts?.relativeDir) console.log(`   Artifacts: ${taskArtifacts.relativeDir}`)
       console.log(`\n   Implement now, then run: scale verify ${task.id}\n`)
     }
   },
@@ -613,8 +849,13 @@ export const phaseVerify = defineCommand({
     'lint-cmd': { type: 'string', description: 'Override lint command' },
     'test-cmd': { type: 'string', description: 'Override test command' },
     'coverage-cmd': { type: 'string', description: 'Override coverage command' },
+    profile: { type: 'string', description: 'Verification profile from .scale/verification.json' },
+    service: { type: 'string', description: 'Service name from .scale/verification.json' },
+    'artifact-gate': { type: 'string', description: 'Task artifact policy override: off, warn, or block' },
+    'require-artifacts': { type: 'boolean', default: false, description: 'Fail verification when required M/L/CRITICAL artifacts are incomplete' },
     'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
     'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
+    'residual-risk': { type: 'string', description: 'Residual risk statement to record in task metrics' },
     'skip-build': { type: 'boolean', default: false },
     'skip-lint': { type: 'boolean', default: false },
     'skip-test': { type: 'boolean', default: false },
@@ -633,14 +874,37 @@ export const phaseVerify = defineCommand({
     // === WorkflowEngine Integration ===
     // Step 1: Run GateSystem G3-G7
     if (!args.json) console.log('\nRunning Quality Gates...')
-    const gateResults = await workflowEngine.verify({
-      build: args['build-cmd'],
-      lint: args['lint-cmd'],
-      test: args['test-cmd'],
-      coverage: args['coverage-cmd'],
-      tddEvidence: args['tdd-evidence'],
-      tddStrict: isTruthyFlag(args['tdd-strict']),
+    const resolvedVerification = resolveVerificationTargets({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      profile: args.profile,
+      service: args.service,
     })
+    if (!args.json) {
+      for (const warning of resolvedVerification.warnings) console.log(`   [WARN] ${warning}`)
+      for (const target of resolvedVerification.targets) {
+        if (target.service) {
+          console.log(`   Service: ${target.service.name} (${target.service.path})`)
+        }
+      }
+      console.log(`   Profile: ${resolvedVerification.profileName}`)
+    }
+    const gateResults: import('../workflow/types.js').GateResult[] = []
+    for (const target of resolvedVerification.targets) {
+      if (!args.json && resolvedVerification.targets.length > 1) {
+        console.log(`\n   Target: ${target.service?.name ?? 'root'}`)
+      }
+      const targetResults = await workflowEngine.verify({
+        cwd: target.config.cwd,
+        build: args['build-cmd'] ?? target.config.build,
+        lint: args['lint-cmd'] ?? target.config.lint,
+        test: args['test-cmd'] ?? target.config.test,
+        coverage: args['coverage-cmd'] ?? target.config.coverage,
+        tddEvidence: args['tdd-evidence'],
+        tddStrict: isTruthyFlag(args['tdd-strict']),
+      })
+      gateResults.push(...targetResults)
+    }
 
     // Step 2: Display gate results
     if (!args.json) {
@@ -654,30 +918,53 @@ export const phaseVerify = defineCommand({
     }
 
     // Extract results from gateResults
-    const g0Result = gateResults.find(g => g.gate === 'G0')
-    const g4Result = gateResults.find(g => g.gate === 'G4')
-    const g5Result = gateResults.find(g => g.gate === 'G5')
-    const g6Result = gateResults.find(g => g.gate === 'G6')
-    const g7Result = gateResults.find(g => g.gate === 'G7')
+    const g0Results = gateResults.filter(g => g.gate === 'G0')
+    const g4Results = gateResults.filter(g => g.gate === 'G4')
+    const g5Results = gateResults.filter(g => g.gate === 'G5')
+    const g6Results = gateResults.filter(g => g.gate === 'G6')
+    const g7Results = gateResults.filter(g => g.gate === 'G7')
+    const gatePassed = (results: typeof gateResults) => results.length > 0 && results.every(result => result.passed)
+    const buildExitCodes = g0Results
+      .flatMap(result => result.evidenceItems ?? [])
+      .filter(item => item.kind === 'command')
+      .map(item => item.exitCode)
+      .filter((code): code is number => typeof code === 'number')
 
     const results = {
-      buildStatus: g0Result?.passed ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
-      buildExitCode: g0Result?.evidenceItems?.find(item => item.kind === 'command')?.exitCode,
-      lintStatus: g4Result?.passed ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
-      testPassed: g5Result?.passed,
+      buildStatus: gatePassed(g0Results) ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
+      buildExitCode: buildExitCodes.find(code => code !== 0) ?? (buildExitCodes.length > 0 ? 0 : undefined),
+      lintStatus: gatePassed(g4Results) ? 'success' : 'failed' as 'pending' | 'success' | 'failed',
+      testPassed: gatePassed(g5Results),
       testCoverage: undefined as number | undefined,
-      securityPassed: g7Result?.passed,
+      securityPassed: gatePassed(g7Results),
     }
     const verificationEvidenceIds = gateResults
       .map(g => g.evidenceRecordId)
       .filter((id): id is string => Boolean(id))
 
     // Extract coverage from G6 evidence
-    const coverageMatch = g6Result?.evidence.match(/Coverage: (\d+\.?\d*)%/)
-    if (coverageMatch) results.testCoverage = parseFloat(coverageMatch[1])
+    const coverageValues = g6Results
+      .map(result => result.evidence.match(/Coverage: (\d+\.?\d*)%/))
+      .filter((match): match is RegExpMatchArray => Boolean(match))
+      .map(match => parseFloat(match[1]))
+    if (coverageValues.length > 0) results.testCoverage = Math.min(...coverageValues)
 
     // Update Task payload with verification results
     const currentPayload = task.payload as TaskPayload
+    const taskLevel = normalizeWorkflowLevel(currentPayload.workflowLevel ?? 'M')
+    const verificationSkillPlan = taskLevel === 'S'
+      ? undefined
+      : planSkillsForTask({
+          taskId: args['task-id'],
+          taskName: task.title,
+          description: currentPayload.description,
+          level: taskLevel,
+          services: currentPayload.servicesTouched,
+          files: currentPayload.filesInvolved,
+        })
+    const verifiedServices = resolvedVerification.targets
+      .map(target => target.service?.name)
+      .filter((service): service is string => Boolean(service))
     const updatedPayload: TaskPayload = {
       ...currentPayload,
       buildStatus: results.buildStatus,
@@ -685,22 +972,67 @@ export const phaseVerify = defineCommand({
       lintStatus: results.lintStatus,
       testPassed: results.testPassed,
       testCoverage: results.testCoverage,
+      servicesTouched: currentPayload.servicesTouched?.length
+        ? currentPayload.servicesTouched
+        : verifiedServices.length > 0 ? verifiedServices : currentPayload.servicesTouched,
+      residualRisk: args['residual-risk'] ?? currentPayload.residualRisk,
       verificationEvidenceIds,
+      skillIntents: verificationSkillPlan?.intents.map(intent => intent.domain) ?? currentPayload.skillIntents,
+      skillRoutingMode: verificationSkillPlan?.mode ?? currentPayload.skillRoutingMode,
+      skillPlanRequired: verificationSkillPlan?.required ?? currentPayload.skillPlanRequired,
+      requiredSkills: verificationSkillPlan?.requiredSkills ?? currentPayload.requiredSkills,
+      recommendedSkills: verificationSkillPlan?.recommendedSkills ?? currentPayload.recommendedSkills,
+      requiredSkillArtifacts: verificationSkillPlan?.requiredArtifacts ?? currentPayload.requiredSkillArtifacts,
+      requiredSkillVerification: verificationSkillPlan?.requiredVerification ?? currentPayload.requiredSkillVerification,
       verifiedAt: Date.now(),
     }
     await store.update(args['task-id'], { payload: updatedPayload })
+    const workflowState = new WorkflowArtifactWriter(SCALE_DIR).updateCurrentState({
+      taskId: args['task-id'],
+      phase: 'verify',
+      lastTaskId: args['task-id'],
+      filesModified: updatedPayload.filesInvolved,
+      skillIntents: updatedPayload.skillIntents,
+      skillRoutingMode: updatedPayload.skillRoutingMode,
+      skillPlanRequired: updatedPayload.skillPlanRequired,
+      requiredSkills: updatedPayload.requiredSkills,
+      recommendedSkills: updatedPayload.recommendedSkills,
+      requiredSkillArtifacts: updatedPayload.requiredSkillArtifacts,
+      requiredSkillVerification: updatedPayload.requiredSkillVerification,
+    })
+
+    const metricLevel = metricLevelFromPayload(updatedPayload)
+    const preArtifactCheck = metricLevel ? checkCurrentTaskArtifacts(metricLevel) : undefined
+    const artifactGate = evaluateArtifactGate({
+      policy: resolvedVerification.policy,
+      level: metricLevel,
+      check: preArtifactCheck ? assumeVerificationArtifactWillBeWritten(preArtifactCheck) : undefined,
+      cliMode: args['artifact-gate'],
+      requireArtifacts: args['require-artifacts'],
+    })
+    const skillPolicy = loadSkillRoutingPolicy(PROJECT_DIR, SCALE_DIR)
+    const skillGate: SkillGateResult | undefined = metricLevel && verificationSkillPlan
+      ? evaluateSkillGate({
+          projectDir: PROJECT_DIR,
+          artifactsDir: workflowState.artifactsDir,
+          level: metricLevel,
+          plan: verificationSkillPlan,
+          enforceLevels: skillPolicy.policy.enforceLevels,
+        })
+      : undefined
 
     // Attempt FSM transition to COMPLETED
-    // Guards: build_passed, lint_passed, tests_passed
-    const allPassed = results.buildStatus === 'success' &&
-                      (results.buildExitCode ?? 1) === 0 &&
-                      results.lintStatus === 'success' &&
-                      results.testPassed === true &&
-                      (results.testCoverage ?? 0) >= 80 &&
-                      results.securityPassed === true
+    // Guards: build_passed, lint_passed, tests_passed, and optional artifact policy.
+    const codePassed = results.buildStatus === 'success' &&
+                       (results.buildExitCode ?? 1) === 0 &&
+                       results.lintStatus === 'success' &&
+                       results.testPassed === true &&
+                       (results.testCoverage ?? 0) >= 80 &&
+                       results.securityPassed === true
+    const completionEligible = codePassed && !artifactGate.blocked && !(skillGate?.blocked ?? false)
 
     let transitionResult = null
-    if (allPassed) {
+    if (completionEligible) {
       const completeResult = await fsm.canTransition(args['task-id'], 'complete')
       if (!completeResult.allowed) {
         if (!args.json) {
@@ -713,17 +1045,88 @@ export const phaseVerify = defineCommand({
         transitionResult = await fsm.transition(args['task-id'], 'complete', {
           actor: { kind: 'human', userId: 'cli' }
         })
-        if (!args.json) console.log('\n   FSM: RUNNING -> COMPLETED ✓')
+        if (!args.json) console.log('\n   FSM: RUNNING -> COMPLETED')
       }
-    } else if (!args.json) {
+    } else if (!args.json && !codePassed) {
       console.log('\n   Verification requirements not met - cannot complete Task')
+    } else if (!args.json && artifactGate.blocked) {
+      console.log('\n   Artifact gate blocked completion - required task artifacts are incomplete')
+    } else if (!args.json && skillGate?.blocked) {
+      console.log('\n   Skill gate blocked completion - required skill evidence artifacts are incomplete')
     }
 
-    const passed = allPassed && (transitionResult?.success ?? false)
-    const result = { phase: 'VERIFY', taskId: args['task-id'], results, evidenceIds: verificationEvidenceIds, passed }
+    const passed = completionEligible && (transitionResult?.success ?? false)
+    const verificationArtifactPath = appendVerificationArtifact({
+      projectDir: PROJECT_DIR,
+      artifactsDir: workflowState.artifactsDir,
+      taskId: args['task-id'],
+      profile: resolvedVerification.profileName,
+      services: verifiedServices,
+      gateResults,
+      passed,
+    })
+    const artifactCheck = metricLevel ? checkCurrentTaskArtifacts(metricLevel) : undefined
+    const finalArtifactGate: ArtifactGateStatus = artifactCheck
+      ? evaluateArtifactGate({
+          policy: resolvedVerification.policy,
+          level: metricLevel,
+          check: artifactCheck,
+          cliMode: args['artifact-gate'],
+          requireArtifacts: args['require-artifacts'],
+        })
+      : artifactGate
+    const finalSkillGate: SkillGateResult | undefined = metricLevel && verificationSkillPlan
+      ? evaluateSkillGate({
+          projectDir: PROJECT_DIR,
+          artifactsDir: workflowState.artifactsDir,
+          level: metricLevel,
+          plan: verificationSkillPlan,
+          enforceLevels: skillPolicy.policy.enforceLevels,
+        })
+      : skillGate
+    const finalPayload: TaskPayload = {
+      ...updatedPayload,
+      artifactGateMode: finalArtifactGate.mode,
+      artifactGatePassed: !finalArtifactGate.blocked,
+      artifactComplete: artifactCheck?.complete,
+      skillGatePassed: finalSkillGate ? !finalSkillGate.blocked : undefined,
+    }
+    await store.update(args['task-id'], { payload: finalPayload })
+    const metricGateStatus = codePassed && (finalArtifactGate.blocked || finalSkillGate?.blocked) ? 'blocked' : undefined
+    const metricRecord = await recordVerificationMetric({
+      taskId: args['task-id'],
+      taskName: task.title,
+      taskPayload: finalPayload,
+      passed,
+      serviceNames: verifiedServices,
+      artifactCheck,
+      finalGateStatus: metricGateStatus,
+    })
+    const result = {
+      phase: 'VERIFY',
+      taskId: args['task-id'],
+      profile: resolvedVerification.profileName,
+      service: verifiedServices.length === 1 ? verifiedServices[0] : undefined,
+      services: verifiedServices,
+      results,
+      evidenceIds: verificationEvidenceIds,
+      verificationArtifactPath,
+      artifactCheck,
+      artifactGate: finalArtifactGate,
+      skillGate: finalSkillGate,
+      metric: metricRecord,
+      passed
+    }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nVERIFY: ${passed ? 'PASSED' : 'FAILED'}`)
+      if (metricRecord) console.log(`   Metrics: ${metricRecord.taskId} ${metricRecord.finalGateStatus} (fix iterations: ${metricRecord.fixIterations})`)
+      if (artifactCheck && !artifactCheck.complete) {
+        console.log(`   Artifact gaps: ${artifactCheck.missing.length} missing, ${artifactCheck.incomplete.length} incomplete`)
+      }
+      if (finalSkillGate && !finalSkillGate.complete) {
+        console.log(`   Skill evidence gaps: ${finalSkillGate.missing.length} missing, ${finalSkillGate.incomplete.length} incomplete`)
+      }
       if (passed) console.log(`\n   Next: scale review\n`)
       else console.log(`\n   Fix issues and re-run: scale verify ${args['task-id']}\n`)
     }
@@ -1022,6 +1425,21 @@ export const phaseShip = defineCommand({
                                 (payload.testCoverage ?? 0) >= 80 &&
                                 evidenceValidation.ok
     const reviewPassed = payload.reviewPassed === true && reviewValidation.ok
+    const artifactGatePassed = payload.artifactGateMode !== 'block' || payload.artifactGatePassed !== false
+    const skillGatePassed = payload.skillGatePassed !== false
+
+    if (!artifactGatePassed) {
+      console.error('\nTask artifact gate did not pass. Complete required task artifacts and re-run: scale verify ' + args['task-id'] + ' --artifact-gate block\n')
+      if (payload.artifactComplete === false) {
+        console.error('Required task artifacts are incomplete.')
+      }
+      process.exit(1)
+    }
+
+    if (!skillGatePassed) {
+      console.error('\nTask skill gate did not pass. Complete required skill evidence artifacts and re-run: scale verify ' + args['task-id'] + '\n')
+      process.exit(1)
+    }
 
     if (task.status !== 'COMPLETED') {
       if (!verificationPassed) {

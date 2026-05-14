@@ -7,12 +7,18 @@ import { EventBus } from '../core/eventBus.js'
 import { SQLiteArtifactStore } from '../artifact/sqliteStore.js'
 import { FSM } from '../artifact/fsm.js'
 import { registerAllFSMs, INITIAL_STATES } from '../artifact/fsmDefinitions.js'
+import type { TaskPayload } from '../artifact/types.js'
 import { Gateway } from '../guardrails/Gateway.js'
 import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '../guardrails/detectors.js'
 import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
 import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { FSMAgentBridge, type FSMContextSnapshot } from '../fsm/FSMAgentBridge.js'
+import { CapabilityRegistry } from '../capabilities/CapabilityRegistry.js'
+import { SkillRegistry } from '../skills/SkillRegistry.js'
+import { registerCoreSkills } from '../skills/coreSkills.js'
+import { registerExternalSkills } from '../skills/ExternalSkills.js'
+import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, skillPlanMarkdown } from '../skills/routing/index.js'
 import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
 import { Doctor } from './doctor.js'
@@ -22,18 +28,36 @@ import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
 import { ReviewStore } from '../workflow/ReviewStore.js'
+import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
+import { resolveVerificationTargets } from '../workflow/VerificationProfile.js'
+import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
+import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
+import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
+import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
+import type { GateResult } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 // ============================================================================
 // Engine bootstrap (单例 + lazy init)
 // ============================================================================
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
+const PROJECT_DIR = process.env.SCALE_PROJECT_DIR ?? process.cwd()
 const DB_PATH = join(SCALE_DIR, 'scale.db')
+
+function governanceModeFromScenario(scenario: string): GovernanceMode {
+  if (scenario === 'critical') return 'critical'
+  if (scenario === 'sandbox') return 'minimal'
+  return 'standard'
+}
 
 function ensureDir(dir: string) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+}
+
+function isTruthyFlag(value: unknown): boolean {
+  return value === true || value === '' || value === 'true' || value === '1'
 }
 
 let _engine: ReturnType<typeof createEngine> | null = null
@@ -68,8 +92,18 @@ function createEngine() {
   const kb = new SQLiteKnowledgeBase(eventBus, { dbPath: join(SCALE_DIR, 'knowledge.db') })
   const ctx = new ContextBuilder(store, kb, eventBus)
   const fsmAgentBridge = new FSMAgentBridge(fsm, store)
+  const capabilityRegistry = new CapabilityRegistry(eventBus)
+  const skillRegistry = new SkillRegistry(eventBus)
+  registerCoreSkills(skillRegistry)
+  registerExternalSkills(skillRegistry, eventBus)
+  const workflowEngine = new WorkflowEngine({
+    eventBus,
+    capabilityRegistry,
+    skillRegistry,
+    scaleDir: SCALE_DIR,
+  })
 
-  return { eventBus, store, fsm, gateway, roleGate, kb, ctx, fsmAgentBridge }
+  return { eventBus, store, fsm, gateway, roleGate, kb, ctx, fsmAgentBridge, workflowEngine }
 }
 
 // ============================================================================
@@ -744,6 +778,170 @@ const stats = defineCommand({
   },
 })
 
+const metricsList = defineCommand({
+  meta: { name: 'list', description: 'List M/L task workflow metrics' },
+  args: {
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const store = new TaskMetricsStore(SCALE_DIR)
+    const records = store.list()
+    const summary = store.summarize()
+    if (args.json) {
+      console.log(JSON.stringify({ summary, records }, null, 2))
+      return
+    }
+    console.log('\nWorkflow Metrics')
+    console.log(`  Total tasks: ${summary.total}`)
+    console.log(`  First-pass verification rate: ${(summary.firstPassRate * 100).toFixed(1)}%`)
+    console.log(`  Average fix iterations: ${summary.averageFixIterations.toFixed(2)}`)
+    console.log(`  Artifact completeness: ${(summary.artifactCompletenessRate * 100).toFixed(1)}%`)
+    for (const record of records.slice(-10)) {
+      console.log(`  - ${record.date} ${record.level} ${record.taskName}: ${record.finalGateStatus}`)
+    }
+  },
+})
+
+const metrics = defineCommand({
+  meta: { name: 'metrics', description: 'Inspect workflow task metrics' },
+  subCommands: { list: metricsList },
+})
+
+function normalizeTaskArtifactLevel(value: unknown): TaskArtifactLevel {
+  const normalized = String(value ?? 'M').trim().toUpperCase()
+  if (normalized === 'S' || normalized === 'M' || normalized === 'L' || normalized === 'CRITICAL') {
+    return normalized
+  }
+  throw new Error(`Invalid task level "${String(value)}"; expected S, M, L, or CRITICAL.`)
+}
+
+const taskArtifactsCheck = defineCommand({
+  meta: { name: 'check', description: 'Check task artifact completeness' },
+  args: {
+    dir: { type: 'string', description: 'Task artifact directory; defaults to .scale/state/current.json artifactsDir' },
+    level: { type: 'string', description: 'Task level: S, M, L, or CRITICAL; defaults to current state level or M' },
+    'warn-only': { type: 'boolean', default: false, description: 'Return zero even when artifacts are incomplete' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const state = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
+    let level: TaskArtifactLevel
+    try {
+      level = normalizeTaskArtifactLevel(args.level ?? state?.level ?? 'M')
+    } catch (e) {
+      console.error((e as Error).message)
+      process.exit(1)
+    }
+    const result = checkTaskArtifactCompleteness({
+      projectDir: PROJECT_DIR,
+      artifactsDir: args.dir ?? state?.artifactsDir,
+      level,
+      skillRequiredArtifacts: state?.requiredSkillArtifacts,
+    })
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      console.log(`\nTask Artifacts: ${result.complete ? 'COMPLETE' : 'INCOMPLETE'}`)
+      if (result.artifactsDir) console.log(`  Directory: ${result.artifactsDir}`)
+      console.log(`  Required: ${result.required.join(', ') || 'none'}`)
+      for (const file of result.missing) console.log(`  [MISSING] ${file}`)
+      for (const item of result.incomplete) console.log(`  [INCOMPLETE] ${item.file}: ${item.reason}`)
+    }
+
+    if (!result.complete && !args['warn-only']) process.exitCode = 1
+  },
+})
+
+const taskArtifacts = defineCommand({
+  meta: { name: 'task-artifacts', description: 'Inspect task artifact completeness' },
+  subCommands: { check: taskArtifactsCheck },
+})
+
+const preflight = defineCommand({
+  meta: { name: 'preflight', description: 'Run service-aware verification without a task artifact' },
+  args: {
+    'build-cmd': { type: 'string', description: 'Override build command' },
+    'lint-cmd': { type: 'string', description: 'Override lint command' },
+    'test-cmd': { type: 'string', description: 'Override test command' },
+    'coverage-cmd': { type: 'string', description: 'Override coverage command' },
+    profile: { type: 'string', description: 'Verification profile from .scale/verification.json' },
+    service: { type: 'string', description: 'Service name from .scale/verification.json; use all for required services' },
+    'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
+    'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const { workflowEngine } = getEngine()
+    const resolved = resolveVerificationTargets({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      profile: args.profile,
+      service: args.service,
+    })
+
+    const targetResults: Array<{
+      service?: string
+      cwd: string
+      gates: GateResult[]
+      passed: boolean
+    }> = []
+
+    if (!args.json) {
+      console.log('\nSCALE Preflight')
+      for (const warning of resolved.warnings) console.log(`  [WARN] ${warning}`)
+      console.log(`  Profile: ${resolved.profileName}`)
+    }
+
+    for (const target of resolved.targets) {
+      if (!args.json) {
+        const label = target.service ? `${target.service.name} (${target.service.path})` : 'root'
+        console.log(`\n  Target: ${label}`)
+      }
+      const gates = await workflowEngine.verify({
+        cwd: target.config.cwd,
+        build: args['build-cmd'] ?? target.config.build,
+        lint: args['lint-cmd'] ?? target.config.lint,
+        test: args['test-cmd'] ?? target.config.test,
+        coverage: args['coverage-cmd'] ?? target.config.coverage,
+        tddEvidence: args['tdd-evidence'],
+        tddStrict: isTruthyFlag(args['tdd-strict']),
+      })
+      const passed = gates.every(gate => gate.passed)
+      targetResults.push({
+        service: target.service?.name,
+        cwd: target.config.cwd ?? PROJECT_DIR,
+        gates,
+        passed,
+      })
+
+      if (!args.json) {
+        for (const gate of gates) {
+          console.log(`    ${gate.passed ? '[PASS]' : '[FAIL]'} ${gate.gate}: ${gate.evidence.slice(0, 80)}`)
+          for (const blocker of gate.blockers) console.log(`      [BLOCKER] ${blocker.slice(0, 120)}`)
+        }
+      }
+    }
+
+    const passed = targetResults.length > 0 && targetResults.every(target => target.passed)
+    const result = {
+      phase: 'PREFLIGHT',
+      profile: resolved.profileName,
+      services: targetResults.map(target => target.service).filter(Boolean),
+      policy: resolved.policy,
+      targets: targetResults,
+      passed,
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      console.log(`\nPREFLIGHT: ${passed ? 'PASSED' : 'FAILED'}\n`)
+    }
+    if (!passed) process.exitCode = 1
+  },
+})
+
 const status = defineCommand({
   meta: { name: 'status', description: 'Show current SCALE workflow status' },
   args: {
@@ -930,6 +1128,13 @@ const init = defineCommand({
         scenarioMode,
         thresholdsPath,
       })
+      const projectName = args.dir.split(/[/\\]/).pop() || 'Project'
+      const governance = writeGovernanceTemplates(args.dir, {
+        mode: governanceModeFromScenario(scenarioMode),
+        projectName,
+      })
+      result.created.push(...governance.created)
+      result.skipped.push(...governance.skipped)
 
       console.log(`\n✅ SCALE Engine initialized for ${agentType} (interactive mode)`)
       console.log(`\n📁 Created:`)
@@ -979,6 +1184,13 @@ const init = defineCommand({
     // Manual agent specification mode
     const adapter = createAdapter(args.agent)
     const result = await adapter.init({ projectDir: args.dir, agentType: args.agent as never, scenarioMode: args.scenario as 'sandbox' | 'standard' | 'critical' })
+    const projectName = args.dir.split(/[/\\]/).pop() || 'Project'
+    const governance = writeGovernanceTemplates(args.dir, {
+      mode: governanceModeFromScenario(args.scenario),
+      projectName,
+    })
+    result.created.push(...governance.created)
+    result.skipped.push(...governance.skipped)
     console.log(`\n✅ SCALE Engine initialized for ${args.agent} (scenario: ${args.scenario})`)
     console.log(`\n📁 Created:`)
     for (const f of result.created) console.log(`   + ${f}`)
@@ -1264,9 +1476,119 @@ const skillScan = defineCommand({
   },
 })
 
+const skillPlanCommand = defineCommand({
+  meta: { name: 'plan', description: 'Create or refresh a task skill plan' },
+  args: {
+    'task-id': { type: 'positional', required: true },
+    dir: { type: 'string', description: 'Task artifact directory; defaults to current state artifactsDir' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const { store } = getEngine()
+    const task = await store.get(args['task-id'])
+    if (!task || task.type !== 'Task') {
+      console.error(`Task not found: ${args['task-id']}`)
+      process.exit(1)
+    }
+
+    const payload = task.payload as TaskPayload
+    const level = normalizeTaskArtifactLevel(payload.workflowLevel ?? 'M')
+    const policy = loadSkillRoutingPolicy(PROJECT_DIR, SCALE_DIR)
+    const plan = createSkillPlan({
+      taskId: task.id,
+      taskName: task.title,
+      description: payload.description,
+      level,
+      services: payload.servicesTouched ?? [],
+      files: payload.filesInvolved ?? [],
+      policy,
+    })
+    const updatedPayload: TaskPayload = {
+      ...payload,
+      skillIntents: plan.intents.map(intent => intent.domain),
+      skillRoutingMode: plan.mode,
+      skillPlanRequired: plan.required,
+      requiredSkills: plan.requiredSkills,
+      recommendedSkills: plan.recommendedSkills,
+      requiredSkillArtifacts: plan.requiredArtifacts,
+      requiredSkillVerification: plan.requiredVerification,
+    }
+    await store.update(task.id, { payload: updatedPayload })
+
+    const state = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
+    const artifactsDir = args.dir ?? (state?.taskId === task.id ? state.artifactsDir : undefined)
+    let writtenPath: string | undefined
+    if (artifactsDir) {
+      const dir = resolve(PROJECT_DIR, artifactsDir)
+      ensureDir(dir)
+      writtenPath = join(dir, 'skill-plan.md')
+      writeFileSync(writtenPath, skillPlanMarkdown(plan), 'utf-8')
+    }
+    new WorkflowArtifactWriter(SCALE_DIR).updateCurrentState({
+      taskId: task.id,
+      level,
+      phase: 'plan',
+      artifactsDir,
+      skillIntents: plan.intents.map(intent => intent.domain),
+      skillRoutingMode: plan.mode,
+      skillPlanRequired: plan.required,
+      skillPlanPath: writtenPath,
+      requiredSkills: plan.requiredSkills,
+      recommendedSkills: plan.recommendedSkills,
+      requiredSkillArtifacts: plan.requiredArtifacts,
+      requiredSkillVerification: plan.requiredVerification,
+    })
+
+    if (args.json) {
+      console.log(JSON.stringify({ plan, writtenPath }, null, 2))
+      return
+    }
+    console.log('\nSkill Plan')
+    console.log(`  Task: ${task.id}`)
+    console.log(`  Intents: ${plan.intents.map(intent => intent.domain).join(', ') || 'none'}`)
+    console.log(`  Required skills: ${plan.requiredSkills.join(', ') || 'none'}`)
+    console.log(`  Recommended skills: ${plan.recommendedSkills.join(', ') || 'none'}`)
+    console.log(`  Required artifacts: ${plan.requiredArtifacts.join(', ') || 'none'}`)
+    if (writtenPath) console.log(`  Written: ${writtenPath}`)
+  },
+})
+
+const skillCheckCommand = defineCommand({
+  meta: { name: 'check', description: 'Check required skill evidence artifacts' },
+  args: {
+    dir: { type: 'string', description: 'Task artifact directory; defaults to current state artifactsDir' },
+    level: { type: 'string', description: 'Task level: S, M, L, or CRITICAL; defaults to current state level or M' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const state = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
+    const level = normalizeTaskArtifactLevel(args.level ?? state?.level ?? 'M')
+    const policy = loadSkillRoutingPolicy(PROJECT_DIR, SCALE_DIR)
+    const result = evaluateSkillGate({
+      projectDir: PROJECT_DIR,
+      artifactsDir: args.dir ?? state?.artifactsDir,
+      level,
+      requiredArtifacts: state?.requiredSkillArtifacts,
+      mode: state?.skillRoutingMode ?? policy.policy.mode,
+      enforceLevels: policy.policy.enforceLevels,
+    })
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log(`\nSkill Gate: ${result.complete ? 'COMPLETE' : 'INCOMPLETE'}`)
+    console.log(`  Mode: ${result.mode}`)
+    console.log(`  Required: ${result.required.join(', ') || 'none'}`)
+    for (const file of result.missing) console.log(`  [MISSING] ${file}`)
+    for (const item of result.incomplete) console.log(`  [INCOMPLETE] ${item.file}: ${item.reason}`)
+    if (result.blocked) process.exitCode = 1
+  },
+})
+
 const skill = defineCommand({
   meta: { name: 'skill', description: 'Skill discovery and management' },
-  subCommands: { scan: skillScan },
+  subCommands: { scan: skillScan, plan: skillPlanCommand, check: skillCheckCommand },
 })
 
 // ============================================================================
@@ -1407,7 +1729,7 @@ import * as liteCommands from '../cli/liteCommands.js'
 import * as vibeCommands from '../cli/vibeCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.12.2', description: 'SCALE Engine v0.12.2 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Vibe templates: scale vibe; 16 platform adapters; 12 agents; 10 workflows; 19 detectors' },
+  meta: { name: 'scale', version: '0.13.0', description: 'SCALE Engine v0.13.0 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Vibe templates: scale vibe; 16 platform adapters; 12 agents; 10 workflows; 19 detectors' },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,
@@ -1440,10 +1762,14 @@ const main = defineCommand({
     context,
     evolve,
     stats,
+    preflight,
+    metrics,
+    'task-artifacts': taskArtifacts,
     status,
     workflow,
     evidence,
     skill,
+    skills: skill,
     agent,
     team,
     'create-prd': createPRD,

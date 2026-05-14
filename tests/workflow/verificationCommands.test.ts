@@ -31,6 +31,7 @@ describe('detectVerificationCommands', () => {
 
     expect(commands.packageManager).toBe('npm')
     expect(commands.build.command).toBe('npm run build')
+    expect(commands.build.cwd).toBe(dir)
     expect(commands.lint.command).toBe('npm run lint')
     expect(commands.test.command).toBe('npm test')
     expect(commands.coverage.command).toBe('npm test -- --coverage')

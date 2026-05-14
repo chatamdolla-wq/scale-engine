@@ -12,6 +12,7 @@ export interface DiagnosticResult {
   message: string
   fix?: string
   optional?: boolean // Optional checks don't affect overall health
+  category?: 'governance' | 'knowledge-graph'
 }
 
 export interface DoctorReport {
@@ -45,11 +46,26 @@ export class Doctor {
     checks.push(this.checkDiskUsage())
     checks.push(this.checkGitignore())
 
+    const governanceTemplatesCheck = this.checkGovernanceTemplates()
+    const verificationMatrixCheck = this.checkVerificationMatrix()
+    const skillRoutingPolicyCheck = this.checkSkillRoutingPolicy()
+    governanceTemplatesCheck.optional = true
+    verificationMatrixCheck.optional = true
+    skillRoutingPolicyCheck.optional = true
+    governanceTemplatesCheck.category = 'governance'
+    verificationMatrixCheck.category = 'governance'
+    skillRoutingPolicyCheck.category = 'governance'
+    checks.push(governanceTemplatesCheck)
+    checks.push(verificationMatrixCheck)
+    checks.push(skillRoutingPolicyCheck)
+
     // Optional knowledge graph checks (non-blocking)
     const pythonCheck = this.checkPython()
     const graphifyCheck = this.checkGraphify()
     pythonCheck.optional = true
     graphifyCheck.optional = true
+    pythonCheck.category = 'knowledge-graph'
+    graphifyCheck.category = 'knowledge-graph'
     checks.push(pythonCheck)
     checks.push(graphifyCheck)
 
@@ -223,6 +239,120 @@ export class Doctor {
     return { name: '.scale/.gitignore', status: 'ok', message: 'Present' }
   }
 
+  private checkGovernanceTemplates(): DiagnosticResult {
+    const required = [
+      join(this.projectDir, 'docs', 'workflow', 'README.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'explore.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'mini-prd.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'skill-plan.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'ui-spec.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'visual-review.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'api-contract.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'security-review.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'db-change-plan.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'e2e-plan.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'plan.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'verification.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'review.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'summary.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'pre-push-scale-preflight.sh'),
+      join(this.projectDir, 'docs', 'worklog', 'metrics.md'),
+    ]
+    const missing = required.filter((path) => !existsSync(path))
+    if (missing.length > 0) {
+      return {
+        name: 'Governance templates',
+        status: 'warn',
+        message: `${missing.length} governance templates missing`,
+        fix: 'Run: scale init to generate workflow governance templates',
+      }
+    }
+    return { name: 'Governance templates', status: 'ok', message: `${required.length} templates present` }
+  }
+
+  private checkVerificationMatrix(): DiagnosticResult {
+    const path = join(this.projectDir, this.scaleDir, 'verification.json')
+    if (!existsSync(path)) {
+      return {
+        name: 'Verification matrix',
+        status: 'warn',
+        message: 'Missing .scale/verification.json',
+        fix: 'Run: scale init or create a service-aware verification matrix',
+      }
+    }
+    try {
+      const matrix = JSON.parse(readFileSync(path, 'utf-8')) as {
+        profiles?: unknown
+        services?: unknown
+        policy?: { artifactGate?: unknown }
+      }
+      const artifactGate = matrix.policy?.artifactGate
+      if (artifactGate && artifactGate !== 'off' && artifactGate !== 'warn' && artifactGate !== 'block') {
+        return {
+          name: 'Verification matrix',
+          status: 'warn',
+          message: 'Invalid policy.artifactGate; expected off, warn, or block',
+          fix: 'Update .scale/verification.json policy.artifactGate',
+        }
+      }
+      const serviceCount = Array.isArray(matrix.services) ? matrix.services.length : 0
+      const profileCount = matrix.profiles && typeof matrix.profiles === 'object' ? Object.keys(matrix.profiles).length : 0
+      return { name: 'Verification matrix', status: 'ok', message: `${profileCount} profiles, ${serviceCount} services` }
+    } catch {
+      return {
+        name: 'Verification matrix',
+        status: 'fail',
+        message: '.scale/verification.json is invalid JSON',
+        fix: 'Fix JSON syntax or regenerate with scale init',
+      }
+    }
+  }
+
+  private checkSkillRoutingPolicy(): DiagnosticResult {
+    const path = join(this.projectDir, this.scaleDir, 'skills.json')
+    if (!existsSync(path)) {
+      return {
+        name: 'Skill routing policy',
+        status: 'warn',
+        message: 'Missing .scale/skills.json',
+        fix: 'Run: scale init to generate active skill routing policy',
+      }
+    }
+    try {
+      const config = JSON.parse(readFileSync(path, 'utf-8')) as {
+        policy?: { mode?: unknown; enforceLevels?: unknown }
+        domains?: unknown
+      }
+      const mode = config.policy?.mode
+      if (mode && mode !== 'off' && mode !== 'warn' && mode !== 'block') {
+        return {
+          name: 'Skill routing policy',
+          status: 'warn',
+          message: 'Invalid policy.mode; expected off, warn, or block',
+          fix: 'Update .scale/skills.json policy.mode',
+        }
+      }
+      const domainCount = config.domains && typeof config.domains === 'object' ? Object.keys(config.domains).length : 0
+      if (domainCount === 0) {
+        return {
+          name: 'Skill routing policy',
+          status: 'warn',
+          message: 'No skill routing domains configured',
+          fix: 'Regenerate with scale init or add domains to .scale/skills.json',
+        }
+      }
+      return { name: 'Skill routing policy', status: 'ok', message: `${domainCount} domains` }
+    } catch {
+      return {
+        name: 'Skill routing policy',
+        status: 'fail',
+        message: '.scale/skills.json is invalid JSON',
+        fix: 'Fix JSON syntax or regenerate with scale init',
+      }
+    }
+  }
+
   private checkPython(): DiagnosticResult {
     try {
       const version = execSync('python3 --version', { encoding: 'utf-8', timeout: 5000 }).trim()
@@ -292,8 +422,18 @@ export class Doctor {
 
     lines.push(`${'─'.repeat(50)}`)
 
+    const governanceChecks = report.checks.filter((c) => c.optional && c.category === 'governance')
+    if (governanceChecks.length > 0) {
+      lines.push('')
+      lines.push('Project Governance (Optional):')
+      for (const check of governanceChecks) {
+        lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+        if (check.fix) lines.push(`     Fix: ${check.fix}`)
+      }
+    }
+
     // Knowledge graph section (optional checks)
-    const optionalChecks = report.checks.filter((c) => c.optional)
+    const optionalChecks = report.checks.filter((c) => c.optional && c.category === 'knowledge-graph')
     if (optionalChecks.length > 0) {
       lines.push('')
       lines.push('📦 Knowledge Graph (Optional):')

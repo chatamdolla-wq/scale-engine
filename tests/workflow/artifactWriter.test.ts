@@ -84,6 +84,27 @@ describe('WorkflowArtifactWriter', () => {
       expect(writer.hasValidExploreResult(5)).toBe(false)
       expect(writer.hasValidExploreResult(4)).toBe(true)
     })
+
+    it('updates current workflow state from explore result', () => {
+      writer.writeExploreResult({
+        timestamp: '2025-01-01T00:00:00Z',
+        files: ['a.ts', 'b.ts', 'c.ts'],
+        fileCount: 3,
+        mainContradiction: 'state contract mismatch',
+        ambiguityScore: 20,
+        socraticCompleted: true
+      })
+
+      const state = writer.readCurrentState()
+      expect(state).toMatchObject({
+        schemaVersion: 1,
+        level: 'M',
+        phase: 'explore',
+        exploredFiles: ['a.ts', 'b.ts', 'c.ts'],
+        fileCount: 3,
+        mainContradiction: 'state contract mismatch',
+      })
+    })
   })
 
   // ─────────────────────────────────────────────────────────────
@@ -176,6 +197,27 @@ describe('WorkflowArtifactWriter', () => {
         verdict: 'viable'
       })
       expect(writer.hasValidPlanResult()).toBe(true)
+    })
+
+    it('updates current workflow state from plan result', () => {
+      writer.writePlanResult({
+        timestamp: '2025-01-01T00:00:00Z',
+        planId: 'plan-001',
+        specId: 'spec-001',
+        hasBoundaryAnalysis: true,
+        hasExceptionHandling: true,
+        hasRollbackStrategy: true,
+        modules: ['src/auth.ts'],
+        consensusRounds: 1,
+        verdict: 'APPROVE'
+      })
+
+      const state = writer.readCurrentState()
+      expect(state).toMatchObject({
+        phase: 'plan',
+        lastSpecId: 'spec-001',
+        lastPlanId: 'plan-001',
+      })
     })
   })
 

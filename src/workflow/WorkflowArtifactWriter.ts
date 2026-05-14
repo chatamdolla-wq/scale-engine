@@ -51,6 +51,39 @@ export interface CheckpointData {
   data: Record<string, unknown>
 }
 
+export type WorkflowTaskLevel = 'S' | 'M' | 'L' | 'CRITICAL'
+export type WorkflowPhase = 'define' | 'explore' | 'plan' | 'build' | 'verify' | 'review' | 'ship' | 'done'
+
+export interface WorkflowState {
+  schemaVersion: 1
+  taskId: string
+  level: WorkflowTaskLevel
+  phase: WorkflowPhase
+  artifactsDir?: string
+  exploredFiles: string[]
+  fileCount: number
+  mainContradiction: string
+  completedGates: string[]
+  openTasks: string[]
+  filesModified: string[]
+  skillIntents?: string[]
+  skillRoutingMode?: 'off' | 'warn' | 'block'
+  skillPlanRequired?: boolean
+  skillPlanPath?: string
+  requiredSkills?: string[]
+  recommendedSkills?: string[]
+  requiredSkillArtifacts?: string[]
+  requiredSkillVerification?: string[]
+  lastSpecId?: string
+  lastPlanId?: string
+  lastTaskId?: string
+  updatedAt: string
+}
+
+export type WorkflowStatePatch = Partial<Omit<WorkflowState, 'schemaVersion' | 'updatedAt'>> & {
+  updatedAt?: string
+}
+
 // ============================================================================
 // Artifact Writer
 // ============================================================================
@@ -81,6 +114,12 @@ export class WorkflowArtifactWriter {
     this.ensureDir()
     const filePath = join(this.stateDir, 'explore.json')
     writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf-8')
+    this.updateCurrentState({
+      phase: 'explore',
+      exploredFiles: result.files,
+      fileCount: result.fileCount,
+      mainContradiction: result.mainContradiction,
+    })
     logger.info({ files: result.fileCount, contradiction: result.mainContradiction }, 'Explore artifact written')
   }
 
@@ -105,6 +144,11 @@ export class WorkflowArtifactWriter {
     this.ensureDir()
     const filePath = join(this.stateDir, `plan-${result.planId}.json`)
     writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf-8')
+    this.updateCurrentState({
+      phase: 'plan',
+      lastSpecId: result.specId || undefined,
+      lastPlanId: result.planId,
+    })
     logger.info({ planId: result.planId, verdict: result.verdict }, 'Plan artifact written')
   }
 
@@ -139,6 +183,10 @@ export class WorkflowArtifactWriter {
     this.ensureDir()
     const filePath = join(this.stateDir, `tdd-${evidence.taskId}.json`)
     writeFileSync(filePath, JSON.stringify(evidence, null, 2), 'utf-8')
+    this.updateCurrentState({
+      phase: 'verify',
+      lastTaskId: evidence.taskId,
+    })
     logger.info({ taskId: evidence.taskId }, 'TDD evidence written')
   }
 
@@ -174,6 +222,9 @@ export class WorkflowArtifactWriter {
     this.ensureDir()
     const filePath = join(this.stateDir, 'checkpoint.json')
     writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+    if (this.isWorkflowPhase(data.phase)) {
+      this.updateCurrentState({ phase: data.phase })
+    }
     logger.info({ phase: data.phase }, 'Checkpoint written')
   }
 
@@ -201,6 +252,30 @@ export class WorkflowArtifactWriter {
   /** Get state directory path */
   getStateDir(): string { return this.stateDir }
 
+  /** Write authoritative workflow state to .scale/state/current.json */
+  writeCurrentState(state: WorkflowState): void {
+    this.ensureDir()
+    const normalized = this.normalizeState(state)
+    writeFileSync(join(this.stateDir, 'current.json'), JSON.stringify(normalized, null, 2), 'utf-8')
+  }
+
+  /** Read authoritative workflow state from .scale/state/current.json */
+  readCurrentState(): WorkflowState | null {
+    return this.readJson<WorkflowState>(join(this.stateDir, 'current.json'))
+  }
+
+  /** Merge a patch into .scale/state/current.json. */
+  updateCurrentState(patch: WorkflowStatePatch): WorkflowState {
+    const current = this.readCurrentState()
+    const next = this.normalizeState({
+      ...(current ?? this.createDefaultState()),
+      ...patch,
+      updatedAt: patch.updatedAt ?? new Date().toISOString(),
+    })
+    this.writeCurrentState(next)
+    return next
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Private Helpers
   // ─────────────────────────────────────────────────────────────
@@ -220,5 +295,53 @@ export class WorkflowArtifactWriter {
     if (!existsSync(this.stateDir)) return []
     return readdirSync(this.stateDir)
       .filter(f => f.startsWith(prefix) && f.endsWith('.json'))
+  }
+
+  private createDefaultState(): WorkflowState {
+    return {
+      schemaVersion: 1,
+      taskId: `task-${Date.now()}`,
+      level: 'M',
+      phase: 'define',
+      exploredFiles: [],
+      fileCount: 0,
+      mainContradiction: '',
+      completedGates: [],
+      openTasks: [],
+      filesModified: [],
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  private normalizeState(state: WorkflowState): WorkflowState {
+    return {
+      schemaVersion: 1,
+      taskId: state.taskId || `task-${Date.now()}`,
+      level: state.level ?? 'M',
+      phase: state.phase ?? 'define',
+      artifactsDir: state.artifactsDir,
+      exploredFiles: state.exploredFiles ?? [],
+      fileCount: state.fileCount ?? state.exploredFiles?.length ?? 0,
+      mainContradiction: state.mainContradiction ?? '',
+      completedGates: state.completedGates ?? [],
+      openTasks: state.openTasks ?? [],
+      filesModified: state.filesModified ?? [],
+      skillIntents: state.skillIntents ?? [],
+      skillRoutingMode: state.skillRoutingMode,
+      skillPlanRequired: state.skillPlanRequired,
+      skillPlanPath: state.skillPlanPath,
+      requiredSkills: state.requiredSkills ?? [],
+      recommendedSkills: state.recommendedSkills ?? [],
+      requiredSkillArtifacts: state.requiredSkillArtifacts ?? [],
+      requiredSkillVerification: state.requiredSkillVerification ?? [],
+      lastSpecId: state.lastSpecId,
+      lastPlanId: state.lastPlanId,
+      lastTaskId: state.lastTaskId,
+      updatedAt: state.updatedAt ?? new Date().toISOString(),
+    }
+  }
+
+  private isWorkflowPhase(phase: string): phase is WorkflowPhase {
+    return ['define', 'explore', 'plan', 'build', 'verify', 'review', 'ship', 'done'].includes(phase)
   }
 }

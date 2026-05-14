@@ -8,12 +8,14 @@ export interface VerificationCommandConfig {
   coverage?: string
   tddEvidence?: string
   tddStrict?: boolean
+  cwd?: string
 }
 
 export interface ResolvedVerificationCommand {
   command?: string
   source: 'override' | 'package-script' | 'fallback' | 'missing'
   reason: string
+  cwd?: string
 }
 
 export interface ResolvedVerificationCommands {
@@ -41,13 +43,17 @@ export function detectVerificationCommands(
 
   return {
     packageManager,
-    build: resolveBuildCommand(packageManager, scripts, overrides.build),
-    lint: resolveScriptCommand(packageManager, scripts, 'lint', overrides.lint),
-    test: resolveScriptCommand(packageManager, scripts, 'test', overrides.test),
-    coverage: resolveCoverageCommand(packageManager, scripts, overrides.coverage),
+    build: withCwd(resolveBuildCommand(packageManager, scripts, overrides.build), cwd),
+    lint: withCwd(resolveScriptCommand(packageManager, scripts, 'lint', overrides.lint), cwd),
+    test: withCwd(resolveScriptCommand(packageManager, scripts, 'test', overrides.test), cwd),
+    coverage: withCwd(resolveCoverageCommand(packageManager, scripts, overrides.coverage), cwd),
     tddEvidence: overrides.tddEvidence,
     tddStrict: overrides.tddStrict,
   }
+}
+
+function withCwd(command: ResolvedVerificationCommand, cwd: string): ResolvedVerificationCommand {
+  return { ...command, cwd }
 }
 
 function readPackageJson(cwd: string): PackageJson | null {

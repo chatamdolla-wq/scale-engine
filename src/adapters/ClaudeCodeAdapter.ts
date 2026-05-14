@@ -27,6 +27,7 @@ export interface AdapterConfig {
     | 'vsc'
     | 'qcoder'
   scenarioMode?: 'sandbox' | 'standard' | 'critical'
+  thresholdsPath?: string
 }
 
 export interface HookEntry {

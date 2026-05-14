@@ -6,6 +6,7 @@ import { execa } from 'execa'
 
 let dirs: string[] = []
 let repoFiles: string[] = []
+let repoDirs: string[] = []
 
 function makeScaleDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'scale-cli-'))
@@ -13,11 +14,18 @@ function makeScaleDir(): string {
   return dir
 }
 
-async function runScale(args: string[], scaleDir: string) {
+function makeProjectDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'scale-project-'))
+  dirs.push(dir)
+  return dir
+}
+
+async function runScale(args: string[], scaleDir: string, projectDir?: string) {
   return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
     env: {
       ...process.env,
       SCALE_DIR: scaleDir,
+      SCALE_PROJECT_DIR: projectDir,
       SCALE_LOG_LEVEL: undefined,
       SCALE_VERIFICATION_BUILD_CMD: undefined,
       SCALE_VERIFICATION_LINT_CMD: undefined,
@@ -35,40 +43,35 @@ function parseJson<T = unknown>(stdout: string): T {
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
   for (const file of repoFiles) rmSync(file, { force: true })
+  for (const dir of repoDirs) rmSync(dir, { recursive: true, force: true })
   // Clean up test-fixtures/phase-cli directory if created
   rmSync(join('test-fixtures', 'phase-cli'), { recursive: true, force: true })
   dirs = []
   repoFiles = []
+  repoDirs = []
 })
 
 describe('phase CLI workflow', () => {
-  it('blocks ship before review, then allows review -> ship --no-commit without changing HEAD', async () => {
+  it('runs service-aware preflight without requiring a task', async () => {
     const scaleDir = makeScaleDir()
-
-    const define = await runScale([
-      'define',
-      'CLI Regression Feature',
-      '--description',
-      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
-      '--success-criteria',
-      'verify evidence is persisted,review evidence is persisted,ship skip commit does not commit',
-      '--json',
-    ], scaleDir)
-    expect(define.exitCode).toBe(0)
-    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
-
-    const plan = await runScale(['plan', specId, '--rollback', 'Delete generated artifacts in temporary SCALE_DIR', '--json'], scaleDir)
-    expect(plan.exitCode).toBe(0)
-    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
-
-    const build = await runScale(['build', planId, '--description', 'CLI regression task', '--json'], scaleDir)
-    expect(build.exitCode).toBe(0)
-    const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'services', 'api'), { recursive: true })
+    mkdirSync(join(projectDir, 'services', 'gateway'), { recursive: true })
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      services: [
+        { name: 'api', path: 'services/api', required: true },
+        { name: 'gateway', path: 'services/gateway', required: true },
+      ],
+    }, null, 2), 'utf-8')
 
     const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
-    const verify = await runScale([
-      'verify',
-      taskId,
+    const preflight = await runScale([
+      'preflight',
+      '--service',
+      'all',
       '--build-cmd',
       'node -v',
       '--lint-cmd',
@@ -78,22 +81,109 @@ describe('phase CLI workflow', () => {
       '--coverage-cmd',
       coverageCommand,
       '--json',
-    ], scaleDir)
-    expect(verify.exitCode).toBe(0)
-    expect(parseJson<{ passed: boolean }>(verify.stdout).passed).toBe(true)
+    ], scaleDir, projectDir)
 
-    const blockedShip = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir)
+    expect(preflight.exitCode).toBe(0)
+    const result = parseJson<{ passed: boolean; services: string[]; targets: Array<{ service: string; passed: boolean }> }>(preflight.stdout)
+    expect(result.passed).toBe(true)
+    expect(result.services).toEqual(['api', 'gateway'])
+    expect(result.targets.every(target => target.passed)).toBe(true)
+  }, 120_000)
+
+  it('blocks ship before review, then allows review -> ship --no-commit without changing HEAD', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'CLI Regression Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'verify evidence is persisted,review evidence is persisted,ship skip commit does not commit',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete generated artifacts in temporary SCALE_DIR', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'CLI regression task', '--level', 'L', '--service', 'api,gateway', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    const taskId = buildResult.task.id
+    expect(buildResult.artifactDir).toContain('docs/worklog/tasks/')
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+    const artifactCheck = await runScale(['task-artifacts', 'check', '--dir', buildResult.artifactDir!, '--level', 'L', '--json'], scaleDir, projectDir)
+    expect(artifactCheck.exitCode).toBe(1)
+    expect(parseJson<{ complete: boolean; incomplete: Array<{ file: string }> }>(artifactCheck.stdout)).toMatchObject({
+      complete: false,
+    })
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    mkdirSync(join(projectDir, 'test-fixtures', 'phase-cli', 'api'), { recursive: true })
+    mkdirSync(join(projectDir, 'test-fixtures', 'phase-cli', 'gateway'), { recursive: true })
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      services: [
+        { name: 'api', path: 'test-fixtures/phase-cli/api', required: true },
+        { name: 'gateway', path: 'test-fixtures/phase-cli/gateway', required: true },
+      ],
+    }, null, 2), 'utf-8')
+    const verify = await runScale([
+      'verify',
+      taskId,
+      '--service',
+      'all',
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{ passed: boolean; services: string[]; verificationArtifactPath: string; artifactCheck: { complete: boolean; incomplete: Array<{ file: string }> }; metric: { taskId: string; level: string; services: string[]; firstVerificationPass: boolean; artifactComplete: boolean; finalGateStatus: string } }>(verify.stdout)
+    expect(verifyResult.passed).toBe(true)
+    expect(verifyResult.services).toEqual(['api', 'gateway'])
+    expect(verifyResult.verificationArtifactPath).toContain('verification.md')
+    expect(verifyResult.metric).toMatchObject({
+      taskId,
+      level: 'L',
+      services: ['api', 'gateway'],
+      firstVerificationPass: true,
+      artifactComplete: false,
+      finalGateStatus: 'passed',
+    })
+    expect(verifyResult.artifactCheck.complete).toBe(false)
+    expect(verifyResult.artifactCheck.incomplete.map(item => item.file)).toContain('mini-prd.md')
+
+    const metrics = await runScale(['metrics', 'list', '--json'], scaleDir, projectDir)
+    expect(metrics.exitCode).toBe(0)
+    const metricsResult = parseJson<{ summary: { total: number; firstPassRate: number }; records: Array<{ taskId: string; level: string }> }>(metrics.stdout)
+    expect(metricsResult.summary.total).toBe(1)
+    expect(metricsResult.summary.firstPassRate).toBe(1)
+    expect(metricsResult.records[0]).toMatchObject({ taskId, level: 'L' })
+
+    const blockedShip = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir, projectDir)
     expect(blockedShip.exitCode).not.toBe(0)
     expect(blockedShip.stderr).toContain('Task not reviewed with persisted passing evidence')
 
-    const review = await runScale(['review', taskId, '--json'], scaleDir)
+    const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
     expect(review.exitCode).toBe(0)
     const reviewResult = parseJson<{ passed: boolean; reviewId: string }>(review.stdout)
     expect(reviewResult.passed).toBe(true)
     expect(reviewResult.reviewId).toMatch(/^REVIEW-/)
 
     const headBefore = await execa('git', ['rev-parse', 'HEAD'])
-    const ship = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir)
+    const ship = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir, projectDir)
     const headAfter = await execa('git', ['rev-parse', 'HEAD'])
 
     expect(ship.exitCode).toBe(0)
@@ -104,8 +194,75 @@ describe('phase CLI workflow', () => {
     expect(headAfter.stdout).toBe(headBefore.stdout)
   }, 120_000)
 
+  it('can hard-block verification and ship when required M/L artifacts are placeholders', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'Artifact Gate Feature',
+      '--description',
+      'Implement a deterministic TypeScript CLI artifact gate workflow that accepts task input arguments, persists output verification evidence, checks required medium and large task documents for substantive content, enforces rollback risk constraints, keeps lint and typecheck quality standards, verifies acceptance evidence today, blocks task completion when configured to require artifacts, and prevents ship from bypassing an incomplete artifact gate.',
+      '--success-criteria',
+      'artifact gate blocks incomplete documents,ship cannot bypass artifact gate,verification evidence is still persisted',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete generated temporary artifacts', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Artifact gate task', '--level', 'L', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      buildResult.task.id,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--artifact-gate',
+      'block',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{
+      passed: boolean
+      artifactGate: { mode: string; applies: boolean; checked: boolean; complete: boolean; blocked: boolean }
+      metric: { finalGateStatus: string; artifactComplete: boolean }
+    }>(verify.stdout)
+    expect(verifyResult.passed).toBe(false)
+    expect(verifyResult.artifactGate).toMatchObject({
+      mode: 'block',
+      applies: true,
+      checked: true,
+      complete: false,
+      blocked: true,
+    })
+    expect(verifyResult.metric).toMatchObject({
+      finalGateStatus: 'blocked',
+      artifactComplete: false,
+    })
+
+    const ship = await runScale(['ship', buildResult.task.id, '--no-commit', '--json'], scaleDir, projectDir)
+    expect(ship.exitCode).not.toBe(0)
+    expect(ship.stderr).toContain('Task artifact gate did not pass')
+  }, 120_000)
+
   it('blocks committing unreviewed files instead of staging the whole workspace', async () => {
     const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
     const define = await runScale([
       'define',
       'Scoped Ship Feature',
@@ -126,17 +283,19 @@ describe('phase CLI workflow', () => {
       '--priority',
       'Protect commit scope before creating a release commit.',
       '--json',
-    ], scaleDir)
+    ], scaleDir, projectDir)
     expect(define.exitCode).toBe(0)
     const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
 
-    const plan = await runScale(['plan', specId, '--rollback', 'Delete temporary test artifacts', '--json'], scaleDir)
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete temporary test artifacts', '--json'], scaleDir, projectDir)
     expect(plan.exitCode).toBe(0)
     const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
 
-    const build = await runScale(['build', planId, '--description', 'Scoped ship task', '--json'], scaleDir)
+    const build = await runScale(['build', planId, '--description', 'Scoped ship task', '--json'], scaleDir, projectDir)
     expect(build.exitCode).toBe(0)
-    const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    const taskId = buildResult.task.id
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
     const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
     const verify = await runScale([
@@ -151,7 +310,7 @@ describe('phase CLI workflow', () => {
       '--coverage-cmd',
       coverageCommand,
       '--json',
-    ], scaleDir)
+    ], scaleDir, projectDir)
     expect(verify.exitCode).toBe(0)
     expect(parseJson<{ passed: boolean }>(verify.stdout).passed).toBe(true)
 
@@ -164,13 +323,13 @@ describe('phase CLI workflow', () => {
     mkdirSync(join('test-fixtures', 'phase-cli'), { recursive: true })
     repoFiles.push(reviewedPath, unreviewedPath)
     writeFileSync(reviewedPath, 'reviewed\n', 'utf-8')
-    const review = await runScale(['review', taskId, '--json'], scaleDir)
+    const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
     expect(review.exitCode).toBe(0)
     expect(parseJson<{ passed: boolean }>(review.stdout).passed).toBe(true)
 
     writeFileSync(unreviewedPath, 'unreviewed\n', 'utf-8')
     const headBefore = await execa('git', ['rev-parse', 'HEAD'])
-    const ship = await runScale(['ship', taskId, '--message', 'test: scoped ship regression', '--json'], scaleDir)
+    const ship = await runScale(['ship', taskId, '--message', 'test: scoped ship regression', '--json'], scaleDir, projectDir)
     const headAfter = await execa('git', ['rev-parse', 'HEAD'])
 
     expect(ship.exitCode).not.toBe(0)

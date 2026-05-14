@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BuildGate, CoverageGate, SecurityGate, TDDGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
+import { BuildGate, CoverageGate, ExplorationGate, PlanningGate, SecurityGate, TDDGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
+import { WorkflowArtifactWriter } from '../../src/workflow/WorkflowArtifactWriter.js'
 
 let dirs: string[] = []
 
@@ -31,6 +32,17 @@ describe('runShellCommand', () => {
     expect(result.code).toBe(7)
     expect(result.stdout).toBe('')
     expect(result.stderr).toBe('bad')
+  })
+
+  it('runs a command in the requested working directory', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-shell-cwd-'))
+    dirs.push(dir)
+
+    const result = await runShellCommand('node -e "process.stdout.write(process.cwd())"', 10_000, dir)
+
+    expect(result.code).toBe(0)
+    expect(result.stdout).toBe(dir)
+    expect(result.cwd).toBe(dir)
   })
 })
 
@@ -108,6 +120,70 @@ describe('TDDGate', () => {
     expect(result.status).toBe('PASSED')
     expect(result.evidenceItems?.[0].path).toBe(evidencePath)
     expect(result.evidenceItems?.[0].outputHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+})
+
+describe('ExplorationGate', () => {
+  it('uses current workflow state as the authoritative exploration contract', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-current-'))
+    dirs.push(dir)
+    const writer = new WorkflowArtifactWriter(dir)
+    writer.writeCurrentState({
+      schemaVersion: 1,
+      taskId: 'task-001',
+      level: 'M',
+      phase: 'explore',
+      exploredFiles: ['a.ts', 'b.ts', 'c.ts'],
+      fileCount: 3,
+      mainContradiction: 'gate and artifact contract mismatch',
+      completedGates: [],
+      openTasks: [],
+      filesModified: [],
+      updatedAt: '2026-05-14T00:00:00Z',
+    })
+
+    const gate = new ExplorationGate(writer)
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.evidenceItems?.[0].path).toBe('.scale/state/current.json')
+  })
+})
+
+describe('PlanningGate', () => {
+  it('uses current workflow state to select the intended plan artifact', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-plan-current-'))
+    dirs.push(dir)
+    const writer = new WorkflowArtifactWriter(dir)
+    writer.writePlanResult({
+      timestamp: '2026-05-14T00:00:00Z',
+      planId: 'plan-valid',
+      specId: 'spec-001',
+      hasBoundaryAnalysis: true,
+      hasExceptionHandling: true,
+      hasRollbackStrategy: true,
+      modules: [],
+      consensusRounds: 1,
+      verdict: 'APPROVE',
+    })
+    writer.writePlanResult({
+      timestamp: '2026-05-14T00:00:01Z',
+      planId: 'plan-invalid',
+      specId: 'spec-001',
+      hasBoundaryAnalysis: false,
+      hasExceptionHandling: false,
+      hasRollbackStrategy: false,
+      modules: [],
+      consensusRounds: 1,
+      verdict: 'ITERATE',
+    })
+    writer.updateCurrentState({ lastPlanId: 'plan-valid' })
+
+    const gate = new PlanningGate(writer)
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    expect(result.evidence).toContain('plan-valid')
   })
 })
 

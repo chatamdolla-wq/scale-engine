@@ -24,6 +24,22 @@ export interface WorkflowEngineConfig {
   scaleDir?: string
 }
 
+export interface ExploreOptions {
+  files?: string[]
+  mainContradiction?: string
+  persistArtifact?: boolean
+  runGate?: boolean
+}
+
+export interface PlanOptions {
+  planId?: string
+  specId?: string
+  rollbackStrategy?: string
+  modules?: string[]
+  persistArtifact?: boolean
+  runGate?: boolean
+}
+
 export class WorkflowEngine {
   private eventBus: IEventBus
   private capabilityRegistry?: ICapabilityRegistry
@@ -63,10 +79,7 @@ export class WorkflowEngine {
   }
 
   // Phase 1: Exploration with Gate G1
-  async explore(requirement: string): Promise<{ ambiguityScore: number; gateResult: unknown; socraticSession?: SocraticSession }> {
-    // G1: Exploration gate
-    const gateResult = await this.gateSystem.executeGate('G1')
-
+  async explore(requirement: string, options: ExploreOptions = {}): Promise<{ ambiguityScore: number; gateResult: unknown; socraticSession?: SocraticSession }> {
     // Analyze requirement ambiguity
     const ambiguityResult = this.ambiguityScorer.analyzeRequirement(requirement)
 
@@ -76,15 +89,21 @@ export class WorkflowEngine {
       socraticSession = this.socraticQuestioner.startSession(requirement, ambiguityResult)
     }
 
-    // Write explore artifact for Gate verification
-    this.artifactWriter.writeExploreResult({
-      timestamp: new Date().toISOString(),
-      files: [],
-      fileCount: 0,
-      mainContradiction: '',
-      ambiguityScore: ambiguityResult.totalScore,
-      socraticCompleted: !ambiguityResult.requiresQuestioning
-    })
+    const files = options.files ?? []
+    const mainContradiction = options.mainContradiction ?? ''
+
+    if (options.persistArtifact !== false) {
+      this.artifactWriter.writeExploreResult({
+        timestamp: new Date().toISOString(),
+        files,
+        fileCount: files.length,
+        mainContradiction,
+        ambiguityScore: ambiguityResult.totalScore,
+        socraticCompleted: !ambiguityResult.requiresQuestioning
+      })
+    }
+
+    const gateResult = options.runGate === false ? undefined : await this.gateSystem.executeGate('G1')
 
     return {
       ambiguityScore: ambiguityResult.totalScore,
@@ -117,28 +136,28 @@ export class WorkflowEngine {
   }
 
   // Phase 2: Planning with Consensus
-  async plan(requirement: string): Promise<unknown> {
+  async plan(requirement: string, options: PlanOptions = {}): Promise<unknown> {
     // Run consensus planner
     const consensusResult = await this.consensusPlanner.execute(requirement)
 
-    // G2: Planning gate (if L-level task)
-    if (consensusResult.viableOptions.length > 1) {
-      await this.gateSystem.executeGate('G2')
+    const planId = options.planId ?? `engine-${Date.now()}`
+    if (options.persistArtifact !== false) {
+      this.artifactWriter.writePlanResult({
+        timestamp: new Date().toISOString(),
+        planId,
+        specId: options.specId ?? '',
+        hasBoundaryAnalysis: consensusResult.viableOptions.length > 1,
+        hasExceptionHandling: consensusResult.preMortem?.rootCauses?.length > 0,
+        hasRollbackStrategy: Boolean(options.rollbackStrategy),
+        modules: options.modules ?? [],
+        consensusRounds: consensusResult.iterationCount,
+        verdict: consensusResult.verdict
+      })
     }
 
-    // Write plan artifact for Gate verification
-    const planId = `engine-${Date.now()}`
-    this.artifactWriter.writePlanResult({
-      timestamp: new Date().toISOString(),
-      planId,
-      specId: '',
-      hasBoundaryAnalysis: consensusResult.viableOptions.length > 1,
-      hasExceptionHandling: consensusResult.preMortem?.rootCauses?.length > 0,
-      hasRollbackStrategy: false,
-      modules: [],
-      consensusRounds: consensusResult.iterationCount,
-      verdict: consensusResult.verdict
-    })
+    if (options.runGate !== false && consensusResult.viableOptions.length > 1) {
+      await this.gateSystem.executeGate('G2')
+    }
 
     return consensusResult
   }
@@ -152,7 +171,7 @@ export class WorkflowEngine {
   // Phase 4: Verify with build and quality gates
   async verify(commandOverrides?: VerificationCommandConfig): Promise<import('./types.js').GateResult[]> {
     if (commandOverrides) {
-      this.gateSystem = new GateSystem(this.eventBus, commandOverrides)
+      this.gateSystem = new GateSystem(this.eventBus, commandOverrides, this.artifactWriter)
     }
     const results = await this.gateSystem.executeAll(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
     return results

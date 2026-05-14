@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import type { AgentPlatform } from '../artifact/types.js'
+import { writeGovernanceTemplates } from '../workflow/GovernanceTemplates.js'
 
 export interface PlatformDetectionResult {
   platform: AgentPlatform | null
@@ -78,6 +79,10 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
     result.created.push(gitignorePath)
   }
   result.constraintsApplied = PHYSICAL_CONSTRAINTS.length
+  const projectName = projectDir.split(/[/\\]/).pop() || 'Project'
+  const governance = writeGovernanceTemplates(projectDir, { mode: 'standard', projectName })
+  result.created.push(...governance.created)
+  result.skipped.push(...governance.skipped)
 
   // Optional: Install knowledge graph (graphify)
   if (options?.installKnowledgeGraph) {

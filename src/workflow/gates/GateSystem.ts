@@ -63,13 +63,13 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
-export async function runShellCommand(command: string, timeout: number): Promise<CommandResult> {
+export async function runShellCommand(command: string, timeout: number, cwd = process.cwd()): Promise<CommandResult> {
   const start = Date.now()
-  const cwd = process.cwd()
   try {
     const result = await execa(command, {
       shell: true,
       timeout,
+      cwd,
       reject: false,
       all: false,
     })
@@ -117,7 +117,7 @@ export class GateSystem {
   constructor(eventBus: IEventBus, commandConfig: VerificationCommandConfig = {}, artifactWriter?: WorkflowArtifactWriter) {
     this.eventBus = eventBus
     this.evidenceStore = new EvidenceStore()
-    this.commands = detectVerificationCommands(process.cwd(), commandConfig)
+    this.commands = detectVerificationCommands(commandConfig.cwd ?? process.cwd(), commandConfig)
     this.artifactWriter = artifactWriter ?? new WorkflowArtifactWriter()
     this.registerDefaultGates()
   }
@@ -153,6 +153,7 @@ export class GateSystem {
       result.durationMs = Date.now() - start
       this.results.set(stage, result)
       this.persistEvidence(result)
+      this.recordCompletedGate(stage, result)
       this.eventBus.emit('gate.executed', { stage, passed: result.passed })
       return result
     } catch (e) {
@@ -185,6 +186,16 @@ export class GateSystem {
     } catch {
       // Evidence persistence must not mask the gate decision itself.
     }
+  }
+
+  private recordCompletedGate(stage: GateStage, result: GateResult): void {
+    if (!result.passed) return
+    const state = this.artifactWriter.readCurrentState()
+    const completedGates = state?.completedGates ?? []
+    if (completedGates.includes(stage)) return
+    this.artifactWriter.updateCurrentState({
+      completedGates: [...completedGates, stage],
+    })
   }
 
   async executeAll(order: GateStage[] = ['G0', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7']): Promise<GateResult[]> {
@@ -285,28 +296,42 @@ export class ExplorationGate implements IGate {
     const evidenceItems: GateEvidence[] = []
 
     // ── Primary: Check structured explore artifact ──
+    const currentState = this.artifactWriter?.readCurrentState()
     const exploreArtifact = this.artifactWriter?.readExploreResult()
-    if (exploreArtifact) {
-      const fileCheck = exploreArtifact.fileCount >= 3
-      const contradictionCheck = exploreArtifact.mainContradiction.length > 0
+    if (currentState) {
+      const fileCheck = currentState.fileCount >= 3
+      const contradictionCheck = currentState.mainContradiction.length > 0
 
-      if (!fileCheck) blockers.push(`Explored only ${exploreArtifact.fileCount} files (minimum 3 required)`)
+      if (!fileCheck) blockers.push(`Explored only ${currentState.fileCount} files (minimum 3 required)`)
       if (!contradictionCheck) blockers.push('No main contradiction identified in exploration')
 
       evidenceItems.push(
         createEvidence({
           kind: 'file',
-          label: 'Explore artifact (structured)',
+          label: 'Workflow state (current)',
           passed: fileCheck && contradictionCheck,
-          path: '.scale/state/explore.json',
+          path: '.scale/state/current.json',
           detail: fileCheck && contradictionCheck
-            ? `explored ${exploreArtifact.fileCount} files, contradiction: "${exploreArtifact.mainContradiction}"`
-            : `files=${exploreArtifact.fileCount} (need >=3), contradiction="${exploreArtifact.mainContradiction}" (need non-empty)`,
+            ? `explored ${currentState.fileCount} files, contradiction: "${currentState.mainContradiction}"`
+            : `files=${currentState.fileCount} (need >=3), contradiction="${currentState.mainContradiction}" (need non-empty)`,
         })
       )
 
+      if (exploreArtifact) {
+        evidenceItems.push(
+          createEvidence({
+            kind: 'file',
+            label: 'Explore artifact (detail)',
+            passed: exploreArtifact.fileCount === currentState.fileCount &&
+              exploreArtifact.mainContradiction === currentState.mainContradiction,
+            path: '.scale/state/explore.json',
+            detail: `files=${exploreArtifact.fileCount}, contradiction="${exploreArtifact.mainContradiction}"`,
+          })
+        )
+      }
+
       // Additional quality indicators
-      if (exploreArtifact.ambiguityScore !== undefined) {
+      if (exploreArtifact?.ambiguityScore !== undefined) {
         evidenceItems.push(
           createEvidence({
             kind: 'file',
@@ -319,7 +344,27 @@ export class ExplorationGate implements IGate {
     }
 
     // ── Fallback: Check knowledge files (legacy behavior) ──
-    if (!exploreArtifact) {
+    if (!currentState && exploreArtifact) {
+      const fileCheck = exploreArtifact.fileCount >= 3
+      const contradictionCheck = exploreArtifact.mainContradiction.length > 0
+
+      if (!fileCheck) blockers.push(`Explored only ${exploreArtifact.fileCount} files (minimum 3 required)`)
+      if (!contradictionCheck) blockers.push('No main contradiction identified in exploration')
+
+      evidenceItems.push(
+        createEvidence({
+          kind: 'file',
+          label: 'Explore artifact (legacy)',
+          passed: fileCheck && contradictionCheck,
+          path: '.scale/state/explore.json',
+          detail: fileCheck && contradictionCheck
+            ? `explored ${exploreArtifact.fileCount} files, contradiction: "${exploreArtifact.mainContradiction}"`
+            : `files=${exploreArtifact.fileCount} (need >=3), contradiction="${exploreArtifact.mainContradiction}" (need non-empty)`,
+        })
+      )
+    }
+
+    if (!currentState && !exploreArtifact) {
       const knowledgeFile = await this.findKnowledgeFile()
       if (!knowledgeFile) {
         blockers.push('No explore artifact or project knowledge file found')
@@ -402,7 +447,10 @@ export class PlanningGate implements IGate {
     const evidenceItems: GateEvidence[] = []
 
     // ── Primary: Check structured plan artifact ──
-    const planArtifact = this.artifactWriter?.readLatestPlanResult()
+    const currentState = this.artifactWriter?.readCurrentState()
+    const planArtifact = currentState?.lastPlanId
+      ? this.artifactWriter?.readPlanResult(currentState.lastPlanId)
+      : this.artifactWriter?.readLatestPlanResult()
     if (planArtifact) {
       if (!planArtifact.hasBoundaryAnalysis) blockers.push('Plan missing boundary analysis')
       if (!planArtifact.hasExceptionHandling) blockers.push('Plan missing exception handling')
@@ -612,7 +660,7 @@ export class BuildGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
       if (commandResult.code !== 0) {
         blockers.push(`Build failed: ${commandResult.stderr}`)
       }
@@ -651,7 +699,7 @@ export class LintGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 60000)
+      commandResult = await runShellCommand(this.command.command, 60000, this.command.cwd)
       if (commandResult.code !== 0) {
         blockers.push(`Lint failed: ${commandResult.stderr}`)
       }
@@ -690,7 +738,7 @@ export class TestGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
       if (commandResult.code !== 0) {
         blockers.push(`Tests failed: ${commandResult.stderr}`)
       }
@@ -730,7 +778,7 @@ export class CoverageGate implements IGate {
     let detail = ''
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
       if (commandResult.code !== 0) {
         blockers.push(`Coverage command failed: ${commandResult.stderr}`)
       }

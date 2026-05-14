@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { Doctor } from '../../src/api/doctor.js'
 import { ClaudeCodeAdapter } from '../../src/adapters/ClaudeCodeAdapter.js'
+import { writeGovernanceTemplates } from '../../src/workflow/GovernanceTemplates.js'
 import { rmSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -86,6 +87,32 @@ describe('Doctor', () => {
     const report = await doc.diagnose()
     const giCheck = report.checks.find((c) => c.name === '.scale/.gitignore')
     expect(giCheck?.status).toBe('ok')
+  })
+
+  it('reports generated governance templates and verification matrix', async () => {
+    const adapter = new ClaudeCodeAdapter()
+    await adapter.init({ projectDir: TMP })
+    writeGovernanceTemplates(TMP, { mode: 'standard', projectName: 'Doctor Test' })
+
+    const doc = new Doctor(TMP)
+    const report = await doc.diagnose()
+
+    expect(report.checks.find((c) => c.name === 'Governance templates')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
+    expect(report.checks.find((c) => c.name === 'Verification matrix')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
+    expect(report.checks.find((c) => c.name === 'Skill routing policy')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
+    expect(doc.formatReport(report)).toContain('Project Governance (Optional)')
   })
 
   it('rules and hooks check on fresh install', async () => {

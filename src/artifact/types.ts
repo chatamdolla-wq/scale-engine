@@ -210,6 +210,9 @@ export interface AgentBrief {
 
 export interface TaskPayload {
   description: string
+  workflowLevel?: 'S' | 'M' | 'L' | 'CRITICAL'
+  servicesTouched?: string[]
+  residualRisk?: string
   estimatedTokens?: number
   estimatedDurationMs?: number
   filesInvolved: string[]
@@ -230,6 +233,17 @@ export interface TaskPayload {
   reviewPassed?: boolean  // 新增：评审通过（强制评审阶段）
   verificationEvidenceIds?: string[]
   verifiedAt?: Timestamp
+  artifactGateMode?: 'off' | 'warn' | 'block'
+  artifactGatePassed?: boolean
+  artifactComplete?: boolean
+  skillIntents?: string[]
+  skillRoutingMode?: 'off' | 'warn' | 'block'
+  skillPlanRequired?: boolean
+  requiredSkills?: string[]
+  recommendedSkills?: string[]
+  requiredSkillArtifacts?: string[]
+  requiredSkillVerification?: string[]
+  skillGatePassed?: boolean
   reviewEvidenceIds?: string[]
   reviewedAt?: Timestamp
   /** Agent Brief — 标准化的 Agent 可执行工单（借鉴 mattpocock/skills） */
@@ -369,6 +383,18 @@ export type EventType =
   | 'behavior.ai_slop'
   | 'behavior.hallucination'
   | 'behavior.duplicate_edit'
+  | 'behavior.passive_wait'
+  | 'behavior.same_file_edit'
+  // Autonomous workflow loop
+  | 'autonomous.loop.start'
+  | 'autonomous.worklog.read'
+  | 'autonomous.loop.error'
+  | 'autonomous.loop.end'
+  | 'autonomous.defect.detected'
+  | 'autonomous.defect.fix_requested'
+  | 'autonomous.feature.start'
+  | 'autonomous.feature.delegated'
+  | 'autonomous.baton.written'
   // Role
   | 'role.activated'
   | 'role.denied'

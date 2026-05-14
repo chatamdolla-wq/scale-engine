@@ -92,7 +92,7 @@ export interface ISkillDiscovery {
 const GLOBAL_PLATFORMS: AgentPlatform[] = ['claude-code', 'codex', 'opencode', 'deepseek-tui']
 
 /** 项目级平台：skills 目录在项目目录下 */
-const PROJECT_PLATFORMS: AgentPlatform[] = ['cursor', 'gemini', 'openclaw', 'hermes', 'trae', 'workbuddy', 'vsc', 'qcoder', 'aider', 'windsurf', 'kimi', 'doubao']
+const PROJECT_PLATFORMS: AgentPlatform[] = ['cursor', 'gemini', 'openclaw', 'hermes', 'trae', 'workbuddy', 'vsc', 'qcoder', 'aider', 'windsurf', 'kimi', 'doubao', 'kiro']
 
 const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string> = {
   // 全局级（homedir）
@@ -113,6 +113,7 @@ const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string> = {
   'windsurf': join('.windsurf', 'skills'),
   'kimi': join('.kimi', 'skills'),
   'doubao': join('.doubao', 'skills'),
+  'kiro': join('.kiro', 'skills'),
 }
 
 export class SkillDiscovery implements ISkillDiscovery {
