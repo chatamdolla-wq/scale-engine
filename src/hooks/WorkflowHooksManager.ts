@@ -36,6 +36,24 @@ const WORKFLOW_PRESETS: WorkflowHookPreset[] = [
     description: 'Honest delivery checks for unverified claims',
     templates: ['tmpl-unverified-check'],
     enabled: true
+  },
+  {
+    name: 'phase-completion',
+    description: 'Phase completion gate — blocks Stop if SCALE Engine phases incomplete',
+    templates: ['tmpl-phase-completion-check'],
+    enabled: true
+  },
+  {
+    name: 'explore-guard',
+    description: 'PreToolUse guard — warns when writing before exploration is recorded',
+    templates: ['tmpl-explore-check'],
+    enabled: true
+  },
+  {
+    name: 'next-step-reminder',
+    description: 'Stop reminder — shows remaining SCALE phases and next command',
+    templates: ['tmpl-next-step-reminder'],
+    enabled: true
   }
 ]
 
@@ -136,7 +154,8 @@ export function generateRecommendedHooksConfig(): Record<string, unknown> {
         {
           matcher: '',
           hooks: [
-            { type: 'command', command: 'node ~/.claude/hooks/unverified.mjs', timeout: 10000 }
+            { type: 'command', command: 'node ~/.claude/hooks/unverified.mjs', timeout: 10000 },
+            { type: 'command', command: 'node ~/.claude/hooks/phase-completion.mjs', timeout: 5000 }
           ]
         }
       ]

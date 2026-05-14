@@ -4,6 +4,7 @@
 import type { IEventBus } from '../../core/eventBus.js'
 import type { GateStage, GateResult, GateStatus, GateEvidence } from '../types.js'
 import { EvidenceStore } from '../EvidenceStore.js'
+import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig } from '../VerificationCommands.js'
 import { execa } from 'execa'
 import { createHash } from 'node:crypto'
@@ -111,11 +112,13 @@ export class GateSystem {
   private results: Map<GateStage, GateResult> = new Map()
   private evidenceStore: EvidenceStore
   private commands: ReturnType<typeof detectVerificationCommands>
+  private artifactWriter: WorkflowArtifactWriter
 
-  constructor(eventBus: IEventBus, commandConfig: VerificationCommandConfig = {}) {
+  constructor(eventBus: IEventBus, commandConfig: VerificationCommandConfig = {}, artifactWriter?: WorkflowArtifactWriter) {
     this.eventBus = eventBus
     this.evidenceStore = new EvidenceStore()
     this.commands = detectVerificationCommands(process.cwd(), commandConfig)
+    this.artifactWriter = artifactWriter ?? new WorkflowArtifactWriter()
     this.registerDefaultGates()
   }
 
@@ -206,9 +209,9 @@ export class GateSystem {
   }
 
   private registerDefaultGates(): void {
-    this.registerGate(new ExplorationGate())
-    this.registerGate(new PlanningGate())
-    this.registerGate(new TDDGate(this.commands.tddEvidence, this.commands.tddStrict))
+    this.registerGate(new ExplorationGate(this.artifactWriter))
+    this.registerGate(new PlanningGate(this.artifactWriter))
+    this.registerGate(new TDDGate(this.commands.tddEvidence, this.commands.tddStrict, this.artifactWriter))
     this.registerGate(new BuildGate(this.commands.build))
     this.registerGate(new LintGate(this.commands.lint))
     this.registerGate(new TestGate(this.commands.test))
@@ -271,29 +274,81 @@ export class ExplorationGate implements IGate {
   description = 'Project knowledge file, knowledge graph, and contradiction analysis checks'
   requiredLevel: RequiredLevel = 'M'
 
+  private artifactWriter?: WorkflowArtifactWriter
+
+  constructor(artifactWriter?: WorkflowArtifactWriter) {
+    this.artifactWriter = artifactWriter
+  }
+
   async execute(): Promise<GateResult> {
     const blockers: string[] = []
-    const knowledgeFile = await this.findKnowledgeFile()
-    if (!knowledgeFile) {
-      blockers.push('No project knowledge file found')
+    const evidenceItems: GateEvidence[] = []
+
+    // ── Primary: Check structured explore artifact ──
+    const exploreArtifact = this.artifactWriter?.readExploreResult()
+    if (exploreArtifact) {
+      const fileCheck = exploreArtifact.fileCount >= 3
+      const contradictionCheck = exploreArtifact.mainContradiction.length > 0
+
+      if (!fileCheck) blockers.push(`Explored only ${exploreArtifact.fileCount} files (minimum 3 required)`)
+      if (!contradictionCheck) blockers.push('No main contradiction identified in exploration')
+
+      evidenceItems.push(
+        createEvidence({
+          kind: 'file',
+          label: 'Explore artifact (structured)',
+          passed: fileCheck && contradictionCheck,
+          path: '.scale/state/explore.json',
+          detail: fileCheck && contradictionCheck
+            ? `explored ${exploreArtifact.fileCount} files, contradiction: "${exploreArtifact.mainContradiction}"`
+            : `files=${exploreArtifact.fileCount} (need >=3), contradiction="${exploreArtifact.mainContradiction}" (need non-empty)`,
+        })
+      )
+
+      // Additional quality indicators
+      if (exploreArtifact.ambiguityScore !== undefined) {
+        evidenceItems.push(
+          createEvidence({
+            kind: 'file',
+            label: 'Ambiguity score',
+            passed: exploreArtifact.ambiguityScore < 0.4,
+            detail: `ambiguity=${(exploreArtifact.ambiguityScore * 100).toFixed(0)}% (threshold < 40%)`,
+          })
+        )
+      }
     }
+
+    // ── Fallback: Check knowledge files (legacy behavior) ──
+    if (!exploreArtifact) {
+      const knowledgeFile = await this.findKnowledgeFile()
+      if (!knowledgeFile) {
+        blockers.push('No explore artifact or project knowledge file found')
+      }
+      evidenceItems.push(
+        createEvidence({
+          kind: 'file',
+          label: 'Project knowledge file (fallback)',
+          passed: Boolean(knowledgeFile),
+          path: knowledgeFile ?? undefined,
+          detail: knowledgeFile
+            ? `found ${knowledgeFile} (no structured explore.json)`
+            : 'missing explore.json AND AGENTS.md, CLAUDE.md, .cursorrules, GEMINI.md',
+        })
+      )
+    }
+
+    // ── Knowledge graph (supplementary) ──
     const hasKnowledgeGraph = await this.checkKnowledgeGraph()
-    const evidenceItems = [
-      createEvidence({
-        kind: 'file',
-        label: 'Project knowledge file',
-        passed: Boolean(knowledgeFile),
-        path: knowledgeFile ?? undefined,
-        detail: knowledgeFile ? `found ${knowledgeFile}` : 'missing AGENTS.md, CLAUDE.md, .cursorrules, and GEMINI.md',
-      }),
+    evidenceItems.push(
       createEvidence({
         kind: 'file',
         label: 'Knowledge graph',
         passed: hasKnowledgeGraph,
         path: 'graphify-out/GRAPH_REPORT.md',
         detail: hasKnowledgeGraph ? 'available' : 'not available',
-      }),
-    ]
+      })
+    )
+
     const passed = blockers.length === 0
     return {
       gate: this.stage,
@@ -336,21 +391,55 @@ export class PlanningGate implements IGate {
   description = 'Mini-Spec or SDD planning artifact checks'
   requiredLevel: RequiredLevel = 'L'
 
+  private artifactWriter?: WorkflowArtifactWriter
+
+  constructor(artifactWriter?: WorkflowArtifactWriter) {
+    this.artifactWriter = artifactWriter
+  }
+
   async execute(): Promise<GateResult> {
     const blockers: string[] = []
-    const hasSpec = await this.checkSpecDocument()
-    if (!hasSpec) {
-      blockers.push('Spec document not found')
+    const evidenceItems: GateEvidence[] = []
+
+    // ── Primary: Check structured plan artifact ──
+    const planArtifact = this.artifactWriter?.readLatestPlanResult()
+    if (planArtifact) {
+      if (!planArtifact.hasBoundaryAnalysis) blockers.push('Plan missing boundary analysis')
+      if (!planArtifact.hasExceptionHandling) blockers.push('Plan missing exception handling')
+      if (!planArtifact.hasRollbackStrategy) blockers.push('Plan missing rollback strategy')
+
+      evidenceItems.push(
+        createEvidence({
+          kind: 'file',
+          label: 'Plan artifact (structured)',
+          passed: blockers.length === 0,
+          path: `.scale/state/plan-${planArtifact.planId}.json`,
+          detail: blockers.length === 0
+            ? `plan ${planArtifact.planId}: boundary ✓, exceptions ✓, rollback ✓, verdict=${planArtifact.verdict}`
+            : blockers.join('; '),
+        })
+      )
     }
-    const evidenceItems = [
-      createEvidence({
-        kind: 'file',
-        label: 'Spec document',
-        passed: hasSpec,
-        path: '.scale/specs',
-        detail: hasSpec ? 'spec directory contains at least one markdown spec' : 'missing spec directory or markdown spec',
-      }),
-    ]
+
+    // ── Fallback: Check spec directory (legacy behavior) ──
+    if (!planArtifact) {
+      const hasSpec = await this.checkSpecDocument()
+      if (!hasSpec) {
+        blockers.push('No plan artifact or spec document found')
+      }
+      evidenceItems.push(
+        createEvidence({
+          kind: 'file',
+          label: 'Spec document (fallback)',
+          passed: hasSpec,
+          path: '.scale/specs',
+          detail: hasSpec
+            ? 'spec directory contains at least one markdown spec (no structured plan artifact)'
+            : 'missing plan-*.json AND spec directory or markdown spec',
+        })
+      )
+    }
+
     const passed = blockers.length === 0
     return {
       gate: this.stage,
@@ -380,13 +469,25 @@ export class TDDGate implements IGate {
   description = 'RED -> GREEN -> REFACTOR evidence check'
   requiredLevel: RequiredLevel = 'CRITICAL'
 
-  constructor(private evidencePath?: string, private strict = false) {}
+  private artifactWriter?: WorkflowArtifactWriter
+
+  constructor(private evidencePath?: string, private strict = false, artifactWriter?: WorkflowArtifactWriter) {
+    this.artifactWriter = artifactWriter
+  }
 
   async execute(): Promise<GateResult> {
+    // ── Primary: Check structured TDD artifact ──
+    const tddArtifact = this.artifactWriter?.readLatestTDDEvidence()
+    if (tddArtifact) {
+      return this.verifyStructuredEvidence(tddArtifact)
+    }
+
+    // ── Secondary: Check evidence file path ──
     if (this.evidencePath) {
       return this.verifyEvidenceFile(this.evidencePath)
     }
 
+    // ── Fallback: Legacy behavior ──
     const detail = this.strict
       ? 'TDD evidence file is required in strict mode'
       : 'TDD cycle not strictly verified; provide --tdd-evidence or use --tdd-strict to enforce'
@@ -407,6 +508,38 @@ export class TDDGate implements IGate {
       evidenceItems,
       blockers: this.strict ? [detail] : [],
       durationMs: 0
+    }
+  }
+
+  private verifyStructuredEvidence(artifact: import('../WorkflowArtifactWriter.js').TDDEvidence): GateResult {
+    const blockers: string[] = []
+    if (!artifact.red) blockers.push('TDD evidence missing red=true')
+    if (!artifact.green) blockers.push('TDD evidence missing green=true')
+    if (!artifact.refactor) blockers.push('TDD evidence missing refactor=true')
+    if (!artifact.testFirst) blockers.push('TDD evidence missing testFirst=true')
+
+    const passed = blockers.length === 0
+    const evidenceItems = [
+      createEvidence({
+        kind: 'file',
+        label: 'TDD evidence (structured)',
+        passed,
+        path: `.scale/state/tdd-${artifact.taskId}.json`,
+        detail: passed
+          ? `TDD cycle complete: red ✓, green ✓, refactor ✓, testFirst ✓ (task ${artifact.taskId})`
+          : blockers.join('; '),
+        source: 'tdd-artifact',
+      }),
+    ]
+
+    return {
+      gate: this.stage,
+      status: passed ? 'PASSED' : 'BLOCKED',
+      passed,
+      evidence: textEvidence(evidenceItems),
+      evidenceItems,
+      blockers,
+      durationMs: 0,
     }
   }
 

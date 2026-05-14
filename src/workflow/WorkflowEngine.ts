@@ -13,6 +13,7 @@ import { RalphEngine, PRDManager } from './execution/RalphEngine.js'
 import { UltraworkEngine, ModelRouter } from './execution/UltraworkEngine.js'
 import { HonestDelivery } from './quality/HonestDelivery.js'
 import { KarpathyEvaluator } from './quality/KarpathyEvaluator.js'
+import { WorkflowArtifactWriter } from './WorkflowArtifactWriter.js'
 import type { PRDDocument, UserStory, TaskDefinition, GateStage, AmbiguityScoreResult, SocraticSession } from './types.js'
 
 export interface WorkflowEngineConfig {
@@ -20,6 +21,7 @@ export interface WorkflowEngineConfig {
   capabilityRegistry?: ICapabilityRegistry
   skillRegistry?: ISkillRegistry
   verificationCommands?: VerificationCommandConfig
+  scaleDir?: string
 }
 
 export class WorkflowEngine {
@@ -37,14 +39,19 @@ export class WorkflowEngine {
   private prdManager: PRDManager
   private modelRouter: ModelRouter
   private karpathyEvaluator: KarpathyEvaluator
+  private artifactWriter: WorkflowArtifactWriter
 
   constructor(config: WorkflowEngineConfig) {
     this.eventBus = config.eventBus
     this.capabilityRegistry = config.capabilityRegistry
     this.skillRegistry = config.skillRegistry
 
+    // Initialize artifact writer (shared with GateSystem)
+    const scaleDir = config.scaleDir ?? '.scale'
+    this.artifactWriter = new WorkflowArtifactWriter(scaleDir)
+
     // Initialize workflow modules
-    this.gateSystem = new GateSystem(this.eventBus, config.verificationCommands)
+    this.gateSystem = new GateSystem(this.eventBus, config.verificationCommands, this.artifactWriter)
     this.ambiguityScorer = new AmbiguityScorer()
     this.consensusPlanner = new ConsensusPlanner(this.eventBus)
     this.socraticQuestioner = new SocraticQuestioner(this.eventBus)
@@ -68,6 +75,16 @@ export class WorkflowEngine {
     if (ambiguityResult.requiresQuestioning) {
       socraticSession = this.socraticQuestioner.startSession(requirement, ambiguityResult)
     }
+
+    // Write explore artifact for Gate verification
+    this.artifactWriter.writeExploreResult({
+      timestamp: new Date().toISOString(),
+      files: [],
+      fileCount: 0,
+      mainContradiction: '',
+      ambiguityScore: ambiguityResult.totalScore,
+      socraticCompleted: !ambiguityResult.requiresQuestioning
+    })
 
     return {
       ambiguityScore: ambiguityResult.totalScore,
@@ -108,6 +125,20 @@ export class WorkflowEngine {
     if (consensusResult.viableOptions.length > 1) {
       await this.gateSystem.executeGate('G2')
     }
+
+    // Write plan artifact for Gate verification
+    const planId = `engine-${Date.now()}`
+    this.artifactWriter.writePlanResult({
+      timestamp: new Date().toISOString(),
+      planId,
+      specId: '',
+      hasBoundaryAnalysis: consensusResult.viableOptions.length > 1,
+      hasExceptionHandling: consensusResult.preMortem?.rootCauses?.length > 0,
+      hasRollbackStrategy: false,
+      modules: [],
+      consensusRounds: consensusResult.iterationCount,
+      verdict: consensusResult.verdict
+    })
 
     return consensusResult
   }
@@ -200,4 +231,5 @@ export class WorkflowEngine {
   getUltraworkEngine(): UltraworkEngine { return this.ultraworkEngine }
   getPRDManager(): PRDManager { return this.prdManager }
   getKarpathyEvaluator(): KarpathyEvaluator { return this.karpathyEvaluator }
+  getArtifactWriter(): WorkflowArtifactWriter { return this.artifactWriter }
 }

@@ -12,6 +12,7 @@ import { registerAllFSMs } from '../artifact/fsmDefinitions.js'
 import { CapabilityRegistry } from '../capabilities/CapabilityRegistry.js'
 import { SkillRegistry } from '../skills/SkillRegistry.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
+import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
@@ -304,6 +305,18 @@ export const phaseDefine = defineCommand({
     }
 
     const result = { phase: 'DEFINE', spec, specPath, ambiguityScore, successCriteria }
+
+    // Write explore artifact for Gate G1 verification
+    const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
+    artifactWriter.writeExploreResult({
+      timestamp: new Date().toISOString(),
+      files: [specPath],
+      fileCount: 1,
+      mainContradiction: refinedRequirement !== desc ? 'requirement ambiguity resolved via Socratic refinement' : '',
+      ambiguityScore,
+      socraticCompleted: !ambiguityResult.requiresQuestioning || (ambiguityResult.requiresQuestioning && !exploreResult.socraticSession),
+    })
+
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nDEFINE: ${spec.id}`)
@@ -398,6 +411,20 @@ export const phasePlan = defineCommand({
     ensureDir(plansDir)
     const planPath = join(plansDir, `${plan.id}.md`)
     writeFileSync(planPath, generatePlanMarkdown(plan.id, args['spec-id'], planPayload))
+
+    // Write plan artifact for Gate G2 verification
+    const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
+    artifactWriter.writePlanResult({
+      timestamp: new Date().toISOString(),
+      planId: plan.id,
+      specId: args['spec-id'],
+      hasBoundaryAnalysis: consensusResult.viableOptions.length > 1,
+      hasExceptionHandling: consensusResult.preMortem.rootCauses.length > 0,
+      hasRollbackStrategy: !!rollbackStrategy,
+      modules: planPayload.modules.map(m => m.path),
+      consensusRounds: consensusResult.iterationCount,
+      verdict: consensusResult.verdict,
+    })
 
     // FSM transition: DRAFT -> APPROVED (requires rollbackStrategy guard)
     const reviewResult = await fsm.canTransition(plan.id, 'review')
@@ -660,12 +687,14 @@ async function runGit(args: string[]): Promise<{ exitCode: number; stdout: strin
 
 function mergeUntrackedFilesIntoStatus(statusOutput: string, untrackedOutput: string): string {
   const existing = new Set(parseChangedFiles(statusOutput).map(file => file.path.replace(/\\/g, '/')))
+  // Add '??' status marker for untracked files so parseChangedFiles can recognize them
   const additions = untrackedOutput
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
     .filter(path => shouldReviewFile(path))
     .filter(path => !existing.has(path.replace(/\\/g, '/')))
+    .map(path => `?? ${path}`)  // Add status marker
 
   return [statusOutput.trim(), ...additions].filter(Boolean).join('\n')
 }
@@ -689,7 +718,24 @@ function readUntrackedFileAsDiff(path: string): string {
 async function reviewGitChanges(taskPayload?: TaskPayload): Promise<{ changedFiles: ChangedFile[]; findings: ReviewFinding[] }> {
   const status = await runGit(['status', '--short'])
   const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
-  const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
+  let statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
+
+  // Scope review to task-relevant files only.
+  // When filesInvolved is set, only analyze those files.
+  // When empty, only analyze untracked (new) files to avoid picking up
+  // unrelated modifications from a dirty working tree.
+  if (taskPayload?.filesInvolved?.length) {
+    const involved = new Set(taskPayload.filesInvolved.map(f => f.replace(/\\/g, '/')))
+    statusOutput = statusOutput.split('\n').filter(line => {
+      const parsed = parseChangedFiles(line)
+      return parsed.length > 0 && involved.has(parsed[0].path.replace(/\\/g, '/'))
+    }).join('\n')
+  } else {
+    // Only include untracked files (status '??') — skip tracked modifications
+    // that may be unrelated to the task under review.
+    statusOutput = statusOutput.split('\n').filter(line => line.startsWith('??')).join('\n')
+  }
+
   const verificationEvidence = getVerificationEvidenceSummary(taskPayload?.verificationEvidenceIds)
   const changedFiles = analyzeReview({ statusOutput, diffs: [], taskPayload, verificationEvidence }).changedFiles
   const diffs: Array<{ file: string; text: string }> = []
@@ -728,12 +774,6 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
   const currentChanges = await getReviewableGitChanges()
   const stagedFiles: string[] = []
   const unreviewedFiles: string[] = []
-
-  // Debug: log reviewedFiles and currentChanges
-  if (process.env.SCALE_DEBUG_STAGE === '1') {
-    console.error('[DEBUG] reviewedFiles:', [...reviewedFiles])
-    console.error('[DEBUG] currentChanges:', currentChanges.map(f => f.path))
-  }
 
   // Edge case: if currentChanges is empty but reviewedFiles has files that should be staged,
   // this indicates files were deleted or moved. Treat reviewed but missing files as unreviewed.

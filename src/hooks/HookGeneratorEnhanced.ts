@@ -153,6 +153,35 @@ const BUILTIN_TEMPLATES: HookTemplate[] = [
     description: 'Detect AI-generated code patterns',
     templateBody: String.raw`const input = JSON.parse(process.argv[2] || "{}"); const content = input.tool_input?.content || ""; const patterns = [/"\s*\+\s*"/, /linear-gradient\(.*purple.*blue/i, /grid.*3.*columns/i, /hero.*gradient/i]; const detected = patterns.filter(pattern => pattern.test(content)); if (detected.length > 2) { console.log("[WARN] AI Slop detected: Review for human-like code"); } console.log("[PASS]"); process.exit(0);`,
     variables: []
+  },
+  // ========== Phase Completion Check (v0.10.0) ==========
+  {
+    id: 'tmpl-phase-completion-check',
+    name: 'Phase Completion Check',
+    hookType: 'Stop',
+    matcherPattern: '',
+    description: 'Verify all SCALE Engine phases are complete before stopping',
+    templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const stateFile = path.join(scaleDir, "phases", ".phase-state"); if (!fs.existsSync(stateFile)) { console.error("[STOP] SCALE Engine: No phase state found. All phases must complete."); console.error("Missing: DEFINE, PLAN, EXECUTE, VERIFY, REVIEW, SHIP"); process.exit(2); } try { const state = JSON.parse(fs.readFileSync(stateFile, "utf-8")); const required = ["DEFINE", "PLAN", "EXECUTE", "VERIFY", "REVIEW", "SHIP"]; const missing = required.filter(p => !state[p] || state[p].completed !== true); if (missing.length > 0) { console.error("[STOP] SCALE Engine: Incomplete phases: " + missing.join(", ")); process.exit(2); } console.log("[PASS] All SCALE Engine phases complete"); process.exit(0); } catch (e) { console.error("[STOP] SCALE Engine: Failed to read phase state"); process.exit(2); }`,
+    variables: []
+  },
+  // ========== Workflow Execution Hooks (v0.11.0) ==========
+  {
+    id: 'tmpl-explore-check',
+    name: 'Explore Phase Check',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Check if exploration phase completed before writing code (warning, not blocking)',
+    templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const exploreFile = path.join(scaleDir, "state", "explore.json"); if (!fs.existsSync(exploreFile)) { console.error("[WORKFLOW] Exploration not completed. Run: scale define <title> --description <desc>"); console.error("[WORKFLOW] Or create .scale/state/explore.json manually"); process.exit(0); } try { const explore = JSON.parse(fs.readFileSync(exploreFile, "utf-8")); if (explore.fileCount < 3) { console.error("[WORKFLOW] Explored only " + explore.fileCount + " files (minimum 3 recommended)"); } if (!explore.mainContradiction) { console.error("[WORKFLOW] No main contradiction identified in exploration"); } } catch (e) { console.error("[WORKFLOW] Failed to read explore artifact"); } console.log("[PASS]"); process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-next-step-reminder',
+    name: 'Next Step Reminder',
+    hookType: 'Stop',
+    matcherPattern: '',
+    description: 'Remind AI of the next workflow step when stopping',
+    templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const phases = ["DEFINE", "PLAN", "EXECUTE", "VERIFY", "REVIEW", "SHIP"]; const phaseMap = {DEFINE:"define",PLAN:"plan",EXECUTE:"build",VERIFY:"verify",REVIEW:"review",SHIP:"ship"}; const missing = []; for (const phase of phases) { const marker = path.join(scaleDir, "phases", ".phase-" + phase.toLowerCase()); if (!fs.existsSync(marker)) { missing.push(phase); } } const stateFile = path.join(scaleDir, "state", "explore.json"); const hasExplore = fs.existsSync(stateFile); if (missing.length > 0) { const next = missing[0]; const cmd = phaseMap[next] || next.toLowerCase(); console.log("[NEXT] Remaining: " + missing.join(" -> ")); console.log("[NEXT] Next step: scale " + cmd); } else { console.log("[DONE] All phases complete"); } process.exit(0);`,
+    variables: []
   }
 ]
 

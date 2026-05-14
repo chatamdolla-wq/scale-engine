@@ -9,6 +9,7 @@ docs/promote-article-*.html
 .scale/reviews/
 .scale/specs/
 .scale/plans/
+.scale/state/
 .scale/checkpoints/
 .scale/vectors/
 !.scale/artifacts/
