@@ -18,6 +18,7 @@ import { AiderAdapter } from './AiderAdapter.js'
 import { WindsurfAdapter } from './WindsurfAdapter.js'
 import { KimiAdapter } from './KimiAdapter.js'
 import { DoubaoAdapter } from './DoubaoAdapter.js'
+import { KiroAdapter } from './KiroAdapter.js'
 import type { AgentPlatform } from '../artifact/types.js'
 
 // Re-export all adapters and shared types
@@ -38,6 +39,7 @@ export { AiderAdapter } from './AiderAdapter.js'
 export { WindsurfAdapter } from './WindsurfAdapter.js'
 export { KimiAdapter } from './KimiAdapter.js'
 export { DoubaoAdapter } from './DoubaoAdapter.js'
+export { KiroAdapter } from './KiroAdapter.js'
 
 // ============================================================================
 // Adapter Registry
@@ -60,6 +62,7 @@ const ADAPTER_MAP: Record<AgentPlatform, new () => IAgentAdapter> = {
   'windsurf': WindsurfAdapter,
   'kimi': KimiAdapter,
   'doubao': DoubaoAdapter,
+  'kiro': KiroAdapter,
 }
 
 /** All supported agent type identifiers */
