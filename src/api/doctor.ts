@@ -4,18 +4,25 @@
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execSync } from 'node:child_process'
 
 export interface DiagnosticResult {
   name: string
   status: 'ok' | 'warn' | 'fail'
   message: string
   fix?: string
+  optional?: boolean // Optional checks don't affect overall health
 }
 
 export interface DoctorReport {
   overall: 'healthy' | 'degraded' | 'broken'
   checks: DiagnosticResult[]
   timestamp: number
+  knowledgeGraph?: {
+    available: boolean
+    pythonVersion?: string
+    graphifyInstalled?: boolean
+  }
 }
 
 export class Doctor {
@@ -38,11 +45,28 @@ export class Doctor {
     checks.push(this.checkDiskUsage())
     checks.push(this.checkGitignore())
 
-    const fails = checks.filter((c) => c.status === 'fail').length
-    const warns = checks.filter((c) => c.status === 'warn').length
+    // Optional knowledge graph checks (non-blocking)
+    const pythonCheck = this.checkPython()
+    const graphifyCheck = this.checkGraphify()
+    pythonCheck.optional = true
+    graphifyCheck.optional = true
+    checks.push(pythonCheck)
+    checks.push(graphifyCheck)
+
+    // Calculate overall health excluding optional checks
+    const coreChecks = checks.filter((c) => !c.optional)
+    const fails = coreChecks.filter((c) => c.status === 'fail').length
+    const warns = coreChecks.filter((c) => c.status === 'warn').length
     const overall = fails > 0 ? 'broken' : warns > 0 ? 'degraded' : 'healthy'
 
-    return { overall, checks, timestamp: Date.now() }
+    // Knowledge graph availability metadata
+    const knowledgeGraph = {
+      available: pythonCheck.status === 'ok' && graphifyCheck.status === 'ok',
+      pythonVersion: pythonCheck.status === 'ok' ? pythonCheck.message : undefined,
+      graphifyInstalled: graphifyCheck.status === 'ok',
+    }
+
+    return { overall, checks, timestamp: Date.now(), knowledgeGraph }
   }
 
   private checkScaleDir(): DiagnosticResult {
@@ -199,6 +223,59 @@ export class Doctor {
     return { name: '.scale/.gitignore', status: 'ok', message: 'Present' }
   }
 
+  private checkPython(): DiagnosticResult {
+    try {
+      const version = execSync('python3 --version', { encoding: 'utf-8', timeout: 5000 }).trim()
+      const match = version.match(/Python (\d+)\.(\d+)/)
+      if (match) {
+        const major = parseInt(match[1])
+        const minor = parseInt(match[2])
+        if (major >= 3 && minor >= 8) {
+          return { name: 'Python version', status: 'ok', message: version }
+        }
+        return { name: 'Python version', status: 'warn', message: `${version} — graphify requires >=3.8`, fix: 'Upgrade Python to 3.8+' }
+      }
+      return { name: 'Python version', status: 'ok', message: version }
+    } catch {
+      // Try python (without 3) for Windows
+      try {
+        const version = execSync('python --version', { encoding: 'utf-8', timeout: 5000 }).trim()
+        return { name: 'Python version', status: 'ok', message: version }
+      } catch {
+        return {
+          name: 'Python version',
+          status: 'warn',
+          message: 'Not installed — knowledge graph requires Python',
+          fix: 'Install Python 3.8+ or skip with --no-knowledge-graph',
+        }
+      }
+    }
+  }
+
+  private checkGraphify(): DiagnosticResult {
+    try {
+      const result = execSync('pip show graphifyy', { encoding: 'utf-8', timeout: 5000 })
+      const match = result.match(/Version: (\S+)/)
+      if (match) {
+        return { name: 'Graphify', status: 'ok', message: `graphifyy v${match[1]} installed` }
+      }
+      return { name: 'Graphify', status: 'ok', message: 'installed' }
+    } catch {
+      // Try pip3
+      try {
+        execSync('pip3 show graphifyy', { encoding: 'utf-8', timeout: 5000 })
+        return { name: 'Graphify', status: 'ok', message: 'installed (pip3)' }
+      } catch {
+        return {
+          name: 'Graphify',
+          status: 'warn',
+          message: 'Not installed — code knowledge graph optional',
+          fix: 'pip install graphifyy && graphify install',
+        }
+      }
+    }
+  }
+
   formatReport(report: DoctorReport): string {
     const icon = { healthy: '✅', degraded: '⚠️', broken: '❌' }
     const statusIcon = { ok: '✅', warn: '⚠️', fail: '❌' }
@@ -207,16 +284,43 @@ export class Doctor {
       `${'─'.repeat(50)}`,
     ]
 
-    for (const check of report.checks) {
+    // Core checks first
+    for (const check of report.checks.filter((c) => !c.optional)) {
       lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
       if (check.fix) lines.push(`     💡 Fix: ${check.fix}`)
     }
 
     lines.push(`${'─'.repeat(50)}`)
+
+    // Knowledge graph section (optional checks)
+    const optionalChecks = report.checks.filter((c) => c.optional)
+    if (optionalChecks.length > 0) {
+      lines.push('')
+      lines.push('📦 Knowledge Graph (Optional):')
+      for (const check of optionalChecks) {
+        lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+        if (check.fix) lines.push(`     💡 Fix: ${check.fix}`)
+      }
+    }
+
+    // Knowledge graph status summary
+    if (report.knowledgeGraph) {
+      lines.push('')
+      if (report.knowledgeGraph.available) {
+        lines.push('  ✅ Code knowledge graph available')
+        lines.push('  → Use: scale graphify .')
+      } else {
+        lines.push('  ⚠️ Code knowledge graph not available (optional feature)')
+        lines.push('  → Install: pip install graphifyy && graphify install')
+      }
+      lines.push(`${'─'.repeat(50)}`)
+    }
+
     const ok = report.checks.filter((c) => c.status === 'ok').length
     const warn = report.checks.filter((c) => c.status === 'warn').length
     const fail = report.checks.filter((c) => c.status === 'fail').length
-    lines.push(`  ${ok} passed, ${warn} warnings, ${fail} failures`)
+    const optional = report.checks.filter((c) => c.optional).length
+    lines.push(`  ${ok} passed, ${warn} warnings, ${fail} failures (${optional} optional)`)
     return lines.join('\n')
   }
 }

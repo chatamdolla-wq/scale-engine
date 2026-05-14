@@ -157,7 +157,8 @@ describe('Doctor — hermes-aware', () => {
     const doc = new Doctor(TMP)
     const report = await doc.diagnose()
     expect(report.overall).toBe('healthy')
-    expect(report.checks.every((c) => c.status === 'ok')).toBe(true)
+    // Core checks should all be ok (optional checks like Python/Graphify may be warn)
+    expect(report.checks.filter((c) => !c.optional).every((c) => c.status === 'ok')).toBe(true)
   })
 
   it('Agent settings check identifies hermes platform', async () => {

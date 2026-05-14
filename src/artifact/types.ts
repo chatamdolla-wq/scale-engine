@@ -809,6 +809,7 @@ export type AgentPlatform =
   | 'windsurf'
   | 'kimi'
   | 'doubao'
+  | 'kiro'
 
 /** Skill 引用 */
 export interface SkillRef {

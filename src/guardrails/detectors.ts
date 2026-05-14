@@ -228,3 +228,112 @@ export class BlameShiftDetector implements IDetector {
     return { triggered: false }
   }
 }
+
+// 6. 被动等待检测（Stop Hook专用）
+// 修完表面问题就停，未泛化检查
+export class PassiveWaitDetector implements IDetector {
+  name = 'passive-wait'
+
+  async check(input: StopInput, ctx: DetectorContext): Promise<DetectorResult> {
+    // 检查是否有修改操作
+    const edits = await ctx.eventBus.query({
+      sessionId: input.sessionId,
+      types: ['tool.completed'],
+      filter: (e) => ['Edit', 'Write', 'MultiEdit'].includes((e.payload as { tool: string }).tool),
+    })
+    if (edits.length === 0) return { triggered: false }
+
+    // 检查是否有泛化检查行为
+    // 泛化检查包括：搜索同类问题、检查上下游、添加检查规则
+    const generalizationPatterns = [
+      /同类|similar|same pattern/i,
+      /上下游|upstream|downstream/i,
+      /检查.*规则|rule|hook/i,
+      /泛化|generalize/i,
+    ]
+
+    // 检查 Read/Grep/Bash 是否包含泛化关键词
+    const reads = await ctx.eventBus.query({
+      sessionId: input.sessionId,
+      types: ['tool.completed'],
+      filter: (e) => ['Read', 'Grep', 'Bash'].includes((e.payload as { tool: string }).tool),
+      limit: 20,
+    })
+
+    const hasGeneralization = reads.some(e => {
+      const p = e.payload as { args?: { pattern?: string; command?: string; file_path?: string } }
+      const content = `${p.args?.pattern ?? ''} ${p.args?.command ?? ''} ${p.args?.file_path ?? ''}`
+      return generalizationPatterns.some(pat => pat.test(content))
+    })
+
+    if (!hasGeneralization) {
+      ctx.eventBus.emit('behavior.passive_wait', { edits: edits.length }, { sessionId: input.sessionId })
+      return {
+        triggered: true,
+        severity: 'block',
+        reason: '检测到「被动等待」：修完问题后未做泛化检查。\n必须检查：\n1. 同模块有无同类问题\n2. 上下游是否受影响\n3. 能否添加检查防止复发',
+        suggestion: 'Grep 类似模式 OR Read 相关模块 OR 添加检测规则',
+      }
+    }
+
+    return { triggered: false }
+  }
+}
+
+// 7. 同文件连续修改检测（忙碌假象增强版）
+// 连续修改同一文件 >= 3次且无新信息
+export class SameFileEditDetector implements IDetector {
+  name = 'same-file-edit'
+  private threshold = 3
+
+  async check(input: ToolUseInput, ctx: DetectorContext): Promise<DetectorResult> {
+    if (input.tool !== 'Edit') return { triggered: false }
+    const file = (input.args as { file_path?: string }).file_path
+    if (!file) return { triggered: false }
+
+    // 获取最近对该文件的编辑
+    const edits = await ctx.eventBus.query({
+      sessionId: input.sessionId,
+      types: ['tool.completed'],
+      filter: (e) => {
+        const p = e.payload as { tool: string; args: { file_path?: string } }
+        return p.tool === 'Edit' && p.args.file_path === file
+      },
+      limit: 10,
+    })
+
+    // 连续修改同一文件 >= 3次
+    if (edits.length >= this.threshold) {
+      // 检查是否有中间穿插其他操作（表示有新信息）
+      const allOps = await ctx.eventBus.query({
+        sessionId: input.sessionId,
+        types: ['tool.completed'],
+        limit: 15,
+      })
+
+      // 找出该文件编辑的时间窗口
+      const editTimestamps = edits.map(e => e.timestamp).sort((a, b) => b - a)
+      const startWindow = editTimestamps[editTimestamps.length - 1]
+      const endWindow = editTimestamps[0]
+
+      // 检查时间窗口内是否有 Read/Grep（表示有新信息输入）
+      const hasNewInfo = allOps.some(e => {
+        if (e.timestamp < startWindow || e.timestamp > endWindow) return false
+        const p = e.payload as { tool: string }
+        return ['Read', 'Grep', 'WebSearch', 'WebFetch'].includes(p.tool)
+      })
+
+      if (!hasNewInfo) {
+        ctx.eventBus.emit('behavior.same_file_edit', { file, count: edits.length }, { sessionId: input.sessionId })
+        return {
+          triggered: true,
+          severity: 'block',
+          reason: `检测到「同文件连续修改」：${file} 已修改 ${edits.length} 次且无新信息输入。\n停下来问自己：这次修改是否产生新信息？没有 = 换思路。`,
+          suggestion: 'Read 相关文件 OR Grep 类似模式 OR /clear 清空上下文',
+        }
+      }
+    }
+
+    return { triggered: false }
+  }
+}

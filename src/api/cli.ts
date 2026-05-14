@@ -22,7 +22,7 @@ import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
 import { ReviewStore } from '../workflow/ReviewStore.js'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // ============================================================================
@@ -866,8 +866,92 @@ const init = defineCommand({
     dir: { type: 'string', default: '.', description: 'Project directory' },
     scenario: { type: 'string', default: 'standard', description: 'Scenario mode (sandbox/standard/critical)' },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
+    interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },
+    'coverage-threshold': { type: 'string', default: '80', description: 'Coverage threshold (default 80%)' },
+    'retry-threshold': { type: 'string', default: '3', description: 'Brute retry threshold (default 3)' },
+    'block-severity': { type: 'string', default: 'CRITICAL', description: 'Block severity level (CRITICAL/HIGH/MEDIUM)' },
   },
   async run({ args }) {
+    // Interactive configuration mode
+    if (args.interactive) {
+      console.log('\n🔧 SCALE Engine Interactive Configuration\n')
+      console.log('=' .repeat(50))
+
+      // Step 1: Detect and suggest agent platform
+      const detection = detectPlatform(args.dir)
+      console.log('\n📋 Step 1: Agent Platform Selection')
+      console.log(`   Detected suggestions: ${detection.suggestions.join(', ') || 'none'}`)
+
+      const agentType = args.agent || detection.suggestions[0] || 'claude-code'
+      console.log(`   Using: ${agentType}`)
+
+      // Step 2: Scenario mode
+      console.log('\n📋 Step 2: Scenario Mode')
+      console.log('   sandbox    - No quality gates (POC/prototype)')
+      console.log('   standard   - Default quality gates')
+      console.log('   critical   - Hardened gates + manual approval')
+
+      const scenarioMode = args.scenario as 'sandbox' | 'standard' | 'critical'
+      console.log(`   Using: ${scenarioMode}`)
+
+      // Step 3: Quality Gate Thresholds (quantified)
+      console.log('\n📋 Step 3: Quality Gate Thresholds')
+      const coverageThreshold = parseInt(args['coverage-threshold'], 10) || 80
+      const retryThreshold = parseInt(args['retry-threshold'], 10) || 3
+      const blockSeverity = args['block-severity'] || 'CRITICAL'
+
+      console.log(`   Coverage threshold:   ${coverageThreshold}%`)
+      console.log(`   Retry threshold:      ${retryThreshold} (brute retry block)`)
+      console.log(`   Block severity:       ${blockSeverity}`)
+
+      // Step 4: Write thresholds to .scale/thresholds.json
+      const thresholdsPath = join(args.dir, '.scale', 'thresholds.json')
+      ensureDir(join(args.dir, '.scale'))
+      writeFileSync(thresholdsPath, JSON.stringify({
+        coverage: { minimum: coverageThreshold, unit: 'percent' },
+        retry: { bruteMaximum: retryThreshold, unit: 'count' },
+        severity: { blockLevel: blockSeverity },
+        gates: {
+          G3_build: { required: scenarioMode !== 'sandbox', exitCode: 0 },
+          G4_lint: { required: scenarioMode !== 'sandbox', exitCode: 0 },
+          G5_tests: { required: scenarioMode !== 'sandbox', allPass: true },
+          G6_coverage: { required: scenarioMode !== 'sandbox', minimum: coverageThreshold },
+          G7_security: { required: scenarioMode === 'critical', noCritical: true },
+        },
+      }, null, 2))
+
+      console.log(`\n   ✓ Thresholds written to: ${thresholdsPath}`)
+
+      // Initialize with adapter
+      const adapter = createAdapter(agentType)
+      const result = await adapter.init({
+        projectDir: args.dir,
+        agentType: agentType as never,
+        scenarioMode,
+        thresholdsPath,
+      })
+
+      console.log(`\n✅ SCALE Engine initialized for ${agentType} (interactive mode)`)
+      console.log(`\n📁 Created:`)
+      for (const f of result.created) console.log(`   + ${f}`)
+      if (result.skipped.length > 0) {
+        console.log(`\n⏭️  Skipped (already exist):`)
+        for (const f of result.skipped) console.log(`   - ${f}`)
+      }
+
+      console.log(`\n🔧 Configuration Summary:`)
+      console.log(`   Settings:      ${result.settingsPath}`)
+      console.log(`   Knowledge:     ${result.knowledgeDocPath}`)
+      console.log(`   Thresholds:    ${thresholdsPath}`)
+      console.log(`   Data dir:      ${result.scaleDir}`)
+      console.log(`   Scenario:      ${scenarioMode}`)
+
+      console.log(`\n📋 Next steps:`)
+      console.log(`   → scale doctor`)
+      console.log(`   → scale create Spec "<feature name>"`)
+      return
+    }
+
     // One-click quick start mode
     if (args.quick || !args.agent) {
       const qsResult = await quickStart(args.dir)
