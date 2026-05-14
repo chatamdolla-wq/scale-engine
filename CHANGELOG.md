@@ -1,3 +1,53 @@
+## 0.13.0 - 2026-05-14
+
+### Artifact-based Gate verification + Autonomous dev loop
+
+**Workflow optimization — content + execution + checking triangle:**
+
+- **WorkflowArtifactWriter** — structured JSON artifacts in `.scale/state/`
+  - `explore.json`: file count, contradiction, ambiguity score, Socratic status
+  - `plan-{id}.json`: boundary analysis, exception handling, rollback strategy
+  - `tdd-{taskId}.json`: red/green/refactor/testFirst evidence
+  - `checkpoint.json`: phase checkpoint data
+
+- **GateSystem enhancement** — G1/G2/G3 prioritize structured artifacts, fallback to legacy proxy checks
+  - G1 ExplorationGate: checks `explore.json` fileCount ≥ 3 and non-empty contradiction
+  - G2 PlanningGate: checks `plan-*.json` boundary + exception + rollback flags
+  - G3 TDDGate: checks `tdd-*.json` red/green/refactor/testFirst completion
+
+- **CLI auto-artifact writing** — `scale define` writes `explore.json`, `scale plan` writes `plan-*.json`
+
+- **Hook noise reduction** — `tmpl-explore-check` uses `exit 0` (warning) not `exit 2` (blocking)
+- **Next step reminder** — `tmpl-next-step-reminder` Stop hook shows remaining SCALE phases
+
+- **WorkflowEngine integration** — `explore()` and `plan()` methods auto-write artifacts via injected `WorkflowArtifactWriter`
+
+**Autonomous development loop (cron-driven):**
+
+- **WorklogManager** — parse/update markdown worklog with Pending/Done/In Progress/Blocked sections, priority P0-P2
+- **AutonomousDevLoop** — 6-step cycle: readWorklog → runQA → fixDefects → developFeatures → updateWorklog → writeBaton
+- **Baton System integration** — cross-session persistence via `.scale/baton/next-prompt.md`
+- **EventBus events** — `autonomous.loop.start/end/defect/fix` lifecycle events
+
+**Platform adapter:**
+
+- **KiroAdapter** — Amazon Kiro platform (17th adapter)
+
+**Quality improvements:**
+
+- Doctor: mark optional checks (Python, Graphify) so core checks stay strict
+- Interactive `scale init` mode with agent platform selection and scenario config
+- New guardrail detectors for enhanced coverage
+- `.gitignore`: add `.scale/state/` for runtime artifacts
+- 59 new tests: artifactWriter (19), worklogManager (21), autonomousDevLoop (19)
+- Fixed pre-existing `phaseCli` test failure caused by untracked files in working tree
+
+**Verified:**
+
+- `npx vitest run` — 649 tests passed (49 files), zero failures
+
+---
+
 ## 0.12.1 - 2026-05-12
 
 ### ContextBuilder glossary injection
