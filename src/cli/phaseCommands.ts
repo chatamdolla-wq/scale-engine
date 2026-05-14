@@ -19,6 +19,8 @@ import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, 
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
+import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
+import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
 
@@ -161,6 +163,8 @@ export const phaseDefine = defineCommand({
     'context': { type: 'string', description: 'Context answer for Socratic refinement' },
     'risk': { type: 'string', description: 'Risk answer for Socratic refinement' },
     'priority': { type: 'string', description: 'Priority answer for Socratic refinement' },
+    format: { type: 'string', alias: 'f', description: 'Output format: html or md (default: html)' },
+    brand: { type: 'string', description: 'Brand theme for HTML output (vercel/stripe/notion/linear/github)' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -275,6 +279,30 @@ export const phaseDefine = defineCommand({
     const specPath = join(specsDir, `${spec.id}.md`)
     writeFileSync(specPath, generateSpecMarkdown(spec.id, args.title, specPayload))
 
+    // Generate spec HTML file (default format: html)
+    const outputFormat: OutputFormat = (args.format as OutputFormat) ?? 'md'
+    let specHtmlPath: string | undefined
+    if (outputFormat === 'html') {
+      const renderer = new HTMLDocumentRenderer({
+        title: args.title,
+        brand: args.brand as string | undefined,
+        version: '0.13.0',
+        status: 'FROZEN',
+      })
+      const html = renderer.renderSpec({
+        id: spec.id,
+        title: args.title,
+        what: refinedRequirement,
+        successCriteria,
+        outOfScope: specPayload.outOfScope,
+        edgeCases: specPayload.edgeCases,
+        northStar: specPayload.northStar,
+        ambiguityScore,
+      })
+      specHtmlPath = join(specsDir, `${spec.id}.html`)
+      renderer.writeToFile(html, specHtmlPath)
+    }
+
     // FSM transitions: DRAFT -> REVIEWING -> FROZEN
     // Phase 1: refine (DRAFT -> REVIEWING) - no guards
     const refineResult = await fsm.canTransition(spec.id, 'refine')
@@ -304,7 +332,7 @@ export const phaseDefine = defineCommand({
       console.log('   FSM: DRAFT -> REVIEWING -> FROZEN ✓')
     }
 
-    const result = { phase: 'DEFINE', spec, specPath, ambiguityScore, successCriteria }
+    const result = { phase: 'DEFINE', spec, specPath, specHtmlPath, ambiguityScore, successCriteria, format: outputFormat }
 
     // Write explore artifact for Gate G1 verification
     const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
@@ -321,6 +349,7 @@ export const phaseDefine = defineCommand({
     else {
       console.log(`\nDEFINE: ${spec.id}`)
       console.log(`   Spec file: ${specPath}`)
+      if (specHtmlPath) console.log(`   HTML file: ${specHtmlPath}`)
       console.log(`   Ambiguity score: ${ambiguityScore.toFixed(2)}`)
       console.log(`   Success criteria: ${successCriteria.length}`)
       console.log(`\n   Next: scale plan ${spec.id}\n`)
@@ -362,6 +391,8 @@ export const phasePlan = defineCommand({
     'spec-id': { type: 'positional', required: true },
     approach: { type: 'string', alias: 'a', description: 'Implementation approach' },
     'rollback': { type: 'string', alias: 'r', description: 'Rollback strategy (required for FSM)' },
+    format: { type: 'string', alias: 'f', description: 'Output format: html or md (default: html)' },
+    brand: { type: 'string', description: 'Brand theme for HTML output (vercel/stripe/notion/linear/github)' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -412,6 +443,29 @@ export const phasePlan = defineCommand({
     const planPath = join(plansDir, `${plan.id}.md`)
     writeFileSync(planPath, generatePlanMarkdown(plan.id, args['spec-id'], planPayload))
 
+    // Generate plan HTML file (default format: html)
+    const planOutputFormat: OutputFormat = (args.format as OutputFormat) ?? 'md'
+    let planHtmlPath: string | undefined
+    if (planOutputFormat === 'html') {
+      const planRenderer = new HTMLDocumentRenderer({
+        title: `Plan ${plan.id}`,
+        brand: args.brand as string | undefined,
+        version: '0.13.0',
+        status: 'APPROVED',
+      })
+      const planHtml = planRenderer.renderPlan({
+        id: plan.id,
+        specId: args['spec-id'],
+        approach: planPayload.approach,
+        techChoices: planPayload.techChoices,
+        modules: planPayload.modules,
+        rollbackStrategy: planPayload.rollbackStrategy,
+        estimatedComplexity: planPayload.estimatedComplexity,
+      })
+      planHtmlPath = join(plansDir, `${plan.id}.html`)
+      planRenderer.writeToFile(planHtml, planHtmlPath)
+    }
+
     // Write plan artifact for Gate G2 verification
     const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
     artifactWriter.writePlanResult({
@@ -442,11 +496,12 @@ export const phasePlan = defineCommand({
       console.log('   FSM: DRAFT -> APPROVED ✓')
     }
 
-    const result = { phase: 'PLAN', plan, planPath, rollbackStrategy }
+    const result = { phase: 'PLAN', plan, planPath, planHtmlPath, rollbackStrategy, format: planOutputFormat }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nPLAN: ${plan.id}`)
       console.log(`   Plan file: ${planPath}`)
+      if (planHtmlPath) console.log(`   HTML file: ${planHtmlPath}`)
       console.log(`   Rollback: ${rollbackStrategy}`)
       console.log(`\n   Next: scale build ${plan.id}\n`)
     }
@@ -813,6 +868,8 @@ export const phaseReview = defineCommand({
     'task-id': { type: 'positional', required: false },
     'check-security': { type: 'boolean', default: true },
     'check-style': { type: 'boolean', default: true },
+    format: { type: 'string', alias: 'f', description: 'Output format: html or md (default: html)' },
+    brand: { type: 'string', description: 'Brand theme for HTML output (vercel/stripe/notion/linear/github)' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -867,14 +924,45 @@ export const phaseReview = defineCommand({
       await store.update(task.id, { payload: updatedPayload })
     }
 
+    // Generate review HTML file (default format: html)
+    const reviewOutputFormat: OutputFormat = (args.format as OutputFormat) ?? 'md'
+    let reviewHtmlPath: string | undefined
+    if (reviewOutputFormat === 'html') {
+      const reviewRenderer = new HTMLDocumentRenderer({
+        title: `Review ${record.id}`,
+        brand: args.brand as string | undefined,
+        version: '0.13.0',
+        status: passed ? 'PASS' : 'FAIL',
+      })
+      const reviewHtml = reviewRenderer.renderReview({
+        id: record.id,
+        title: `Code Review — ${record.id}`,
+        timestamp: new Date().toISOString(),
+        findings: findings.map(f => ({
+          severity: f.severity,
+          file: f.file ?? '',
+          message: f.description,
+        })),
+        passed,
+        specCoverage: undefined,
+        specFindings: undefined,
+      })
+      const reviewsDir = join(SCALE_DIR, 'reviews')
+      ensureDir(reviewsDir)
+      reviewHtmlPath = join(reviewsDir, `${record.id}.html`)
+      reviewRenderer.writeToFile(reviewHtml, reviewHtmlPath)
+    }
+
     const result = {
       phase: 'REVIEW',
       taskId: args['task-id'],
       reviewId: record.id,
+      reviewHtmlPath,
       findings,
       changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
       passed,
+      format: reviewOutputFormat,
       recommendation: passed ? 'Ready to ship' : 'Fix CRITICAL issues before shipping'
     }
 
@@ -882,6 +970,7 @@ export const phaseReview = defineCommand({
     else {
       console.log('\nREVIEW Phase')
       console.log(`\nReview evidence: ${record.id}`)
+      if (reviewHtmlPath) console.log(`HTML report: ${reviewHtmlPath}`)
       console.log('\nReview Findings:')
       console.log('----------------------------------------')
       console.log(`CRITICAL: ${summary.critical} issues ${summary.critical > 0 ? 'BLOCKED' : 'OK'}`)

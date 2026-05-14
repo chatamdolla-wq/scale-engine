@@ -189,3 +189,11 @@ export type { DashboardState, ArtifactTreeNode, GateSummary, DetectorStatSummary
 // API
 export { Doctor } from './api/doctor.js'
 export { ScaleMCPServer } from './api/mcp.js'
+
+// Output (HTML Document Rendering)
+export { HTMLDocumentRenderer } from './output/HTMLDocumentRenderer.js'
+export type { HTMLRenderOptions, OutputFormat, ThemeMode, DocLang, SpecData, PlanData, ReviewData, ReportData } from './output/HTMLDocumentRenderer.js'
+export { BrandThemeLoader } from './output/BrandThemeLoader.js'
+export type { BrandTheme, BrandColors, BrandTypography, BrandSpacing, BrandShadows } from './output/BrandThemeLoader.js'
+export { UIPrototypeRenderer } from './output/UIPrototypeRenderer.js'
+export type { PageSpec, ComponentSpec, NavItem, DashboardLayout, DashboardWidget, UIPrototypeOptions } from './output/UIPrototypeRenderer.js'
