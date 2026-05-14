@@ -1,0 +1,224 @@
+// SCALE Engine — Workflow Artifact Writer
+// 将工作流各阶段结果写入标准化 JSON 文件，供 Gate 系统验证
+// 设计参考：工作流优化方案 — "内容 + 执行 + 检查" 三者闭环
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs'
+import { join } from 'node:path'
+import { logger } from '../core/logger.js'
+
+// ============================================================================
+// Artifact Types
+// ============================================================================
+
+export interface ExploreArtifact {
+  timestamp: string
+  files: string[]
+  fileCount: number
+  mainContradiction: string
+  ambiguityScore: number
+  socraticCompleted: boolean
+  graphNodes?: number
+}
+
+export interface PlanArtifact {
+  timestamp: string
+  planId: string
+  specId: string
+  hasBoundaryAnalysis: boolean
+  hasExceptionHandling: boolean
+  hasRollbackStrategy: boolean
+  modules: string[]
+  consensusRounds: number
+  verdict: string
+}
+
+export interface TDDEvidence {
+  timestamp: string
+  taskId: string
+  red: boolean
+  green: boolean
+  refactor: boolean
+  testFirst: boolean
+  testFile: string
+  implFile: string
+  coverage?: number
+}
+
+export interface CheckpointData {
+  timestamp: string
+  phase: string
+  sessionId?: string
+  data: Record<string, unknown>
+}
+
+// ============================================================================
+// Artifact Writer
+// ============================================================================
+
+export class WorkflowArtifactWriter {
+  private stateDir: string
+
+  constructor(scaleDir: string = '.scale') {
+    this.stateDir = join(scaleDir, 'state')
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Ensure directory
+  // ─────────────────────────────────────────────────────────────
+
+  private ensureDir(): void {
+    if (!existsSync(this.stateDir)) {
+      mkdirSync(this.stateDir, { recursive: true })
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Explore Artifact
+  // ─────────────────────────────────────────────────────────────
+
+  /** Write explore result to .scale/state/explore.json */
+  writeExploreResult(result: ExploreArtifact): void {
+    this.ensureDir()
+    const filePath = join(this.stateDir, 'explore.json')
+    writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf-8')
+    logger.info({ files: result.fileCount, contradiction: result.mainContradiction }, 'Explore artifact written')
+  }
+
+  /** Read explore artifact from .scale/state/explore.json */
+  readExploreResult(): ExploreArtifact | null {
+    return this.readJson<ExploreArtifact>(join(this.stateDir, 'explore.json'))
+  }
+
+  /** Check if explore artifact exists and is valid */
+  hasValidExploreResult(minFiles: number = 3): boolean {
+    const artifact = this.readExploreResult()
+    if (!artifact) return false
+    return artifact.fileCount >= minFiles && artifact.mainContradiction.length > 0
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Plan Artifact
+  // ─────────────────────────────────────────────────────────────
+
+  /** Write plan result to .scale/state/plan-{planId}.json */
+  writePlanResult(result: PlanArtifact): void {
+    this.ensureDir()
+    const filePath = join(this.stateDir, `plan-${result.planId}.json`)
+    writeFileSync(filePath, JSON.stringify(result, null, 2), 'utf-8')
+    logger.info({ planId: result.planId, verdict: result.verdict }, 'Plan artifact written')
+  }
+
+  /** Read plan artifact by ID */
+  readPlanResult(planId: string): PlanArtifact | null {
+    return this.readJson<PlanArtifact>(join(this.stateDir, `plan-${planId}.json`))
+  }
+
+  /** Read the most recent plan artifact */
+  readLatestPlanResult(): PlanArtifact | null {
+    const planFiles = this.listFiles('plan-')
+    if (planFiles.length === 0) return null
+
+    // Sort by timestamp in filename, take latest
+    const sorted = planFiles.sort().reverse()
+    return this.readJson<PlanArtifact>(join(this.stateDir, sorted[0]))
+  }
+
+  /** Check if a valid plan artifact exists */
+  hasValidPlanResult(): boolean {
+    const artifact = this.readLatestPlanResult()
+    if (!artifact) return false
+    return artifact.hasBoundaryAnalysis && artifact.hasRollbackStrategy
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // TDD Evidence
+  // ─────────────────────────────────────────────────────────────
+
+  /** Write TDD evidence to .scale/state/tdd-{taskId}.json */
+  writeTDDEvidence(evidence: TDDEvidence): void {
+    this.ensureDir()
+    const filePath = join(this.stateDir, `tdd-${evidence.taskId}.json`)
+    writeFileSync(filePath, JSON.stringify(evidence, null, 2), 'utf-8')
+    logger.info({ taskId: evidence.taskId }, 'TDD evidence written')
+  }
+
+  /** Read TDD evidence by task ID */
+  readTDDEvidence(taskId: string): TDDEvidence | null {
+    return this.readJson<TDDEvidence>(join(this.stateDir, `tdd-${taskId}.json`))
+  }
+
+  /** Read the most recent TDD evidence */
+  readLatestTDDEvidence(): TDDEvidence | null {
+    const tddFiles = this.listFiles('tdd-')
+    if (tddFiles.length === 0) return null
+
+    const sorted = tddFiles.sort().reverse()
+    return this.readJson<TDDEvidence>(join(this.stateDir, sorted[0]))
+  }
+
+  /** Check if valid TDD evidence exists for a task */
+  hasValidTDDEvidence(taskId?: string): boolean {
+    const artifact = taskId
+      ? this.readTDDEvidence(taskId)
+      : this.readLatestTDDEvidence()
+    if (!artifact) return false
+    return artifact.red && artifact.green && artifact.refactor && artifact.testFirst
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Checkpoint
+  // ─────────────────────────────────────────────────────────────
+
+  /** Write checkpoint to .scale/state/checkpoint.json */
+  writeCheckpoint(data: CheckpointData): void {
+    this.ensureDir()
+    const filePath = join(this.stateDir, 'checkpoint.json')
+    writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+    logger.info({ phase: data.phase }, 'Checkpoint written')
+  }
+
+  /** Read checkpoint */
+  readCheckpoint(): CheckpointData | null {
+    return this.readJson<CheckpointData>(join(this.stateDir, 'checkpoint.json'))
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Generic Helpers
+  // ─────────────────────────────────────────────────────────────
+
+  /** Clear all artifacts (for testing or reset) */
+  clearAll(): void {
+    if (!existsSync(this.stateDir)) return
+    const files = readdirSync(this.stateDir)
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        unlinkSync(join(this.stateDir, file))
+      }
+    }
+    logger.info('All workflow artifacts cleared')
+  }
+
+  /** Get state directory path */
+  getStateDir(): string { return this.stateDir }
+
+  // ─────────────────────────────────────────────────────────────
+  // Private Helpers
+  // ─────────────────────────────────────────────────────────────
+
+  private readJson<T>(filePath: string): T | null {
+    if (!existsSync(filePath)) return null
+    try {
+      const content = readFileSync(filePath, 'utf-8')
+      return JSON.parse(content) as T
+    } catch (e) {
+      logger.warn({ path: filePath, error: (e as Error).message }, 'Failed to read artifact')
+      return null
+    }
+  }
+
+  private listFiles(prefix: string): string[] {
+    if (!existsSync(this.stateDir)) return []
+    return readdirSync(this.stateDir)
+      .filter(f => f.startsWith(prefix) && f.endsWith('.json'))
+  }
+}
