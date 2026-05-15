@@ -131,6 +131,12 @@ Keep \`.scale/verification.json\` as the source of truth for profiles and servic
 Keep \`.scale/skills.json\` as the source of truth for active skill routing policy.
 Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITICAL work to \`"block"\` once templates and local gates are stable.
 
+## Active Skill Routing
+
+SCALE plans required skills from task description, service selection, and changed files. UI/API work requires a Mini-PRD plus domain evidence such as \`ui-spec.md\`, \`visual-review.md\`, or \`api-contract.md\`. Security and database work require explicit review or rollback artifacts.
+
+When a task records \`servicesTouched\`, \`scale verify <task-id>\` uses those services automatically. You can still override selection with \`--service all\`, \`--service api\`, or \`--service api,gateway\`.
+
 ## Automation Templates
 
 Optional automation templates are generated under \`docs/workflow/templates/\`:

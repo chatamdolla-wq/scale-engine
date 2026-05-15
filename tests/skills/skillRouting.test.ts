@@ -39,6 +39,29 @@ describe('skill routing', () => {
     expect(plan.mode).toBe('block')
   })
 
+  it('requires Mini-PRD for user-facing UI and API work at M level', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const uiPlan = createSkillPlan({
+      taskId: 'TASK-UI',
+      taskName: 'File grid polish',
+      description: 'Improve responsive UI flow and visual states',
+      level: 'M',
+      files: ['src/components/FileGrid.tsx'],
+      policy,
+    })
+    const apiPlan = createSkillPlan({
+      taskId: 'TASK-API',
+      taskName: 'Share endpoint',
+      description: 'Add API endpoint for share links',
+      level: 'M',
+      files: ['src/api/share.ts'],
+      policy,
+    })
+
+    expect(uiPlan.requiredArtifacts).toEqual(expect.arrayContaining(['mini-prd.md', 'ui-spec.md', 'visual-review.md']))
+    expect(apiPlan.requiredArtifacts).toEqual(expect.arrayContaining(['mini-prd.md', 'api-contract.md']))
+  })
+
   it('checks required skill artifacts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'scale-skill-gate-'))
     try {

@@ -137,8 +137,6 @@ describe('phase CLI workflow', () => {
     const verify = await runScale([
       'verify',
       taskId,
-      '--service',
-      'all',
       '--build-cmd',
       'node -v',
       '--lint-cmd',
@@ -192,6 +190,55 @@ describe('phase CLI workflow', () => {
     expect(shipResult.reviewValidation.ok).toBe(true)
     expect(shipResult.evidenceValidation.ok).toBe(true)
     expect(headAfter.stdout).toBe(headBefore.stdout)
+  }, 120_000)
+
+  it('uses changed files during verify to refresh skill routing evidence requirements', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'src', 'components'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'components', 'Panel.tsx'), 'export const Panel = () => null\n', 'utf-8')
+
+    const define = await runScale([
+      'define',
+      'Changed File Skill Feature',
+      '--description',
+      'Implement a deterministic TypeScript CLI workflow today that accepts task input arguments, persists verification evidence output, keeps rollback constraints explicit, and proves that skill routing can inspect changed files during verification.',
+      '--success-criteria',
+      'verification evidence is persisted,skill routing checks changed files',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete temporary files', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Neutral implementation task', '--level', 'M', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      buildResult.task.id,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{ skillGate: { complete: boolean; missing: string[] } }>(verify.stdout)
+    expect(verifyResult.skillGate.complete).toBe(false)
+    expect(verifyResult.skillGate.missing).toEqual(expect.arrayContaining(['ui-spec.md', 'visual-review.md']))
   }, 120_000)
 
   it('can hard-block verification and ship when required M/L artifacts are placeholders', async () => {
@@ -263,6 +310,10 @@ describe('phase CLI workflow', () => {
   it('blocks committing unreviewed files instead of staging the whole workspace', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'README.md'), 'fixture\n', 'utf-8')
+    await execa('git', ['add', 'README.md'], { cwd: projectDir })
+    await execa('git', ['-c', 'user.email=scale-test@example.com', '-c', 'user.name=Scale Test', 'commit', '-m', 'test fixture'], { cwd: projectDir })
     const define = await runScale([
       'define',
       'Scoped Ship Feature',
@@ -317,10 +368,12 @@ describe('phase CLI workflow', () => {
     // Use a directory that is NOT in .gitignore so git ls-files can detect it
     // tmp/ is ignored by .gitignore, so use test-fixtures/ instead
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const reviewedPath = join('test-fixtures', 'phase-cli', `reviewed-${suffix}.txt`)
-    const unreviewedPath = join('test-fixtures', 'phase-cli', `unreviewed-${suffix}.txt`)
+    const reviewedRel = join('test-fixtures', 'phase-cli', `reviewed-${suffix}.txt`)
+    const unreviewedRel = join('test-fixtures', 'phase-cli', `unreviewed-${suffix}.txt`)
+    const reviewedPath = join(projectDir, reviewedRel)
+    const unreviewedPath = join(projectDir, unreviewedRel)
     // Ensure directory exists
-    mkdirSync(join('test-fixtures', 'phase-cli'), { recursive: true })
+    mkdirSync(join(projectDir, 'test-fixtures', 'phase-cli'), { recursive: true })
     repoFiles.push(reviewedPath, unreviewedPath)
     writeFileSync(reviewedPath, 'reviewed\n', 'utf-8')
     const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
@@ -328,13 +381,13 @@ describe('phase CLI workflow', () => {
     expect(parseJson<{ passed: boolean }>(review.stdout).passed).toBe(true)
 
     writeFileSync(unreviewedPath, 'unreviewed\n', 'utf-8')
-    const headBefore = await execa('git', ['rev-parse', 'HEAD'])
+    const headBefore = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
     const ship = await runScale(['ship', taskId, '--message', 'test: scoped ship regression', '--json'], scaleDir, projectDir)
-    const headAfter = await execa('git', ['rev-parse', 'HEAD'])
+    const headAfter = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
 
     expect(ship.exitCode).not.toBe(0)
     expect(ship.stderr).toContain('Unreviewed working tree changes detected')
-    expect(ship.stderr).toContain(unreviewedPath.replace(/\\/g, '/'))
+    expect(ship.stderr).toContain(unreviewedRel.replace(/\\/g, '/'))
     expect(headAfter.stdout).toBe(headBefore.stdout)
   }, 120_000)
 })

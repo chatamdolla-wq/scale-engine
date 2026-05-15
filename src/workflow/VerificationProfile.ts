@@ -40,6 +40,7 @@ export interface ResolveVerificationProfileOptions {
   scaleDir?: string
   profile?: string
   service?: string
+  services?: string[]
 }
 
 export interface ResolvedVerificationProfile {
@@ -106,6 +107,7 @@ export function resolveVerificationProfile(
 
   const cwd = service ? resolve(projectDir, service.path) : projectDir
   const commands = {
+    ...defaultCommandsForService(service),
     ...(profile?.commands ?? {}),
     ...(service?.commands ?? {}),
   }
@@ -145,7 +147,7 @@ export function resolveVerificationTargets(
 
   const profileName = options.profile ?? matrix.defaultProfile ?? 'default'
   const profile = matrix.profiles?.[profileName]
-  const serviceNames = selectServiceNames(matrix, profile, options.service)
+  const serviceNames = selectServiceNames(matrix, profile, options.service, options.services)
 
   if (serviceNames.length === 0) {
     const target = resolveVerificationProfile({ ...options, profile: profileName, service: undefined })
@@ -186,15 +188,53 @@ function selectServiceNames(
   matrix: VerificationMatrix,
   profile: VerificationProfileEntry | undefined,
   requestedService: string | undefined,
+  requestedServices: string[] = [],
 ): string[] {
-  if (requestedService && requestedService !== 'all') return [requestedService]
-  if (requestedService === 'all') {
+  const requested = unique([
+    ...requestedServices,
+    ...splitServiceNames(requestedService),
+  ])
+  if (requested.includes('all')) {
     if (profile?.services?.length) return profile.services
     return (matrix.services ?? [])
       .filter(service => service.required !== false)
       .map(service => service.name)
   }
+  if (requested.length > 0) return requested
   return profile?.services ?? []
+}
+
+function splitServiceNames(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map(service => service.trim())
+    .filter(Boolean)
+}
+
+function defaultCommandsForService(service: VerificationService | undefined): Partial<Record<VerificationCommandName, string>> {
+  if (!service?.type || service.type === 'node' || service.type === 'custom') return {}
+  if (service.type === 'go') {
+    return {
+      build: 'go build ./...',
+      lint: 'go vet ./...',
+      test: 'go test ./...',
+      coverage: 'go test ./... -cover',
+    }
+  }
+  if (service.type === 'python') {
+    return {
+      build: 'python -m compileall .',
+      lint: 'python -m ruff check .',
+      test: 'python -m pytest',
+      coverage: 'python -m pytest --cov=.',
+    }
+  }
+  return {}
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)]
 }
 
 function verificationMatrixPath(projectDir: string, scaleDir: string): string {

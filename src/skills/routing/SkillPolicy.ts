@@ -24,7 +24,7 @@ export const DEFAULT_SKILL_ROUTING_POLICY: ResolvedSkillRoutingPolicy = {
         keywords: ['ui', 'ux', 'frontend', 'component', 'page', 'layout', 'responsive', 'visual', '界面', '页面', '交互', '视觉', '前端'],
       },
       recommendedSkills: ['ui-ux-pro-max', 'frontend-design', 'design-review'],
-      requiredArtifacts: ['skill-plan.md', 'ui-spec.md', 'visual-review.md'],
+      requiredArtifacts: ['skill-plan.md', 'mini-prd.md', 'ui-spec.md', 'visual-review.md'],
       requiredVerification: ['screenshot', 'responsive-check'],
     },
     e2e: {
@@ -42,7 +42,7 @@ export const DEFAULT_SKILL_ROUTING_POLICY: ResolvedSkillRoutingPolicy = {
         keywords: ['api', 'endpoint', 'route', 'handler', '接口', '路由'],
       },
       recommendedSkills: ['tdd-guide', 'code-review'],
-      requiredArtifacts: ['skill-plan.md', 'api-contract.md'],
+      requiredArtifacts: ['skill-plan.md', 'mini-prd.md', 'api-contract.md'],
       requiredVerification: ['contract-check'],
     },
     db: {

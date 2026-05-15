@@ -129,4 +129,58 @@ describe('resolveVerificationProfile', () => {
     expect(resolved.targets.map(target => target.service?.name)).toEqual(['api', 'gateway'])
     expect(resolved.targets.every(target => target.config.build === 'npm run build')).toBe(true)
   })
+
+  it('resolves explicit comma-separated and array service selections', () => {
+    const dir = makeProject()
+    mkdirSync(join(dir, 'services', 'api'), { recursive: true })
+    mkdirSync(join(dir, 'services', 'gateway'), { recursive: true })
+    mkdirSync(join(dir, 'services', 'worker'), { recursive: true })
+    writeFileSync(join(dir, '.scale', 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: { test: 'npm test' } } },
+      services: [
+        { name: 'api', path: 'services/api' },
+        { name: 'gateway', path: 'services/gateway' },
+        { name: 'worker', path: 'services/worker' },
+      ],
+    }, null, 2), 'utf-8')
+
+    const fromCli = resolveVerificationTargets({ projectDir: dir, service: 'api,gateway' })
+    const fromTask = resolveVerificationTargets({ projectDir: dir, services: ['gateway', 'worker'] })
+
+    expect(fromCli.targets.map(target => target.service?.name)).toEqual(['api', 'gateway'])
+    expect(fromTask.targets.map(target => target.service?.name)).toEqual(['gateway', 'worker'])
+  })
+
+  it('provides language-aware defaults for Go and Python services', () => {
+    const dir = makeProject()
+    mkdirSync(join(dir, 'services', 'go-api'), { recursive: true })
+    mkdirSync(join(dir, 'services', 'py-worker'), { recursive: true })
+    writeFileSync(join(dir, '.scale', 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      services: [
+        { name: 'go-api', path: 'services/go-api', type: 'go' },
+        { name: 'py-worker', path: 'services/py-worker', type: 'python' },
+      ],
+    }, null, 2), 'utf-8')
+
+    const go = resolveVerificationProfile({ projectDir: dir, service: 'go-api' })
+    const python = resolveVerificationProfile({ projectDir: dir, service: 'py-worker' })
+
+    expect(go.config).toMatchObject({
+      build: 'go build ./...',
+      lint: 'go vet ./...',
+      test: 'go test ./...',
+      coverage: 'go test ./... -cover',
+    })
+    expect(python.config).toMatchObject({
+      build: 'python -m compileall .',
+      lint: 'python -m ruff check .',
+      test: 'python -m pytest',
+      coverage: 'python -m pytest --cov=.',
+    })
+  })
 })

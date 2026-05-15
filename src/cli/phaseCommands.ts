@@ -234,17 +234,18 @@ function evaluateArtifactGate(options: {
 }
 
 async function countChangedFiles(taskPayload: TaskPayload): Promise<number> {
-  if (taskPayload.filesInvolved.length > 0) return new Set(taskPayload.filesInvolved.map(normalizeGitPath)).size
+  const filesInvolved = taskPayload.filesInvolved ?? []
+  if (filesInvolved.length > 0) return new Set(filesInvolved.map(normalizeGitPath)).size
+  return (await detectTaskChangedFiles()).length
+}
+
+async function detectTaskChangedFiles(): Promise<string[]> {
   try {
-    const status = await runGit(['status', '--short'])
-    const untracked = await runGit(['ls-files', '--others', '--exclude-standard'])
-    const statusOutput = mergeUntrackedFilesIntoStatus(status.stdout, untracked.stdout)
-    return parseChangedFiles(statusOutput)
-      .filter(file => shouldReviewFile(file.path))
+    return (await getReviewableGitChanges())
       .filter(file => !isWorkflowGeneratedArtifact(file.path))
-      .length
+      .map(file => normalizeGitPath(file.path))
   } catch {
-    return 0
+    return []
   }
 }
 
@@ -870,6 +871,11 @@ export const phaseVerify = defineCommand({
       console.error(`\nTask not found: ${args['task-id']}\n`)
       process.exit(1)
     }
+    const currentPayload = task.payload as TaskPayload
+    const taskServices = currentPayload.servicesTouched ?? []
+    const taskFiles = currentPayload.filesInvolved?.length
+      ? currentPayload.filesInvolved.map(normalizeGitPath)
+      : await detectTaskChangedFiles()
 
     // === WorkflowEngine Integration ===
     // Step 1: Run GateSystem G3-G7
@@ -879,6 +885,7 @@ export const phaseVerify = defineCommand({
       scaleDir: SCALE_DIR,
       profile: args.profile,
       service: args.service,
+      services: args.service ? undefined : taskServices,
     })
     if (!args.json) {
       for (const warning of resolvedVerification.warnings) console.log(`   [WARN] ${warning}`)
@@ -950,7 +957,6 @@ export const phaseVerify = defineCommand({
     if (coverageValues.length > 0) results.testCoverage = Math.min(...coverageValues)
 
     // Update Task payload with verification results
-    const currentPayload = task.payload as TaskPayload
     const taskLevel = normalizeWorkflowLevel(currentPayload.workflowLevel ?? 'M')
     const verificationSkillPlan = taskLevel === 'S'
       ? undefined
@@ -960,7 +966,7 @@ export const phaseVerify = defineCommand({
           description: currentPayload.description,
           level: taskLevel,
           services: currentPayload.servicesTouched,
-          files: currentPayload.filesInvolved,
+          files: taskFiles,
         })
     const verifiedServices = resolvedVerification.targets
       .map(target => target.service?.name)
@@ -975,6 +981,7 @@ export const phaseVerify = defineCommand({
       servicesTouched: currentPayload.servicesTouched?.length
         ? currentPayload.servicesTouched
         : verifiedServices.length > 0 ? verifiedServices : currentPayload.servicesTouched,
+      filesInvolved: currentPayload.filesInvolved?.length ? currentPayload.filesInvolved : taskFiles,
       residualRisk: args['residual-risk'] ?? currentPayload.residualRisk,
       verificationEvidenceIds,
       skillIntents: verificationSkillPlan?.intents.map(intent => intent.domain) ?? currentPayload.skillIntents,
@@ -1135,7 +1142,7 @@ export const phaseVerify = defineCommand({
 
 async function runGit(args: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const { execa } = await import('execa')
-  const result = await execa('git', args, { reject: false })
+  const result = await execa('git', args, { cwd: PROJECT_DIR, reject: false })
   return {
     exitCode: result.exitCode ?? 1,
     stdout: result.stdout ?? '',
