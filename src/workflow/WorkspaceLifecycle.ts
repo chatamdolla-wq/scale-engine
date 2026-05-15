@@ -1,6 +1,11 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { execa } from 'execa'
+import {
+  resolveWorkspaceTopology,
+  type ResolvedWorkspaceTopology,
+  type WorkspaceRepositoryConfig,
+} from './WorkspaceTopology.js'
 
 export type WorkspaceRepositoryKind = 'root' | 'submodule' | 'nested-repo'
 
@@ -34,6 +39,7 @@ export interface WorkspaceFinishDecision {
 export interface WorkspaceLifecycleReport {
   root: WorkspaceRepositoryStatus
   childRepositories: WorkspaceRepositoryStatus[]
+  topology: ResolvedWorkspaceTopology
   finish: WorkspaceFinishDecision
 }
 
@@ -64,10 +70,11 @@ export async function inspectWorkspaceLifecycle(
   const projectDir = resolve(options.projectDir ?? process.cwd())
   const rootTopLevel = await gitRequired(projectDir, ['rev-parse', '--show-toplevel'])
   const root = await inspectRepository(rootTopLevel, rootTopLevel, 'root')
-  const childRepositories = await inspectChildRepositories(rootTopLevel)
-  const finish = decideFinish(root, childRepositories)
+  const topology = resolveWorkspaceTopology({ projectDir: rootTopLevel })
+  const childRepositories = await inspectChildRepositories(rootTopLevel, topology)
+  const finish = decideFinish(root, childRepositories, topology)
 
-  return { root, childRepositories, finish }
+  return { root, childRepositories, topology, finish }
 }
 
 export async function cleanupWorkspaceLifecycle(
@@ -180,10 +187,22 @@ async function inspectRepository(
   }
 }
 
-async function inspectChildRepositories(rootDir: string): Promise<WorkspaceRepositoryStatus[]> {
+async function inspectChildRepositories(
+  rootDir: string,
+  topology: ResolvedWorkspaceTopology,
+): Promise<WorkspaceRepositoryStatus[]> {
   const submodules = await readGitmodules(rootDir)
   const statuses: WorkspaceRepositoryStatus[] = []
   const seen = new Set<string>()
+
+  for (const repo of topology.repositories) {
+    if (repo.path === '.' || repo.role === 'root') continue
+    const repoDir = resolve(rootDir, repo.path)
+    if (!existsSync(repoDir)) continue
+    if (!await isGitRepository(repoDir)) continue
+    seen.add(resolve(repoDir))
+    statuses.push(await inspectRepository(repoDir, rootDir, kindForConfiguredRepository(repo), normalizeRelative(repo.path)))
+  }
 
   for (const relativePath of submodules) {
     const repoDir = join(rootDir, relativePath)
@@ -206,19 +225,27 @@ async function inspectChildRepositories(rootDir: string): Promise<WorkspaceRepos
 function decideFinish(
   root: WorkspaceRepositoryStatus,
   childRepositories: WorkspaceRepositoryStatus[],
+  topology: ResolvedWorkspaceTopology,
 ): WorkspaceFinishDecision {
   const blockers: string[] = []
   const warnings: string[] = []
   const nextActions: string[] = []
+  const policy = topology.finishPolicy
+  const isMoe = topology.topology === 'moe'
 
-  if (!root.clean) blockers.push('Root repository has uncommitted changes')
+  if (policy.requireCleanRepositories && !root.clean) blockers.push('Root repository has uncommitted changes')
   if (root.upstream && root.ahead > 0) warnings.push(`Root branch ${root.branch ?? '(detached)'} is ${root.ahead} commit(s) ahead of ${root.upstream}`)
   if (!root.upstream && root.branch) warnings.push(`Root branch ${root.branch} has no upstream`)
 
   for (const child of childRepositories) {
-    if (!child.clean) blockers.push(`Child repository ${child.relativePath} has uncommitted changes`)
-    if (child.upstream && child.ahead > 0) blockers.push(`Child repository ${child.relativePath} has unpushed commits`)
+    if (policy.requireCleanRepositories && !child.clean) blockers.push(`Child repository ${child.relativePath} has uncommitted changes`)
+    if (policy.requirePushedBranches && child.upstream && child.ahead > 0) blockers.push(`Child repository ${child.relativePath} has unpushed commits`)
+    if (policy.requirePushedBranches && isMoe && !child.upstream && child.branch) blockers.push(`Child repository ${child.relativePath} has unpushed commits`)
     if (!child.upstream && child.branch) warnings.push(`Child repository ${child.relativePath} branch ${child.branch} has no upstream`)
+  }
+
+  if (policy.requireRootPointerUpdate && childRepositories.some(hasChildIntegrationWork)) {
+    warnings.push('MOE finish policy requires root pointer or integration metadata review after child repository changes')
   }
 
   if (blockers.length === 0) {
@@ -238,6 +265,14 @@ function decideFinish(
     warnings,
     nextActions,
   }
+}
+
+function kindForConfiguredRepository(repo: WorkspaceRepositoryConfig): WorkspaceRepositoryKind {
+  return repo.role === 'submodule' ? 'submodule' : 'nested-repo'
+}
+
+function hasChildIntegrationWork(child: WorkspaceRepositoryStatus): boolean {
+  return !child.clean || child.ahead > 0 || Boolean(child.branch && !child.upstream)
 }
 
 async function readGitmodules(rootDir: string): Promise<string[]> {

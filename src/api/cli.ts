@@ -42,6 +42,12 @@ import {
   type WorkspaceCleanupResult,
   type WorkspaceLifecycleReport,
 } from '../workflow/WorkspaceLifecycle.js'
+import {
+  resolveWorkspaceTopology,
+  workspaceTopologyPath,
+  workspaceTopologyTemplate,
+  type WorkspaceTopologyKind,
+} from '../workflow/WorkspaceTopology.js'
 import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -881,6 +887,7 @@ const taskArtifacts = defineCommand({
 
 function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
   console.log('\nSCALE Workspace Lifecycle')
+  console.log(`  Topology: ${report.topology.topology}${report.topology.configured ? '' : ' (default)'}`)
   console.log(`  Root: ${report.root.path}`)
   console.log(`  Branch: ${report.root.branch ?? '(detached)'}`)
   console.log(`  Linked worktree: ${report.root.isLinkedWorktree ? 'yes' : 'no'}`)
@@ -903,6 +910,18 @@ function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
   for (const blocker of report.finish.blockers) console.log(`  [BLOCKER] ${blocker}`)
   for (const warning of report.finish.warnings) console.log(`  [WARN] ${warning}`)
   for (const action of report.finish.nextActions) console.log(`  [NEXT] ${action}`)
+}
+
+function printWorkspaceTopology(topology: ReturnType<typeof resolveWorkspaceTopology>, written?: string | null): void {
+  console.log('\nSCALE Workspace Topology')
+  console.log(`  Topology: ${topology.topology}${topology.configured ? '' : ' (default)'}`)
+  console.log(`  Config: ${topology.configPath}`)
+  if (written) console.log(`  Written: ${written}`)
+  console.log('\n  Repositories:')
+  for (const repo of topology.repositories) {
+    console.log(`    - ${repo.name}: ${repo.path} (${repo.role}) required=${repo.required !== false ? 'yes' : 'no'}`)
+  }
+  for (const warning of topology.warnings) console.log(`  [WARN] ${warning}`)
 }
 
 function printWorkspaceCleanup(result: WorkspaceCleanupResult): void {
@@ -937,6 +956,38 @@ const workspaceStatus = defineCommand({
   },
 })
 
+const workspaceMap = defineCommand({
+  meta: { name: 'map', description: 'Resolve or write explicit workspace topology for single, monorepo, polyrepo, submodule, or MOE projects' },
+  args: {
+    dir: { type: 'string', description: 'Project directory; defaults to current project directory' },
+    topology: { type: 'string', default: 'moe', description: 'Starter topology for --write (single/monorepo/polyrepo/submodule-workspace/moe)' },
+    write: { type: 'boolean', default: false, description: 'Create .scale/workspace.json when it does not exist' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(args.dir ?? PROJECT_DIR)
+    const target = workspaceTopologyPath(projectDir)
+    let written: string | null = null
+
+    if (isTruthyFlag(args.write) && !existsSync(target)) {
+      ensureDir(join(projectDir, '.scale'))
+      writeFileSync(target, workspaceTopologyTemplate({
+        topology: normalizeWorkspaceTopologyKind(args.topology),
+      }), 'utf-8')
+      written = target
+    }
+
+    const topology = resolveWorkspaceTopology({ projectDir })
+    const result = { ...topology, written }
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      printWorkspaceTopology(topology, written)
+    }
+  },
+})
+
 const workspaceFinish = defineCommand({
   meta: { name: 'finish', description: 'Check whether a temporary worktree can be safely finished or cleaned up' },
   args: {
@@ -948,6 +999,7 @@ const workspaceFinish = defineCommand({
     const result = {
       root: report.root,
       childRepositories: report.childRepositories,
+      topology: report.topology,
       finish: report.finish,
     }
 
@@ -990,11 +1042,26 @@ const workspaceCleanup = defineCommand({
 const workspace = defineCommand({
   meta: { name: 'workspace', description: 'Inspect worktree, branch, and child repository lifecycle safety' },
   subCommands: {
+    map: workspaceMap,
     status: workspaceStatus,
     finish: workspaceFinish,
     cleanup: workspaceCleanup,
   },
 })
+
+function normalizeWorkspaceTopologyKind(value: unknown): WorkspaceTopologyKind {
+  const normalized = String(value ?? 'moe').trim()
+  if (
+    normalized === 'single'
+    || normalized === 'monorepo'
+    || normalized === 'polyrepo'
+    || normalized === 'submodule-workspace'
+    || normalized === 'moe'
+  ) {
+    return normalized
+  }
+  return 'moe'
+}
 
 const preflight = defineCommand({
   meta: { name: 'preflight', description: 'Run service-aware verification without a task artifact' },
@@ -1213,7 +1280,7 @@ const init = defineCommand({
     'governance-pack': {
       type: 'string',
       default: 'standard',
-      description: 'Governance template pack (standard/project-scaffold/go-service-matrix/node-library/frontend-app)',
+      description: 'Governance template pack (standard/project-scaffold/moe-workspace/go-service-matrix/node-library/frontend-app)',
     },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
     interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },

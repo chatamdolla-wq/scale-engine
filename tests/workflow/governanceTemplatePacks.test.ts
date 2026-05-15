@@ -6,6 +6,7 @@ describe('governance template packs', () => {
     expect(listGovernanceTemplatePacks().map(pack => pack.id)).toEqual([
       'standard',
       'project-scaffold',
+      'moe-workspace',
       'go-service-matrix',
       'node-library',
       'frontend-app',
@@ -26,6 +27,16 @@ describe('governance template packs', () => {
     expect(pack.defaultServices?.every(service => service.type === 'go')).toBe(true)
     expect(pack.defaultServices?.map(service => service.name)).toEqual(['netdisk', 'auth', 'gateway'])
     expect(pack.exclude).toEqual(expect.arrayContaining(['OpenList', 'gfast', 'mcp-zero']))
+  })
+
+  it('resolves MOE workspace governance with topology assets', () => {
+    const pack = resolveGovernanceTemplatePack('moe-workspace')
+
+    expect(pack.id).toBe('moe-workspace')
+    expect(pack.generatedFiles.map(file => file.path)).toEqual(expect.arrayContaining([
+      '.scale/workspace.json',
+      'docs/workflow/moe-workspace.md',
+    ]))
   })
 
   it('rejects unknown packs with supported ids', () => {

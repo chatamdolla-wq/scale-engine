@@ -56,6 +56,70 @@ describe('WorkspaceLifecycle', () => {
     expect(result.finish.blockers).toContain('Child repository modules/common has uncommitted changes')
   })
 
+  it('discovers configured MOE repositories beyond nested auto-discovery depth', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    const child = join(root, 'a', 'b', 'c', 'd', 'e', 'f', 'common')
+    mkdirSync(child, { recursive: true })
+    await initRepo(child)
+    mkdirSync(join(root, '.scale'), { recursive: true })
+    writeFileSync(join(root, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'common', path: 'a/b/c/d/e/f/common', role: 'nested-repo', required: true },
+      ],
+    }, null, 2), 'utf-8')
+    writeFileSync(join(root, '.gitignore'), 'a/\n', 'utf-8')
+    await git(root, ['add', '.scale/workspace.json', '.gitignore'])
+    await git(root, ['commit', '-m', 'add moe topology'])
+
+    const result = await inspectWorkspaceLifecycle({ projectDir: root })
+
+    expect(result.topology.topology).toBe('moe')
+    expect(result.childRepositories).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'nested-repo',
+        relativePath: 'a/b/c/d/e/f/common',
+        clean: true,
+      }),
+    ]))
+  })
+
+  it('warns when MOE finish policy requires root pointer review after child repository changes', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    const child = join(root, 'modules', 'common')
+    mkdirSync(child, { recursive: true })
+    await initRepo(child)
+    mkdirSync(join(root, '.scale'), { recursive: true })
+    writeFileSync(join(root, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'common', path: 'modules/common', role: 'nested-repo', required: true },
+      ],
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: true,
+        requireRootPointerUpdate: true,
+      },
+    }, null, 2), 'utf-8')
+    writeFileSync(join(root, '.gitignore'), 'modules/\n', 'utf-8')
+    await git(root, ['add', '.scale/workspace.json', '.gitignore'])
+    await git(root, ['commit', '-m', 'add moe topology'])
+    writeFileSync(join(child, 'change.txt'), 'change\n', 'utf-8')
+    await git(child, ['add', 'change.txt'])
+    await git(child, ['commit', '-m', 'change child'])
+
+    const result = await inspectWorkspaceLifecycle({ projectDir: root })
+
+    expect(result.finish.blockers).toContain('Child repository modules/common has unpushed commits')
+    expect(result.finish.warnings).toContain('MOE finish policy requires root pointer or integration metadata review after child repository changes')
+  })
+
   it('identifies linked worktrees and marks clean temporary branches as cleanup candidates', async () => {
     const root = makeDir()
     await initRepo(root)

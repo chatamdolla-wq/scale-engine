@@ -1,9 +1,11 @@
 import type { GovernanceMode } from './GovernanceTemplates.js'
 import type { VerificationService } from './VerificationProfile.js'
+import { workspaceTopologyTemplate } from './WorkspaceTopology.js'
 
 export type GovernancePackId =
   | 'standard'
   | 'project-scaffold'
+  | 'moe-workspace'
   | 'go-service-matrix'
   | 'node-library'
   | 'frontend-app'
@@ -72,6 +74,16 @@ const PACKS: GovernanceTemplatePack[] = [
     ],
   },
   {
+    id: 'moe-workspace',
+    version: 1,
+    description: 'MOE multi-repository workspace governance with explicit topology and finish policy.',
+    modeDefaults,
+    generatedFiles: [
+      { path: '.scale/workspace.json', kind: 'config', owned: true, content: workspaceTopologyTemplate({ topology: 'moe' }) },
+      { path: 'docs/workflow/moe-workspace.md', kind: 'doc', owned: true, content: moeWorkspaceGuide() },
+    ],
+  },
+  {
     id: 'go-service-matrix',
     version: 1,
     description: 'Go multi-service repository governance.',
@@ -114,5 +126,40 @@ run_scale() {
 
 echo "[scale-engine] compatibility wrapper: scripts/${label}.sh -> scale ${scaleCommand}" >&2
 run_scale ${scaleCommand} "$@"
+`
+}
+
+function moeWorkspaceGuide(): string {
+  return `# MOE Workspace Governance
+
+MOE workspaces are multi-repository engineering environments where the root checkout, nested repositories, submodules, and temporary agent worktrees must be finished as one coordinated unit.
+
+## Source Of Truth
+
+- \`.scale/workspace.json\`: repository topology, branch policy, and finish policy.
+- \`.scale/verification.json\`: service matrix and verification commands.
+- \`docs/worklog/tasks/<task>/\`: task artifacts, verification evidence, and cross-repository impact.
+
+## Required Finish Checks
+
+Before deleting an agent worktree or reporting a task complete:
+
+1. Run \`scale workspace map --json\` to confirm the expected repositories are known.
+2. Run \`scale workspace finish --json\` to check root and child repository state.
+3. Commit and push child repository work in each repository's own remote.
+4. Review whether the root repository needs a submodule pointer, lock file, integration metadata, or documentation update.
+5. Run service-aware verification for every touched service.
+
+## Branch Naming
+
+Use readable branches with author/platform/scope/date context, for example:
+
+\`\`\`text
+feature/maple-codex-storage-policy-0515
+fix/zpei-claude-upload-retry-0515
+codex/moe-workspace-governance-0515
+\`\`\`
+
+Protected branches such as \`main\` and \`master\` require explicit human authorization before direct pushes.
 `
 }

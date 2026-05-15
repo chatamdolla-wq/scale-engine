@@ -1,3 +1,15 @@
+## Unreleased
+
+### MOE workspace governance
+
+- Added `.scale/workspace.json` as an explicit topology contract for single-repo, monorepo, polyrepo, submodule-workspace, and MOE projects.
+- Added `scale workspace map` to inspect or generate starter workspace topology configuration.
+- Added `moe-workspace` governance pack output with MOE collaboration guidance and workspace topology defaults.
+- Extended workspace lifecycle checks so configured MOE child repositories are discovered even when they are too deep for generic nested-repo scanning.
+- Added MOE finish-policy warnings for root pointer or integration metadata review after child repository changes.
+
+---
+
 ## 0.14.0 - 2026-05-15
 
 ### Active skill routing and workflow gates

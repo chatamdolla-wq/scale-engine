@@ -87,6 +87,27 @@ describe('writeGovernanceTemplates', () => {
     expect(matrix.exclude).toEqual(expect.arrayContaining(['OpenList', 'gfast', 'mcp-zero']))
   })
 
+  it('generates MOE workspace topology and documentation', () => {
+    const dir = makeDir()
+
+    const result = writeGovernanceTemplates(dir, { mode: 'critical', projectName: 'MOE Demo', pack: 'moe-workspace' })
+
+    expect(result.created).toEqual(expect.arrayContaining([
+      join(dir, '.scale', 'workspace.json'),
+      join(dir, 'docs', 'workflow', 'moe-workspace.md'),
+    ]))
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'workspace.json'), 'utf-8'))).toMatchObject({
+      topology: 'moe',
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: true,
+        requireRootPointerUpdate: true,
+      },
+    })
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'moe-workspace.md'), 'utf-8')).toContain('MOE Workspace Governance')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance pack: moe-workspace')
+  })
+
   it('generates whitespace-clean markdown templates', () => {
     const names = [
       'explore.md',

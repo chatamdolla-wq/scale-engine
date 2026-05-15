@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execa } from 'execa'
 
@@ -65,6 +65,52 @@ describe('workspace CLI', () => {
     ]))
     expect(json.finish.canCleanup).toBe(false)
     expect(json.finish.blockers).toContain('Child repository services/resource has uncommitted changes')
+  })
+
+  it('prints resolved workspace topology as JSON', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    mkdirSync(join(root, '.scale'), { recursive: true })
+    writeFileSync(join(root, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'common', path: 'packages/common', role: 'nested-repo', required: true },
+      ],
+    }, null, 2), 'utf-8')
+
+    const status = await runScale(['workspace', 'map', '--dir', root, '--json'], root)
+
+    expect(status.exitCode).toBe(0)
+    const json = JSON.parse(status.stdout) as {
+      configured: boolean
+      topology: string
+      repositories: Array<{ name: string; path: string }>
+    }
+    expect(json.configured).toBe(true)
+    expect(json.topology).toBe('moe')
+    expect(json.repositories.map(repo => repo.name)).toEqual(['root', 'common'])
+  })
+
+  it('writes a starter MOE workspace topology from the CLI', async () => {
+    const root = makeDir()
+    await initRepo(root)
+
+    const result = await runScale(['workspace', 'map', '--dir', root, '--write', '--topology', 'moe', '--json'], root)
+
+    expect(result.exitCode).toBe(0)
+    const json = JSON.parse(result.stdout) as { written: string | null; topology: string }
+    expect(json.topology).toBe('moe')
+    expect(json.written).toBe(join(root, '.scale', 'workspace.json'))
+    expect(JSON.parse(readFileSync(join(root, '.scale', 'workspace.json'), 'utf-8'))).toMatchObject({
+      topology: 'moe',
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: true,
+        requireRootPointerUpdate: true,
+      },
+    })
   })
 
   it('dry-runs linked worktree cleanup as JSON', async () => {

@@ -18,6 +18,16 @@ W9-W12:   进化期 - MCP + Evolution + Eval + 真实联调
 
 - `docs/plans/governance-template-pack-landing-plan.md`
 
+### MOE workspace upgrade
+
+`scale-engine` now treats MOE-style workspaces as an explicit project topology instead of an implicit cleanup edge case.
+
+- `.scale/workspace.json` records root, submodule, nested repository, and external repository relationships.
+- `scale init --governance-pack moe-workspace` generates MOE governance docs and starter topology.
+- `scale workspace map --write --topology moe` creates a topology file for existing complex workspaces.
+- `scale workspace finish --json` uses the topology to block unsafe cleanup when child repositories are dirty or unpushed.
+- MOE finish policy requires reviewing root pointers, lock files, integration metadata, or docs after child repository changes.
+
 每周输出：
 1. 代码 + 单元测试 + 文档更新
 2. 一个可演示的 demo
