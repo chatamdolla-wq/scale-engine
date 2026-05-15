@@ -1,4 +1,20 @@
-## Unreleased
+## 0.14.0 - 2026-05-15
+
+### Active skill routing and workflow gates
+
+- Added workflow skill routing for UI, API, database, security, docs, review, release, skill-discovery, and full-stack prototype work.
+- Added `scale skill doctor` to check whether required workflow skills are physically installed.
+- Added `scale skill check --require-installed` and `scale verify --require-installed-skills` for optional required-skill installation gates.
+- Added stricter skill evidence validation so required skills must be named with concrete executed, skipped, fallback, or verified status instead of template placeholders.
+- Added generated skill-plan, skill-evidence, Mini-PRD, UI spec, visual review, API contract, security, database, docs, and E2E artifact templates.
+
+### Service-aware verification
+
+- Added `scale preflight --preflight-profile quick|full|ci` with a quick default that skips coverage and security gates for fast local checks.
+- Added CI/full profiles that run build, lint, test, coverage, and security gates through the shared service matrix.
+- Added service-aware verification template generation for Node, frontend, Go service-matrix, and project-scaffold governance packs.
+- Fixed coverage command detection so missing coverage scripts are reported explicitly instead of falling back to an invalid test command.
+- Added machine-readable JSON output for init, workflow list, skill scan, skill doctor, preflight, and related governance checks.
 
 ### Governance template packs
 
@@ -8,12 +24,25 @@
 - Added optional `scale doctor` governance drift warnings.
 - Added Go service-matrix defaults for `netdisk`, `auth`, and `gateway`, excluding reference modules from default gates.
 
+### Review and release safety
+
+- Derived Karpathy review context from task payload, verification evidence, and actual changed files instead of hardcoded pass values.
+- Added JSON review output for Karpathy context, checks, advisory pass state, and violations.
+- Added scoped ship protections so only files covered by passing review records are staged.
+- Strengthened task metrics and artifact-gate recording for M/L/CRITICAL work.
+
 ### Workspace lifecycle
 
 - Added `scale workspace status` and `scale workspace finish` to inspect root worktree state plus child repositories.
 - Added `scale workspace cleanup` with dry-run by default, confirmation-token guarded apply, and registered linked-worktree safety checks.
 - Added cleanup safety decisions so temporary worktrees are blocked when submodules or nested repositories still have uncommitted or unpushed work.
 - Added linked-worktree detection that distinguishes real worktrees from submodules.
+
+### Agent and external skill integration
+
+- Added proactive skill discovery and external workflow skill catalog integration.
+- Added multi-agent command and profile support for planner, implementer, reviewer, tester, debugger, security, and documentation roles.
+- Added broader adapter compatibility for agent platforms and command generation.
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.13.0",
-  "description": "SCALE Engine v0.13.0 - Artifact-based gate verification, autonomous dev loop, platform adapters, OWASP-oriented detector, and governance workflow automation",
+  "version": "0.14.0",
+  "description": "SCALE Engine v0.14.0 - Skill-aware workflow gates, service-aware verification profiles, workspace lifecycle safety, and generated governance template packs",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"
