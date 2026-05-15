@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.12.3-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.15.1-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-562-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.12.2-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/tests-822-passing-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/npm-0.15.1-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.12.3
+# SCALE Engine v0.15.1
 
 SCALE Engine 是一个面向 AI 编码 Agent 的工程化工作流运行时。它把提示词里的工程纪律，下沉为状态机、质量门禁、持久化证据、确定性 review 记录和发布检查。
 
@@ -28,7 +28,15 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 
 ## 当前版本
 
-v0.11.1 新增四大优先级改进：
+v0.15.1 聚焦生产级工程治理模板：
+
+- 支持 MOE / 非 MOE 工作区拓扑、子仓库变更阻断、临时 worktree 清理候选识别。
+- 增加资源资产治理，区分长期维护文档、版本化产物、任务证据、临时文件和禁止提交资产。
+- 增加工程规范扫描，覆盖日志噪音、敏感信息脱敏、安全输入、ORM/数据库、框架组件和测试验证。
+- 增强技能与工具编排，UI/UX、联网研究、浏览器 E2E、桌面自动化、外部 Agent CLI 都有路由和证据契约。
+- `scale init` / governance pack 会生成 service matrix、verification profile、artifact 模板、metrics、resource policy、engineering standards 和 tool orchestration 规则。
+
+历史 v0.11.1 新增四大优先级改进：
 
 ### Phase Commands FSM 阻断
 - `canTransition` + `process.exit(1)` 确保 FSM guard 失败时阻塞流程，而非继续执行

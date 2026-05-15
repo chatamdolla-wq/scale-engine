@@ -131,6 +131,83 @@ describe('phase CLI workflow', () => {
     expect(result.skills.find(skill => skill.id === 'frontend-design')?.installCommand).toContain('frontend-design')
   }, 120_000)
 
+  it('prints resource asset scan and doctor as machine-readable JSON', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'docs', 'modules', 'auth'), { recursive: true })
+    mkdirSync(join(projectDir, 'test-results', 'upload'), { recursive: true })
+    writeFileSync(join(projectDir, 'docs', 'modules', 'auth', 'architecture.md'), '# Auth\n', 'utf-8')
+    writeFileSync(join(projectDir, 'test-results', 'upload', 'report.json'), '{}\n', 'utf-8')
+
+    const scan = await runScale(['assets', 'scan', '--dir', projectDir, '--json'], scaleDir, projectDir)
+
+    expect(scan.exitCode).toBe(0)
+    const result = parseJson<{ summary: { byType: Record<string, number> }; assets: Array<{ path: string; gitPolicy: string }> }>(scan.stdout)
+    expect(result.summary.byType['canonical-doc']).toBe(1)
+    expect(result.summary.byType['evidence-report']).toBe(1)
+    expect(result.assets.find(asset => asset.path === 'test-results/upload/report.json')).toMatchObject({ gitPolicy: 'ignore' })
+
+    const doctor = await runScale(['assets', 'doctor', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(doctor.exitCode).toBe(0)
+    expect(parseJson<{ ok: boolean }>(doctor.stdout).ok).toBe(true)
+
+    const artifactDir = 'docs/worklog/tasks/2026-05-15-assets'
+    const settle = await runScale([
+      'assets',
+      'settle',
+      '--dir',
+      projectDir,
+      '--task-id',
+      'TASK-ASSETS',
+      '--artifact-dir',
+      artifactDir,
+      '--json',
+    ], scaleDir, projectDir)
+    expect(settle.exitCode).toBe(0)
+    const settleResult = parseJson<{ ok: boolean; resourceImpactPath: string }>(settle.stdout)
+    expect(settleResult.ok).toBe(true)
+    expect(existsSync(settleResult.resourceImpactPath)).toBe(true)
+  }, 120_000)
+
+  it('prints engineering standards scan and doctor as machine-readable JSON', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src', 'business'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'business', 'leaky.ts'), `
+export function leaky(token: string) {
+  console.log('token', token)
+}
+`, 'utf-8')
+
+    const scan = await runScale(['standards', 'scan', '--dir', projectDir, '--json'], scaleDir, projectDir)
+
+    expect(scan.exitCode).toBe(0)
+    const scanResult = parseJson<{ summary: { totalFindings: number; blockingFindings: number }; findings: Array<{ ruleId: string }> }>(scan.stdout)
+    expect(scanResult.summary.totalFindings).toBeGreaterThan(0)
+    expect(scanResult.findings.map(finding => finding.ruleId)).toContain('sensitive-log')
+
+    const doctor = await runScale(['standards', 'doctor', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(doctor.exitCode).toBe(1)
+    expect(parseJson<{ ok: boolean }>(doctor.stdout).ok).toBe(false)
+
+    const artifactDir = 'docs/worklog/tasks/2026-05-15-standards'
+    const settle = await runScale([
+      'standards',
+      'settle',
+      '--dir',
+      projectDir,
+      '--task-id',
+      'TASK-STANDARDS',
+      '--artifact-dir',
+      artifactDir,
+      '--json',
+    ], scaleDir, projectDir)
+    expect(settle.exitCode).toBe(1)
+    const settleResult = parseJson<{ ok: boolean; standardsImpactPath: string }>(settle.stdout)
+    expect(settleResult.ok).toBe(false)
+    expect(existsSync(settleResult.standardsImpactPath)).toBe(true)
+  }, 120_000)
+
   it('can include required skill installation status in skill checks', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -230,6 +307,133 @@ describe('phase CLI workflow', () => {
     expect(result.passed).toBe(true)
     expect(result.preflightProfile).toBe('quick')
     expect(result.gates).toEqual(['G3', 'G0', 'G4', 'G5'])
+  }, 120_000)
+
+  it('blocks preflight when engineering standards gate is configured as block', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'leaky.ts'), `
+export function leaky(token: string) {
+  console.log('token', token)
+}
+`, 'utf-8')
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      policy: {
+        engineeringStandardsGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+
+    const preflight = await runScale([
+      'preflight',
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(preflight.exitCode).toBe(1)
+    const result = parseJson<{
+      passed: boolean
+      engineeringStandards: {
+        mode: string
+        checked: boolean
+        blocked: boolean
+        ok: boolean
+        findings: Array<{ ruleId: string }>
+      }
+    }>(preflight.stdout)
+    expect(result.passed).toBe(false)
+    expect(result.engineeringStandards).toMatchObject({
+      mode: 'block',
+      checked: true,
+      blocked: true,
+      ok: false,
+    })
+    expect(result.engineeringStandards.findings.map(finding => finding.ruleId)).toContain('sensitive-log')
+  }, 120_000)
+
+  it('blocks task verification when engineering standards gate is configured as block', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'leaky.ts'), `
+export function leaky(token: string) {
+  console.log('token', token)
+}
+`, 'utf-8')
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      policy: {
+        engineeringStandardsGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+
+    const define = await runScale([
+      'define',
+      'CLI Regression Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'verify evidence is persisted,review evidence is persisted,standards gate blocks sensitive logs',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Remove the debug log and rerun standards doctor', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Standards gate task', '--level', 'M', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      buildResult.task.id,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{
+      passed: boolean
+      engineeringStandards: {
+        mode: string
+        blocked: boolean
+        ok: boolean
+        findings: Array<{ ruleId: string }>
+        standardsImpactPath?: string
+      }
+      metric: { finalGateStatus: string }
+    }>(verify.stdout)
+    expect(verifyResult.passed).toBe(false)
+    expect(verifyResult.engineeringStandards).toMatchObject({
+      mode: 'block',
+      blocked: true,
+      ok: false,
+    })
+    expect(verifyResult.engineeringStandards.findings.map(finding => finding.ruleId)).toContain('sensitive-log')
+    expect(verifyResult.engineeringStandards.standardsImpactPath).toContain('standards-impact.md')
+    expect(verifyResult.metric).toMatchObject({ finalGateStatus: 'blocked' })
   }, 120_000)
 
   it('blocks ship before review, then allows review -> ship --no-commit without changing HEAD', async () => {

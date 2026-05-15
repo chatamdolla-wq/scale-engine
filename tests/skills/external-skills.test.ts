@@ -17,7 +17,7 @@ describe('External Skills Integration', () => {
 
   it('should register workflow official and ecosystem skills', () => {
     const all = registry.listAll()
-    expect(all.length).toBe(20)
+    expect(all.length).toBe(25)
     expect(all.map(skill => skill.id)).toEqual(expect.arrayContaining([
       'frontend-design',
       'webapp-testing',
@@ -41,19 +41,43 @@ describe('External Skills Integration', () => {
     const skill = registry.get('awesome-design-md')
     expect(skill).toBeDefined()
     expect(skill?.installed).toBe(true)
+    expect(skill?.source).toBe('https://github.com/VoltAgent/awesome-design-md')
   })
 
   it('should have ui-ux-pro-max installed', () => {
     const skill = registry.get('ui-ux-pro-max')
     expect(skill).toBeDefined()
     expect(skill?.installed).toBe(true)
+    expect(skill?.source).toBe('https://github.com/nextlevelbuilder/ui-ux-pro-max-skill')
   })
 
   it('should have web-access installed', () => {
     const skill = registry.get('web-access')
     expect(skill).toBeDefined()
     expect(skill?.installed).toBe(true)
-    expect(skill?.priority).toBe(85)
+    expect(skill?.priority).toBe(90)
+    expect(skill?.source).toBe('https://github.com/eze-is/web-access')
+  })
+
+  it('registers optional browser automation and desktop tool adapters', () => {
+    expect(registry.get('agent-browser')).toMatchObject({
+      installed: false,
+      source: 'https://github.com/vercel-labs/agent-browser',
+    })
+    expect(registry.get('mcp-chrome-devtools')).toMatchObject({
+      installed: false,
+      domain: 'verification',
+    })
+    expect(registry.get('cua')).toMatchObject({
+      installed: false,
+      source: 'https://github.com/trycua/cua',
+    })
+  })
+
+  it('registers external agent CLI adapters as explicit optional tools', () => {
+    expect(registry.get('codex-cli')).toMatchObject({ installed: false, domain: 'verification' })
+    expect(registry.get('gemini-cli')).toMatchObject({ installed: false, domain: 'verification' })
+    expect(registry.get('opencode-cli')).toMatchObject({ installed: false, domain: 'verification' })
   })
 
   it('should have playwright installed', () => {

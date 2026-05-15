@@ -1,3 +1,27 @@
+## 0.15.1 - 2026-05-15
+
+### Tool orchestration governance
+
+- Added routing contracts for UI/UX, web research, browser automation, desktop automation, and external Agent CLI work.
+- Registered `awesome-design-md`, `ui-ux-pro-max`, `web-access`, `agent-browser`, Chrome DevTools MCP, CUA, Codex CLI, Gemini CLI, and OpenCode CLI as governed capabilities.
+- Extended generated skill-plan and skill-evidence templates so agents must explain tool selection, browser evidence, desktop automation evidence, and external CLI evidence.
+- Verified `scale init --governance-pack project-scaffold` generates the new tool orchestration domains and evidence templates.
+
+### Resource and engineering standards governance
+
+- Added resource asset governance for maintained documents, versioned outputs, task evidence, temporary files, and generated reports.
+- Added engineering standards governance for noisy logs, sensitive data redaction, secure input handling, ORM/database use, framework conventions, architecture boundaries, and test rigor.
+- Added CLI and doctor coverage for resource scans, standards scans, generated policy drift, and verification gating.
+
+### Runtime and release quality
+
+- Silenced default test-environment logs while preserving explicit `SCALE_LOG_LEVEL` overrides.
+- Added default logger redaction for password, token, authorization, cookie, secret, API key, and private key fields.
+- Unified CLI, MCP, and HTML renderer version reporting through `package.json` to prevent release banner drift.
+- Updated README release metadata and validation counts.
+
+---
+
 ## 0.15.0 - 2026-05-15
 
 ### MOE workspace governance

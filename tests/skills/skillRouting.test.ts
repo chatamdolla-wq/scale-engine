@@ -75,9 +75,65 @@ describe('skill routing', () => {
 
     expect(plan.intents.map(intent => intent.domain)).toContain('ui')
     expect(plan.requiredSkills).toContain('frontend-design')
+    expect(plan.requiredSkills).toContain('ui-ux-pro-max')
+    expect(plan.recommendedSkills).toContain('awesome-design-md')
     expect(plan.recommendedSkills).toContain('webapp-testing')
+    expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))
     expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-evidence.md', 'ui-spec.md', 'visual-review.md']))
-    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['screenshot', 'responsive-check', 'browser-run']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['design-system', 'screenshot', 'responsive-check', 'browser-run', 'visual-review']))
+  })
+
+  it('routes web research and logged-in browser work to web access evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-WEB',
+      taskName: 'Verify external docs',
+      description: 'Search online, inspect a logged-in dynamic web page, and verify latest browser behavior with source citations',
+      level: 'M',
+      files: ['docs/research.md'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toEqual(expect.arrayContaining(['webResearch', 'browserAutomation']))
+    expect(plan.requiredSkills).toContain('web-access')
+    expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-evidence.md', 'verification.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['source-citation', 'browser-evidence', 'network-console-check']))
+  })
+
+  it('routes desktop application automation to CUA safety evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-DESKTOP',
+      taskName: 'WPS desktop smoke test',
+      description: 'Operate the Windows desktop app, WPS, and WeChat workflow to collect data and verify GUI behavior',
+      level: 'L',
+      files: ['docs/worklog/tasks/demo/verification.md'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('desktopAutomation')
+    expect(plan.requiredSkills).toContain('cua')
+    expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'web-access']))
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-plan.md', 'skill-evidence.md', 'verification.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['desktop-screenshot', 'operator-safety', 'side-effect-boundary']))
+  })
+
+  it('routes external agent CLI orchestration to explicit command evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-CLI',
+      taskName: 'Cross-agent review',
+      description: 'Use codex, gemini cli, and opencode as external CLI reviewers before merge',
+      level: 'M',
+      files: ['src/api/cli.ts'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('externalCli')
+    expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['codex-cli', 'gemini-cli', 'opencode-cli']))
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-plan.md', 'skill-evidence.md', 'verification.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['cli-version-check', 'command-output', 'dry-run-or-safe-mode']))
   })
 
   it('routes docs impact work to update-docs and docs-impact evidence', () => {
@@ -94,6 +150,38 @@ describe('skill routing', () => {
     expect(plan.intents.map(intent => intent.domain)).toContain('docs')
     expect(plan.recommendedSkills).toContain('update-docs')
     expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['docs-impact.md', 'skill-evidence.md']))
+  })
+
+  it('routes generated reports and media to resource governance evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-ASSETS',
+      taskName: 'Clean resource outputs',
+      description: 'Settle screenshots, e2e report, temporary files, and documentation drift after feature work',
+      level: 'M',
+      files: ['test-results/upload/report.json', 'playwright-report/index.html', 'tmp/probe.sql', 'docs/modules/auth/product.md'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('resourceGovernance')
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['resource-impact.md', 'docs-impact.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['asset-scan', 'asset-doctor']))
+  })
+
+  it('routes framework, logging, and coding standard work to standards evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-STANDARDS',
+      taskName: 'Harden coding standards',
+      description: 'Enforce logging desensitization, ORM usage rules, coding standards, framework conventions, and architecture boundaries',
+      level: 'L',
+      files: ['.scale/engineering-standards.json', 'src/business/upload.ts', 'docs/standards/backend.md'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('engineeringStandards')
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['standards-impact.md', 'architecture-review.md', 'security-review.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['standards-scan', 'standards-doctor']))
   })
 
   it('routes PR and review work to code-reviewer and pr-creator', () => {

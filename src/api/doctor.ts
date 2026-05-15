@@ -6,6 +6,8 @@ import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
+import { doctorEngineeringStandards } from '../workflow/EngineeringStandards.js'
+import { doctorResourceAssets } from '../workflow/ResourceGovernance.js'
 
 export interface DiagnosticResult {
   name: string
@@ -50,18 +52,26 @@ export class Doctor {
     const governanceTemplatesCheck = this.checkGovernanceTemplates()
     const verificationMatrixCheck = this.checkVerificationMatrix()
     const skillRoutingPolicyCheck = this.checkSkillRoutingPolicy()
+    const resourcePolicyCheck = this.checkResourcePolicy()
+    const engineeringStandardsCheck = this.checkEngineeringStandards()
     const governanceDriftCheck = this.checkGovernanceDrift()
     governanceTemplatesCheck.optional = true
     verificationMatrixCheck.optional = true
     skillRoutingPolicyCheck.optional = true
+    resourcePolicyCheck.optional = true
+    engineeringStandardsCheck.optional = true
     governanceDriftCheck.optional = true
     governanceTemplatesCheck.category = 'governance'
     verificationMatrixCheck.category = 'governance'
     skillRoutingPolicyCheck.category = 'governance'
+    resourcePolicyCheck.category = 'governance'
+    engineeringStandardsCheck.category = 'governance'
     governanceDriftCheck.category = 'governance'
     checks.push(governanceTemplatesCheck)
     checks.push(verificationMatrixCheck)
     checks.push(skillRoutingPolicyCheck)
+    checks.push(resourcePolicyCheck)
+    checks.push(engineeringStandardsCheck)
     checks.push(governanceDriftCheck)
 
     // Optional knowledge graph checks (non-blocking)
@@ -254,6 +264,9 @@ export class Doctor {
       join(this.projectDir, 'docs', 'workflow', 'templates', 'visual-review.md'),
       join(this.projectDir, 'docs', 'workflow', 'templates', 'api-contract.md'),
       join(this.projectDir, 'docs', 'workflow', 'templates', 'security-review.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'resource-impact.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'standards-impact.md'),
+      join(this.projectDir, 'docs', 'workflow', 'templates', 'architecture-review.md'),
       join(this.projectDir, 'docs', 'workflow', 'templates', 'db-change-plan.md'),
       join(this.projectDir, 'docs', 'workflow', 'templates', 'e2e-plan.md'),
       join(this.projectDir, 'docs', 'workflow', 'templates', 'plan.md'),
@@ -353,6 +366,76 @@ export class Doctor {
         name: 'Skill routing policy',
         status: 'fail',
         message: '.scale/skills.json is invalid JSON',
+        fix: 'Fix JSON syntax or regenerate with scale init',
+      }
+    }
+  }
+
+  private checkResourcePolicy(): DiagnosticResult {
+    const path = join(this.projectDir, this.scaleDir, 'resource-policy.json')
+    if (!existsSync(path)) {
+      return {
+        name: 'Resource policy',
+        status: 'warn',
+        message: 'Missing .scale/resource-policy.json',
+        fix: 'Run: scale init --governance-pack resource-governance or standard',
+      }
+    }
+    try {
+      const report = doctorResourceAssets({ projectDir: this.projectDir, scaleDir: this.scaleDir })
+      const failCount = report.findings.filter(finding => finding.severity === 'fail').length
+      const warnCount = report.findings.filter(finding => finding.severity === 'warn').length
+      if (failCount > 0) {
+        return {
+          name: 'Resource policy',
+          status: 'warn',
+          message: `${failCount} blocking resource issue(s), ${warnCount} warning(s)`,
+          fix: 'Run: scale assets doctor --json',
+        }
+      }
+      return { name: 'Resource policy', status: warnCount > 0 ? 'warn' : 'ok', message: `${report.scan.summary.total} resources, ${warnCount} warning(s)` }
+    } catch {
+      return {
+        name: 'Resource policy',
+        status: 'fail',
+        message: '.scale/resource-policy.json is invalid or resource scan failed',
+        fix: 'Fix JSON syntax or regenerate with scale init',
+      }
+    }
+  }
+
+  private checkEngineeringStandards(): DiagnosticResult {
+    const path = join(this.projectDir, this.scaleDir, 'engineering-standards.json')
+    if (!existsSync(path)) {
+      return {
+        name: 'Engineering standards',
+        status: 'warn',
+        message: 'Missing .scale/engineering-standards.json',
+        fix: 'Run: scale init --governance-pack standard',
+      }
+    }
+    try {
+      const report = doctorEngineeringStandards({ projectDir: this.projectDir, scaleDir: this.scaleDir })
+      const failCount = report.findings.filter(finding => finding.severity === 'fail').length
+      const warnCount = report.findings.filter(finding => finding.severity === 'warn').length
+      if (failCount > 0) {
+        return {
+          name: 'Engineering standards',
+          status: 'warn',
+          message: `${failCount} blocking standard issue(s), ${warnCount} warning(s)`,
+          fix: 'Run: scale standards doctor --json',
+        }
+      }
+      return {
+        name: 'Engineering standards',
+        status: warnCount > 0 ? 'warn' : 'ok',
+        message: `${report.scan.summary.filesScanned} files scanned, ${warnCount} warning(s)`,
+      }
+    } catch {
+      return {
+        name: 'Engineering standards',
+        status: 'fail',
+        message: '.scale/engineering-standards.json is invalid or standards scan failed',
         fix: 'Fix JSON syntax or regenerate with scale init',
       }
     }

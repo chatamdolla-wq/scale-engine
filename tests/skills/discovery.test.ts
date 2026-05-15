@@ -30,7 +30,31 @@ describe('SkillDiscovery', () => {
     })
     expect(results.length).toBeGreaterThan(0)
     expect(results.some(r => r.skillId === 'web-access')).toBe(true)
+    expect(results.some(r => r.skillId === 'agent-browser')).toBe(true)
+    expect(results.some(r => r.skillId === 'mcp-chrome-devtools')).toBe(true)
     expect(results.some(r => r.skillId === 'cua')).toBe(true)
+  })
+
+  it('uses current ecosystem sources for UI and browser capabilities', async () => {
+    const browserResults = await discovery.discover({
+      taskType: 'web-scraping',
+      missingCapabilities: ['browser'],
+      phase: 'execute',
+      keywords: ['browser automation'],
+    })
+    expect(browserResults.find(r => r.skillId === 'web-access')?.sourceUrl).toBe('https://github.com/eze-is/web-access')
+    expect(browserResults.find(r => r.skillId === 'agent-browser')?.sourceUrl).toBe('https://github.com/vercel-labs/agent-browser')
+
+    const uiResults = await discovery.discover({
+      taskType: 'ui-design',
+      missingCapabilities: ['design'],
+      phase: 'plan',
+      keywords: ['brand design system'],
+    })
+    expect(uiResults.map(result => result.sourceUrl)).toEqual(expect.arrayContaining([
+      'https://github.com/VoltAgent/awesome-design-md',
+      'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+    ]))
   })
 
   it('should recommend high quality skills for installation', async () => {

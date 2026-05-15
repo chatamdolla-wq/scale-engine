@@ -105,6 +105,24 @@ describe('resolveVerificationProfile', () => {
     })
   })
 
+  it('resolves engineering standards gate policy from the verification matrix', () => {
+    const dir = makeProject()
+    writeFileSync(join(dir, '.scale', 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      policy: {
+        engineeringStandardsGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+
+    const resolved = resolveVerificationTargets({ projectDir: dir })
+
+    expect(resolved.policy).toMatchObject({
+      engineeringStandardsGate: 'block',
+    })
+  })
+
   it('uses profile service selection when no service is requested', () => {
     const dir = makeProject()
     mkdirSync(join(dir, 'services', 'api'), { recursive: true })

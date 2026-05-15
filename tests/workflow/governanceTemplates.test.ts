@@ -31,18 +31,29 @@ describe('writeGovernanceTemplates', () => {
       join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'),
       join(dir, 'docs', 'workflow', 'templates', 'ui-spec.md'),
       join(dir, 'docs', 'workflow', 'templates', 'docs-impact.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'resource-impact.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'standards-impact.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'architecture-review.md'),
       join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'),
       join(dir, 'docs', 'workflow', 'templates', 'pre-push-scale-preflight.sh'),
       join(dir, 'docs', 'worklog', 'metrics.md'),
       join(dir, '.scale', 'verification.json'),
       join(dir, '.scale', 'skills.json'),
+      join(dir, '.scale', 'resource-policy.json'),
+      join(dir, '.scale', 'assets.json'),
+      join(dir, '.scale', 'engineering-standards.json'),
+      join(dir, '.scale', 'frameworks.json'),
       join(dir, '.scale', 'governance.lock.json'),
     ]))
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance mode: critical')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Tool orchestration is part of the workflow contract')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'), 'utf-8')).toContain('## Tool Orchestration')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'), 'utf-8')).toContain('## Browser Or Web Evidence')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), 'utf-8')).toContain('scale-engine@latest preflight --service all --preflight-profile ci')
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'verification.json'), 'utf-8')).policy).toMatchObject({
       mode: 'critical',
       artifactGate: 'block',
+      engineeringStandardsGate: 'block',
     })
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'skills.json'), 'utf-8')).policy).toMatchObject({
       mode: 'block',
@@ -50,9 +61,24 @@ describe('writeGovernanceTemplates', () => {
     })
     const skills = JSON.parse(readFileSync(join(dir, '.scale', 'skills.json'), 'utf-8'))
     expect(skills.domains.ui.requiredSkills).toContain('frontend-design')
+    expect(skills.domains.ui.requiredSkills).toContain('ui-ux-pro-max')
+    expect(skills.domains.ui.recommendedSkills).toContain('awesome-design-md')
     expect(skills.domains.ui.recommendedSkills).toContain('webapp-testing')
+    expect(skills.domains.webResearch.requiredSkills).toContain('web-access')
+    expect(skills.domains.browserAutomation.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))
+    expect(skills.domains.desktopAutomation.requiredSkills).toContain('cua')
+    expect(skills.domains.externalCli.recommendedSkills).toEqual(expect.arrayContaining(['codex-cli', 'gemini-cli', 'opencode-cli']))
     expect(skills.domains.review.requiredSkills).toContain('code-reviewer')
     expect(skills.domains.docs.recommendedSkills).toContain('update-docs')
+    expect(skills.domains.resourceGovernance.requiredArtifacts).toContain('resource-impact.md')
+    expect(skills.domains.engineeringStandards.requiredArtifacts).toContain('standards-impact.md')
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'resource-policy.json'), 'utf-8')).retainedRuntimeDirectories).toContain('test-results')
+    const engineeringStandards = JSON.parse(readFileSync(join(dir, '.scale', 'engineering-standards.json'), 'utf-8'))
+    expect(engineeringStandards.logging.sensitiveFields).toContain('token')
+    expect(engineeringStandards.blockingRules).toEqual([])
+    const frameworks = JSON.parse(readFileSync(join(dir, '.scale', 'frameworks.json'), 'utf-8'))
+    expect(frameworks.bannedImports).toEqual([])
+    expect(frameworks.reviewIntervalDays).toBe(90)
   })
 
   it('generates project-scaffold pack wrappers and governance lock', () => {
@@ -108,6 +134,23 @@ describe('writeGovernanceTemplates', () => {
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance pack: moe-workspace')
   })
 
+  it('generates resource governance pack documentation', () => {
+    const dir = makeDir()
+
+    const result = writeGovernanceTemplates(dir, { mode: 'critical', projectName: 'Resource Demo', pack: 'resource-governance' })
+
+    expect(result.created).toEqual(expect.arrayContaining([
+      join(dir, 'docs', 'workflow', 'resource-governance.md'),
+      join(dir, 'docs', 'modules', 'README.md'),
+      join(dir, 'docs', 'workflow', 'templates', '.gitignore.scale-assets.example'),
+    ]))
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'resource-governance.md'), 'utf-8')).toContain('Resource Governance')
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'governance.lock.json'), 'utf-8'))).toMatchObject({
+      pack: 'resource-governance',
+      packVersion: 1,
+    })
+  })
+
   it('generates whitespace-clean markdown templates', () => {
     const names = [
       'explore.md',
@@ -117,6 +160,9 @@ describe('writeGovernanceTemplates', () => {
       'ui-spec.md',
       'visual-review.md',
       'docs-impact.md',
+      'resource-impact.md',
+      'standards-impact.md',
+      'architecture-review.md',
       'api-contract.md',
       'security-review.md',
       'db-change-plan.md',

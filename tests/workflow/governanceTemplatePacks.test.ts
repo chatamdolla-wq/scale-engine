@@ -7,6 +7,7 @@ describe('governance template packs', () => {
       'standard',
       'project-scaffold',
       'moe-workspace',
+      'resource-governance',
       'go-service-matrix',
       'node-library',
       'frontend-app',

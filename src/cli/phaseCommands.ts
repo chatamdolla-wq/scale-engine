@@ -17,11 +17,12 @@ import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, type SkillG
 import { inspectRequiredWorkflowSkills } from '../skills/SkillDoctor.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
-import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
+import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationEngineeringStandardsGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
 import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
+import { doctorEngineeringStandards, settleEngineeringStandards, type EngineeringStandardFinding, type EngineeringStandardsSummary } from '../workflow/EngineeringStandards.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
 import type { KarpathyCheck } from '../workflow/types.js'
 import { join } from 'node:path'
@@ -29,6 +30,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
 import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
 import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
+import { SCALE_ENGINE_VERSION } from '../version.js'
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
 const PROJECT_DIR = process.env.SCALE_PROJECT_DIR ?? process.cwd()
@@ -188,6 +190,16 @@ interface ArtifactGateStatus {
   blocked: boolean
 }
 
+interface EngineeringStandardsGateStatus {
+  mode: VerificationEngineeringStandardsGateMode
+  checked: boolean
+  blocked: boolean
+  ok: boolean
+  findings: EngineeringStandardFinding[]
+  summary?: EngineeringStandardsSummary
+  standardsImpactPath?: string
+}
+
 function normalizeArtifactGateMode(value: unknown): VerificationArtifactGateMode | undefined {
   if (value === undefined || value === null || value === '') return undefined
   const normalized = String(value).trim().toLowerCase()
@@ -233,6 +245,51 @@ function evaluateArtifactGate(options: {
     complete,
     blocked: mode === 'block' && checked && complete === false,
   }
+}
+
+function evaluateEngineeringStandardsGate(options: {
+  policy: VerificationPolicy
+  taskId?: string
+  artifactsDir?: string
+  settle?: boolean
+}): EngineeringStandardsGateStatus {
+  const mode = normalizeEngineeringStandardsGateMode(options.policy.engineeringStandardsGate)
+  if (mode === 'off') {
+    return {
+      mode,
+      checked: false,
+      blocked: false,
+      ok: true,
+      findings: [],
+    }
+  }
+
+  const settlement = options.settle && options.artifactsDir
+    ? settleEngineeringStandards({
+        projectDir: PROJECT_DIR,
+        scaleDir: SCALE_DIR,
+        taskId: options.taskId,
+        artifactsDir: options.artifactsDir,
+      })
+    : undefined
+  const doctor = settlement?.doctor ?? doctorEngineeringStandards({
+    projectDir: PROJECT_DIR,
+    scaleDir: SCALE_DIR,
+  })
+
+  return {
+    mode,
+    checked: true,
+    blocked: mode === 'block' && !doctor.ok,
+    ok: doctor.ok,
+    findings: doctor.findings,
+    summary: doctor.scan.summary,
+    standardsImpactPath: settlement?.standardsImpactPath,
+  }
+}
+
+function normalizeEngineeringStandardsGateMode(value: unknown): VerificationEngineeringStandardsGateMode {
+  return value === 'off' || value === 'block' ? value : 'warn'
 }
 
 async function countChangedFiles(taskPayload: TaskPayload): Promise<number> {
@@ -457,7 +514,7 @@ export const phaseDefine = defineCommand({
       const renderer = new HTMLDocumentRenderer({
         title: args.title,
         brand: args.brand as string | undefined,
-        version: '0.13.0',
+        version: SCALE_ENGINE_VERSION,
         status: 'FROZEN',
       })
       const html = renderer.renderSpec({
@@ -621,7 +678,7 @@ export const phasePlan = defineCommand({
       const planRenderer = new HTMLDocumentRenderer({
         title: `Plan ${plan.id}`,
         brand: args.brand as string | undefined,
-        version: '0.13.0',
+        version: SCALE_ENGINE_VERSION,
         status: 'APPROVED',
       })
       const planHtml = planRenderer.renderPlan({
@@ -1010,6 +1067,12 @@ export const phaseVerify = defineCommand({
       requiredSkillArtifacts: updatedPayload.requiredSkillArtifacts,
       requiredSkillVerification: updatedPayload.requiredSkillVerification,
     })
+    const engineeringStandards = evaluateEngineeringStandardsGate({
+      policy: resolvedVerification.policy,
+      taskId: args['task-id'],
+      artifactsDir: workflowState.artifactsDir,
+      settle: Boolean(workflowState.artifactsDir),
+    })
 
     const metricLevel = metricLevelFromPayload(updatedPayload)
     const preArtifactCheck = metricLevel ? checkCurrentTaskArtifacts(metricLevel) : undefined
@@ -1042,7 +1105,11 @@ export const phaseVerify = defineCommand({
                        results.testPassed === true &&
                        (results.testCoverage ?? 0) >= 80 &&
                        results.securityPassed === true
-    const completionEligible = codePassed && !artifactGate.blocked && !(skillGate?.blocked ?? false) && !skillInstallationBlocked
+    const completionEligible = codePassed &&
+      !artifactGate.blocked &&
+      !(skillGate?.blocked ?? false) &&
+      !skillInstallationBlocked &&
+      !engineeringStandards.blocked
 
     let transitionResult = null
     if (completionEligible) {
@@ -1068,6 +1135,8 @@ export const phaseVerify = defineCommand({
       console.log('\n   Skill gate blocked completion - required skill evidence artifacts are incomplete')
     } else if (!args.json && skillInstallationBlocked) {
       console.log('\n   Skill installation gate blocked completion - required workflow skills are missing')
+    } else if (!args.json && engineeringStandards.blocked) {
+      console.log('\n   Engineering standards gate blocked completion - fix blocking standards findings')
     }
 
     const passed = completionEligible && (transitionResult?.success ?? false)
@@ -1107,7 +1176,10 @@ export const phaseVerify = defineCommand({
       skillGatePassed: finalSkillGate ? !finalSkillGate.blocked && !skillInstallationBlocked : !skillInstallationBlocked,
     }
     await store.update(args['task-id'], { payload: finalPayload })
-    const metricGateStatus = codePassed && (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked) ? 'blocked' : undefined
+    const metricGateStatus = codePassed &&
+      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked)
+      ? 'blocked'
+      : undefined
     const metricRecord = await recordVerificationMetric({
       taskId: args['task-id'],
       taskName: task.title,
@@ -1128,6 +1200,7 @@ export const phaseVerify = defineCommand({
       verificationArtifactPath,
       artifactCheck,
       artifactGate: finalArtifactGate,
+      engineeringStandards,
       skillGate: finalSkillGate,
       skillInstallation: {
         ...skillInstallation,
@@ -1149,6 +1222,9 @@ export const phaseVerify = defineCommand({
       }
       if (skillInstallationBlocked) {
         console.log(`   Missing required workflow skills: ${skillInstallation.missing.join(', ')}`)
+      }
+      if (engineeringStandards.blocked) {
+        console.log(`   Engineering standards blockers: ${engineeringStandards.findings.filter(finding => finding.severity === 'fail').length}`)
       }
       if (passed) console.log(`\n   Next: scale review\n`)
       else console.log(`\n   Fix issues and re-run: scale verify ${args['task-id']}\n`)
@@ -1479,7 +1555,7 @@ export const phaseReview = defineCommand({
       const reviewRenderer = new HTMLDocumentRenderer({
         title: `Review ${record.id}`,
         brand: args.brand as string | undefined,
-        version: '0.13.0',
+        version: SCALE_ENGINE_VERSION,
         status: passed ? 'PASS' : 'FAIL',
       })
       const reviewHtml = reviewRenderer.renderReview({

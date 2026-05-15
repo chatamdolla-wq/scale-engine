@@ -5,6 +5,7 @@ import type { VerificationCommandConfig } from './VerificationCommands.js'
 export type VerificationCommandName = 'build' | 'lint' | 'test' | 'coverage'
 export type VerificationArtifactGateMode = 'off' | 'warn' | 'block'
 export type VerificationArtifactGateLevel = 'M' | 'L' | 'CRITICAL'
+export type VerificationEngineeringStandardsGateMode = 'off' | 'warn' | 'block'
 
 export interface VerificationService {
   name: string
@@ -24,6 +25,7 @@ export interface VerificationPolicy {
   optionalToolsWarnOnly?: boolean
   artifactGate?: VerificationArtifactGateMode
   artifactGateLevels?: VerificationArtifactGateLevel[]
+  engineeringStandardsGate?: VerificationEngineeringStandardsGateMode
 }
 
 export interface VerificationMatrix {
@@ -64,6 +66,7 @@ export const DEFAULT_VERIFICATION_POLICY: VerificationPolicy = {
   optionalToolsWarnOnly: true,
   artifactGate: 'warn',
   artifactGateLevels: ['M', 'L', 'CRITICAL'],
+  engineeringStandardsGate: 'warn',
 }
 
 export function loadVerificationMatrix(
@@ -181,6 +184,7 @@ export function resolveVerificationPolicy(matrix: VerificationMatrix | null | un
     ...policy,
     artifactGate: normalizeArtifactGate(policy.artifactGate) ?? DEFAULT_VERIFICATION_POLICY.artifactGate,
     artifactGateLevels: normalizeArtifactGateLevels(policy.artifactGateLevels),
+    engineeringStandardsGate: normalizeEngineeringStandardsGate(policy.engineeringStandardsGate) ?? DEFAULT_VERIFICATION_POLICY.engineeringStandardsGate,
   }
 }
 
@@ -243,6 +247,11 @@ function verificationMatrixPath(projectDir: string, scaleDir: string): string {
 }
 
 function normalizeArtifactGate(value: unknown): VerificationArtifactGateMode | undefined {
+  if (value === 'off' || value === 'warn' || value === 'block') return value
+  return undefined
+}
+
+function normalizeEngineeringStandardsGate(value: unknown): VerificationEngineeringStandardsGateMode | undefined {
   if (value === 'off' || value === 'warn' || value === 'block') return value
   return undefined
 }

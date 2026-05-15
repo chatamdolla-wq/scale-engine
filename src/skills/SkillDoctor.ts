@@ -4,6 +4,177 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { WORKFLOW_AGENT_SKILL_CATALOG } from './SkillCatalog.js'
 import type { WorkflowSkillCatalogEntry } from './SkillCatalog.js'
 
+const TOOL_ORCHESTRATION_SKILL_CATALOG: WorkflowSkillCatalogEntry[] = [
+  {
+    id: 'web-access',
+    name: 'Web Access',
+    description: 'CDP browser automation for web research, logged-in pages, and dynamic browser tasks',
+    source: 'https://github.com/eze-is/web-access',
+    installCommand: 'npx skills add https://github.com/eze-is/web-access --skill web-access',
+    trust: 'ecosystem',
+    definition: {
+      id: 'web-access',
+      name: 'Web Access',
+      description: 'CDP browser automation for web research, logged-in pages, and dynamic browser tasks',
+      domain: 'execution',
+      triggers: [],
+      execution: { type: 'skill-file', config: { skillPath: '~/.agents/skills/web-access/SKILL.md' } },
+      priority: 90,
+      installed: true,
+      source: 'https://github.com/eze-is/web-access',
+    },
+  },
+  {
+    id: 'awesome-design-md',
+    name: 'Awesome Design.md',
+    description: 'DESIGN.md brand and product design system references',
+    source: 'https://github.com/VoltAgent/awesome-design-md',
+    installCommand: 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
+    trust: 'ecosystem',
+    definition: {
+      id: 'awesome-design-md',
+      name: 'Awesome Design.md',
+      description: 'DESIGN.md brand and product design system references',
+      domain: 'planning',
+      triggers: [],
+      execution: { type: 'skill-file', config: { skillPath: '~/.agents/skills/awesome-design-md/SKILL.md' } },
+      priority: 88,
+      installed: true,
+      source: 'https://github.com/VoltAgent/awesome-design-md',
+    },
+  },
+  {
+    id: 'ui-ux-pro-max',
+    name: 'UI/UX Pro Max',
+    description: 'UX guidelines and design intelligence database',
+    source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+    installCommand: 'npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max',
+    trust: 'ecosystem',
+    definition: {
+      id: 'ui-ux-pro-max',
+      name: 'UI/UX Pro Max',
+      description: 'UX guidelines and design intelligence database',
+      domain: 'planning',
+      triggers: [],
+      execution: { type: 'skill-file', config: { skillPath: '~/.agents/skills/ui-ux-pro-max/SKILL.md' } },
+      priority: 89,
+      installed: true,
+      source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+    },
+  },
+  {
+    id: 'agent-browser',
+    name: 'Agent Browser',
+    description: 'Browser automation CLI for AI agents',
+    source: 'https://github.com/vercel-labs/agent-browser',
+    installCommand: 'Install or configure Agent Browser from https://github.com/vercel-labs/agent-browser',
+    trust: 'ecosystem',
+    definition: {
+      id: 'agent-browser',
+      name: 'Agent Browser',
+      description: 'Browser automation CLI for AI agents',
+      domain: 'execution',
+      triggers: [],
+      execution: { type: 'cli-command', config: { command: 'agent-browser --version' } },
+      priority: 86,
+      installed: false,
+      source: 'https://github.com/vercel-labs/agent-browser',
+    },
+  },
+  {
+    id: 'mcp-chrome-devtools',
+    name: 'Chrome DevTools MCP',
+    description: 'Chrome DevTools MCP for browser inspection, console, and network evidence',
+    source: 'https://github.com/ChromeDevTools/chrome-devtools-mcp',
+    installCommand: 'Configure Chrome DevTools MCP for the active agent platform',
+    trust: 'ecosystem',
+    definition: {
+      id: 'mcp-chrome-devtools',
+      name: 'Chrome DevTools MCP',
+      description: 'Chrome DevTools MCP for browser inspection, console, and network evidence',
+      domain: 'verification',
+      triggers: [],
+      execution: { type: 'mcp-tool', config: { toolName: 'chrome-devtools' } },
+      priority: 88,
+      installed: false,
+      source: 'https://github.com/ChromeDevTools/chrome-devtools-mcp',
+    },
+  },
+  {
+    id: 'cua',
+    name: 'CUA',
+    description: 'Computer use agent for desktop automation and GUI testing',
+    source: 'https://github.com/trycua/cua',
+    installCommand: 'Install or configure CUA from https://github.com/trycua/cua',
+    trust: 'ecosystem',
+    definition: {
+      id: 'cua',
+      name: 'CUA',
+      description: 'Computer use agent for desktop automation and GUI testing',
+      domain: 'execution',
+      triggers: [],
+      execution: { type: 'cli-command', config: { command: 'cua --version' } },
+      priority: 90,
+      installed: false,
+      source: 'https://github.com/trycua/cua',
+    },
+  },
+  {
+    id: 'codex-cli',
+    name: 'Codex CLI',
+    description: 'External Codex CLI reviewer or worker',
+    source: 'https://github.com/openai/codex',
+    installCommand: 'Install Codex CLI and verify with: codex --version',
+    trust: 'ecosystem',
+    definition: {
+      id: 'codex-cli',
+      name: 'Codex CLI',
+      description: 'External Codex CLI reviewer or worker',
+      domain: 'verification',
+      triggers: [],
+      execution: { type: 'cli-command', config: { command: 'codex --version' } },
+      priority: 76,
+      installed: false,
+    },
+  },
+  {
+    id: 'gemini-cli',
+    name: 'Gemini CLI',
+    description: 'External Gemini CLI reviewer or worker',
+    source: 'https://github.com/google-gemini/gemini-cli',
+    installCommand: 'Install Gemini CLI and verify with: gemini --version',
+    trust: 'ecosystem',
+    definition: {
+      id: 'gemini-cli',
+      name: 'Gemini CLI',
+      description: 'External Gemini CLI reviewer or worker',
+      domain: 'verification',
+      triggers: [],
+      execution: { type: 'cli-command', config: { command: 'gemini --version' } },
+      priority: 74,
+      installed: false,
+    },
+  },
+  {
+    id: 'opencode-cli',
+    name: 'OpenCode CLI',
+    description: 'External OpenCode CLI reviewer or worker',
+    source: 'https://github.com/sst/opencode',
+    installCommand: 'Install OpenCode CLI and verify with: opencode --version',
+    trust: 'ecosystem',
+    definition: {
+      id: 'opencode-cli',
+      name: 'OpenCode CLI',
+      description: 'External OpenCode CLI reviewer or worker',
+      domain: 'verification',
+      triggers: [],
+      execution: { type: 'cli-command', config: { command: 'opencode --version' } },
+      priority: 74,
+      installed: false,
+    },
+  },
+]
+
 export interface SkillDoctorOptions {
   projectDir?: string
   homeDir?: string
@@ -45,7 +216,7 @@ export interface RequiredSkillInstallationReport {
 export function inspectWorkflowSkills(options: SkillDoctorOptions = {}): SkillDoctorReport {
   const projectDir = resolve(options.projectDir ?? process.cwd())
   const homeDir = options.homeDir ?? homedir()
-  const skills = WORKFLOW_AGENT_SKILL_CATALOG.map(entry => inspectWorkflowSkill(entry, projectDir, homeDir))
+  const skills = workflowSkillCatalog().map(entry => inspectWorkflowSkill(entry, projectDir, homeDir))
   const installed = skills.filter(skill => skill.installed).length
   const missing = skills.length - installed
   return {
@@ -117,6 +288,13 @@ function inspectWorkflowSkill(entry: WorkflowSkillCatalogEntry, projectDir: stri
     status: detectedPath ? 'installed' : 'missing',
     missingReason: detectedPath ? undefined : 'Skill file not found in declared or fallback paths.',
   }
+}
+
+function workflowSkillCatalog(): WorkflowSkillCatalogEntry[] {
+  const entries = [...WORKFLOW_AGENT_SKILL_CATALOG, ...TOOL_ORCHESTRATION_SKILL_CATALOG]
+  const byId = new Map<string, WorkflowSkillCatalogEntry>()
+  for (const entry of entries) byId.set(entry.id, entry)
+  return [...byId.values()]
 }
 
 function resolveSkillPath(path: string, projectDir: string, homeDir: string): string {

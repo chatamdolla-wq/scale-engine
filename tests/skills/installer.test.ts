@@ -18,11 +18,18 @@ describe('SkillInstaller', () => {
     installer = new SkillInstaller(registry, eventBus)
   })
 
-  it('should detect 6 uninstalled skills', async () => {
+  it('should detect uninstalled optional skills', async () => {
     const pending = await installer.checkAndPrompt()
-    expect(pending.length).toBe(6)
-    expect(pending.some(c => c.skillId === 'cua')).toBe(true)
-    expect(pending.some(c => c.skillId === 'fireworks-tech-graph')).toBe(true)
+    expect(pending).toHaveLength(11)
+    expect(pending.map(c => c.skillId)).toEqual(expect.arrayContaining([
+      'agent-browser',
+      'mcp-chrome-devtools',
+      'codex-cli',
+      'gemini-cli',
+      'opencode-cli',
+      'cua',
+      'fireworks-tech-graph',
+    ]))
   })
 
   it('should have correct install method for cua', async () => {
@@ -39,6 +46,16 @@ describe('SkillInstaller', () => {
     expect(config).toBeDefined()
     expect(config?.method).toBe('git-clone')
     expect(config?.sourceUrl).toContain('github.com')
+  })
+
+  it('should keep tool adapters as manual installs', async () => {
+    const pending = await installer.checkAndPrompt()
+    for (const skillId of ['agent-browser', 'mcp-chrome-devtools', 'codex-cli', 'gemini-cli', 'opencode-cli']) {
+      const config = pending.find(c => c.skillId === skillId)
+      expect(config).toBeDefined()
+      expect(config?.method).toBe('manual')
+      expect(config?.sourceUrl).toContain('github.com')
+    }
   })
 
   it('should emit install-prompt event', async () => {

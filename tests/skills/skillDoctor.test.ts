@@ -60,4 +60,30 @@ describe('SkillDoctor', () => {
       rmSync(projectDir, { recursive: true, force: true })
     }
   })
+
+  it('understands tool orchestration skills required by routing policy', () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'scale-skill-home-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'scale-skill-project-'))
+    try {
+      for (const skillId of ['web-access', 'ui-ux-pro-max']) {
+        const skillDir = join(homeDir, '.agents', 'skills', skillId)
+        mkdirSync(skillDir, { recursive: true })
+        writeFileSync(join(skillDir, 'SKILL.md'), `---\nname: ${skillId}\n---\n`, 'utf-8')
+      }
+
+      const report = inspectRequiredWorkflowSkills(['web-access', 'ui-ux-pro-max', 'cua'], {
+        projectDir,
+        homeDir,
+      })
+
+      expect(report.unknown).toEqual([])
+      expect(report.installed).toEqual(['web-access', 'ui-ux-pro-max'])
+      expect(report.missing).toEqual(['cua'])
+      expect(report.skills.find(skill => skill.id === 'web-access')?.source).toBe('https://github.com/eze-is/web-access')
+      expect(report.skills.find(skill => skill.id === 'ui-ux-pro-max')?.source).toBe('https://github.com/nextlevelbuilder/ui-ux-pro-max-skill')
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+      rmSync(projectDir, { recursive: true, force: true })
+    }
+  })
 })

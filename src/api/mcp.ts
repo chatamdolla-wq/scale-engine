@@ -9,6 +9,7 @@ import { registerAllFSMs, INITIAL_STATES } from '../artifact/fsmDefinitions.js'
 import { KnowledgeBase } from '../knowledge/KnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { wireEffects } from '../orchestration/EffectsWiring.js'
+import { SCALE_ENGINE_VERSION } from '../version.js'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -230,7 +231,7 @@ export class ScaleMCPServer {
             result: {
               protocolVersion: '2024-11-05',
               capabilities: { tools: {} },
-              serverInfo: { name: 'scale-engine', version: '0.1.0' },
+              serverInfo: { name: 'scale-engine', version: SCALE_ENGINE_VERSION },
             },
           }
 

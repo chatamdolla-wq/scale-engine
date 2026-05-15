@@ -1,10 +1,12 @@
 // SCALE Engine — Installed Skills Integration v0.10.0
-import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { execa } from 'execa'
 
 export const SKILLS_DIR = join(homedir(), '.claude', 'skills')
 export const AGENTS_SKILLS_DIR = join(homedir(), '.agents', 'skills')
+export const DEFAULT_SKILL_ROOTS = [AGENTS_SKILLS_DIR, SKILLS_DIR]
 
 export interface SkillInvocationResult {
   success: boolean
@@ -12,6 +14,37 @@ export interface SkillInvocationResult {
   error?: string
   durationMs: number
   skillId: string
+}
+
+export function resolveInstalledSkillPath(skillId: string, segments: string[] = [], roots: string[] = DEFAULT_SKILL_ROOTS): string {
+  const candidates = roots.map(root => join(root, skillId, ...segments))
+  return candidates.find(candidate => existsSync(candidate)) ?? candidates[0]
+}
+
+export async function runInstalledSkillCommand(cmd: string, timeout: number, skillId: string): Promise<SkillInvocationResult> {
+  const start = Date.now()
+  try {
+    const result = await execa(cmd, {
+      shell: true,
+      timeout,
+      reject: false,
+      all: false,
+    })
+    return {
+      success: (result.exitCode ?? 1) === 0,
+      output: result.stdout ?? '',
+      error: result.stderr ?? '',
+      durationMs: Date.now() - start,
+      skillId,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - start,
+      skillId,
+    }
+  }
 }
 
 export class InstalledSkillsInvoker {
@@ -31,15 +64,15 @@ export class InstalledSkillsInvoker {
     return this.runCommand('curl -s "http://localhost:3456/close?target=' + targetId + '"', 5000, 'web-access')
   }
   async playwrightOpen(url: string): Promise<SkillInvocationResult> {
-    const pw = join(AGENTS_SKILLS_DIR, 'playwright', 'scripts', 'playwright_cli.sh')
+    const pw = resolveInstalledSkillPath('playwright', ['scripts', 'playwright_cli.sh'])
     return this.runCommand('"'+pw+'" open "'+url+'"', 30000, 'playwright')
   }
   async playwrightSnapshot(): Promise<SkillInvocationResult> {
-    const pw = join(AGENTS_SKILLS_DIR, 'playwright', 'scripts', 'playwright_cli.sh')
+    const pw = resolveInstalledSkillPath('playwright', ['scripts', 'playwright_cli.sh'])
     return this.runCommand('"'+pw+'" snapshot', 10000, 'playwright')
   }
   async playwrightClick(ref: string): Promise<SkillInvocationResult> {
-    const pw = join(AGENTS_SKILLS_DIR, 'playwright', 'scripts', 'playwright_cli.sh')
+    const pw = resolveInstalledSkillPath('playwright', ['scripts', 'playwright_cli.sh'])
     return this.runCommand('"'+pw+'" click '+ref, 10000, 'playwright')
   }
   async cuaMouseMove(x: number, y: number): Promise<SkillInvocationResult> {
@@ -53,21 +86,21 @@ export class InstalledSkillsInvoker {
   }
   // ========== UI/UX Design Skills ==========
   async uiUxDesignSystem(query: string, projectName?: string): Promise<SkillInvocationResult> {
-    const script = join(SKILLS_DIR, 'ui-ux-pro-max', 'scripts', 'search.py')
+    const script = resolveInstalledSkillPath('ui-ux-pro-max', ['scripts', 'search.py'])
     const cmd = projectName
       ? `python3 "${script}" "${query}" --design-system -p "${projectName}"`
       : `python3 "${script}" "${query}" --design-system`
     return this.runCommand(cmd, 30000, 'ui-ux-pro-max')
   }
   async uiUxDomainSearch(query: string, domain: string, maxResults?: number): Promise<SkillInvocationResult> {
-    const script = join(SKILLS_DIR, 'ui-ux-pro-max', 'scripts', 'search.py')
+    const script = resolveInstalledSkillPath('ui-ux-pro-max', ['scripts', 'search.py'])
     const cmd = maxResults
       ? `python3 "${script}" "${query}" --domain ${domain} -n ${maxResults}`
       : `python3 "${script}" "${query}" --domain ${domain}`
     return this.runCommand(cmd, 15000, 'ui-ux-pro-max')
   }
   async uiUxStackGuidelines(query: string, stack: string): Promise<SkillInvocationResult> {
-    const script = join(SKILLS_DIR, 'ui-ux-pro-max', 'scripts', 'search.py')
+    const script = resolveInstalledSkillPath('ui-ux-pro-max', ['scripts', 'search.py'])
     return this.runCommand(`python3 "${script}" "${query}" --stack ${stack}`, 15000, 'ui-ux-pro-max')
   }
   async awesomeDesignInstall(brand: string): Promise<SkillInvocationResult> {
@@ -79,7 +112,7 @@ export class InstalledSkillsInvoker {
     return 'bun'
   }
   private baoyuScript(skillName: string, scriptName: string): string {
-    return join(SKILLS_DIR, skillName, 'scripts', scriptName)
+    return resolveInstalledSkillPath(skillName, ['scripts', scriptName])
   }
   async baoyuImageGen(prompt: string, options?: { model?: string; aspect?: string; output?: string }): Promise<SkillInvocationResult> {
     const script = this.baoyuScript('baoyu-image-gen', 'main.ts')
@@ -183,15 +216,7 @@ export class InstalledSkillsInvoker {
     return this.runCommand(`deepl translate --target-lang ${targetLang} "${text}"`, 30000, 'deepl')
   }
   private runCommand(cmd: string, timeout: number, skillId: string): Promise<SkillInvocationResult> {
-    const start = Date.now()
-    return new Promise((resolve) => {
-      const proc = spawn('sh', ['-c', cmd], { timeout })
-      let stdout = '', stderr = ''
-      proc.stdout.on('data', d => stdout += d)
-      proc.stderr.on('data', d => stderr += d)
-      proc.on('close', code => resolve({ success: code === 0, output: stdout, error: stderr, durationMs: Date.now() - start, skillId }))
-      proc.on('error', e => resolve({ success: false, error: e.message, durationMs: Date.now() - start, skillId }))
-    })
+    return runInstalledSkillCommand(cmd, timeout, skillId)
   }
 }
 export const skillsInvoker = new InstalledSkillsInvoker()

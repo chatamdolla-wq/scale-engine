@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.15.0",
-  "description": "SCALE Engine v0.15.0 - MOE workspace topology, governance packs, lifecycle finish policy, and service-aware engineering workflow gates",
+  "version": "0.15.1",
+  "description": "SCALE Engine v0.15.1 - resource governance, engineering standards, tool orchestration, and service-aware workflow gates",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"

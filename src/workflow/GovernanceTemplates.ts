@@ -7,6 +7,8 @@ import {
   type GovernanceGeneratedFile,
   type GovernancePackId,
 } from './GovernanceTemplatePacks.js'
+import { engineeringStandardsPolicyTemplate, frameworksCatalogTemplate } from './EngineeringStandards.js'
+import { resourceManifestTemplate, resourcePolicyTemplate } from './ResourceGovernance.js'
 import type { VerificationService } from './VerificationProfile.js'
 
 export type GovernanceMode = 'minimal' | 'standard' | 'critical'
@@ -19,6 +21,9 @@ export type GovernanceArtifactTemplateName =
   | 'visual-review.md'
   | 'api-contract.md'
   | 'docs-impact.md'
+  | 'resource-impact.md'
+  | 'standards-impact.md'
+  | 'architecture-review.md'
   | 'security-review.md'
   | 'db-change-plan.md'
   | 'e2e-plan.md'
@@ -65,6 +70,9 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/docs-impact.md', governanceTemplateContent('docs-impact.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-impact.md', governanceTemplateContent('resource-impact.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/standards-impact.md', governanceTemplateContent('standards-impact.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/architecture-review.md', governanceTemplateContent('architecture-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'))
@@ -81,6 +89,10 @@ export function writeGovernanceTemplates(
     artifactGate: packMode.artifactGate,
   }))
   writeTracked(result, lockFiles, projectDir, '.scale/skills.json', skillRoutingPolicyTemplate(mode))
+  writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate())
 
   for (const file of pack.generatedFiles) {
     writePackGeneratedFile(result, lockFiles, projectDir, pack.id, pack.version, file)
@@ -108,6 +120,9 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
     case 'visual-review.md': return visualReviewTemplate()
     case 'api-contract.md': return apiContractTemplate()
     case 'docs-impact.md': return docsImpactTemplate()
+    case 'resource-impact.md': return resourceImpactTemplate()
+    case 'standards-impact.md': return standardsImpactTemplate()
+    case 'architecture-review.md': return architectureReviewTemplate()
     case 'security-review.md': return securityReviewTemplate()
     case 'db-change-plan.md': return dbChangePlanTemplate()
     case 'e2e-plan.md': return e2ePlanTemplate()
@@ -211,11 +226,21 @@ scale task-artifacts check --dir docs/worklog/tasks/<task-dir> --level L
 
 Keep \`.scale/verification.json\` as the source of truth for profiles and service commands.
 Keep \`.scale/skills.json\` as the source of truth for active skill routing policy.
+Keep \`.scale/resource-policy.json\` and \`.scale/assets.json\` as the source of truth for generated reports, temporary files, module documentation, media, reusable scripts, and Git retention policy.
+Keep \`.scale/engineering-standards.json\` and \`.scale/frameworks.json\` as the source of truth for logging, security, ORM, architecture, framework, UI/UX, testing, and coding standard checks.
 Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITICAL work to \`"block"\` once templates and local gates are stable.
 
 ## Active Skill Routing
 
 SCALE plans required skills from task description, service selection, and changed files. UI/API work requires a Mini-PRD plus domain evidence such as \`ui-spec.md\`, \`visual-review.md\`, or \`api-contract.md\`. Security and database work require explicit review or rollback artifacts.
+
+Tool orchestration is part of the workflow contract:
+
+- UI/UX work requires \`frontend-design\` and \`ui-ux-pro-max\`, and should consider \`awesome-design-md\`, browser screenshots, responsive checks, and visual review evidence.
+- Web research, logged-in pages, and dynamic browser work require \`web-access\` evidence, source citations, and browser/network/console evidence when available.
+- Browser E2E work should combine \`webapp-testing\`, Playwright, Agent Browser, web-access, or Chrome DevTools MCP according to the target and record screenshots plus console/network findings.
+- Desktop or client-side GUI automation uses CUA/computer-use only with explicit operator-safety notes, desktop screenshots, and a side-effect boundary.
+- External agent or CLI orchestration such as Codex, Gemini CLI, OpenCode, WPS, or WeChat automation must record version checks, exact commands, output summaries, and dry-run or safe-mode evidence.
 
 When a task records \`servicesTouched\`, \`scale verify <task-id>\` uses those services automatically. You can still override selection with \`--service all\`, \`--service api\`, or \`--service api,gateway\`.
 
@@ -238,6 +263,49 @@ scale workspace cleanup --dir <temporary-worktree> --apply --confirm <branch-or-
 \`\`\`
 
 Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates. Cleanup defaults to dry-run. Applying cleanup requires the reported confirmation token, normally the temporary branch name.
+
+## Resource Governance
+
+Use asset scanning before committing generated reports, media, temporary scripts, or long-lived documentation changes:
+
+\`\`\`bash
+scale assets scan --json
+scale assets doctor --json
+scale assets settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-dir>
+\`\`\`
+
+Default policy:
+
+- maintained module docs, standards, contracts, ADRs, reusable scripts: commit and keep current.
+- task worklog artifacts: review before commit; promote final truth to maintained docs when useful.
+- screenshots, videos, E2E reports, coverage, temporary scripts, and runtime logs: keep out of Git unless explicitly promoted.
+- large media: use Git LFS or external artifact storage instead of normal Git history.
+
+## Engineering Standards
+
+Use standards scanning before reviewing or shipping M/L/CRITICAL work:
+
+\`\`\`bash
+scale standards scan --json
+scale standards doctor --json
+scale standards settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-dir>
+scale preflight --preflight-profile full --json
+scale verify <task-id> --json
+\`\`\`
+
+Default policy:
+
+- ad-hoc console/output logging is allowed only for CLI/script paths.
+- sensitive fields such as token, password, secret, authorization, cookie, and credentials must not be logged.
+- hardcoded secret-like assignments are blocked before review or release.
+- SQL must use parameterized queries, ORM bind parameters, or safe query builders.
+- unsafe HTML sinks, dynamic code execution, empty catch blocks, and type suppressions require remediation before release.
+- framework and architecture rules live in \`.scale/frameworks.json\` and module standards docs.
+- \`.scale/frameworks.json > bannedImports\` blocks direct use of deprecated ORMs, unsafe SDKs, or off-system UI components.
+- \`.scale/frameworks.json > lastReviewedAt/reviewIntervalDays\` warns when module framework decisions need review.
+- \`.scale/engineering-standards.json > blockingRules\` promotes selected warning rule IDs to release-blocking findings.
+- \`.scale/engineering-standards.json > allowedFindingPatterns\` allows narrow rule/path/evidence exceptions without hiding unrelated findings in the same file.
+- \`.scale/verification.json > policy.engineeringStandardsGate\` controls whether preflight and task verification treat standards as \`off\`, \`warn\`, or \`block\`.
 
 ## Automation Templates
 
@@ -345,6 +413,16 @@ function skillPlanTemplate(): string {
 
 - TBD
 
+## Tool Orchestration
+
+| Capability | Primary Tool Or Skill | Fallback | Required Evidence |
+| --- | --- | --- | --- |
+| UI/UX design | frontend-design, ui-ux-pro-max | awesome-design-md | design-system, ui-spec.md, visual-review.md |
+| Web research or logged-in pages | web-access | agent-browser, Chrome DevTools MCP | source citations, browser evidence |
+| Browser E2E | webapp-testing, Playwright | agent-browser, web-access | screenshot, console, network evidence |
+| Desktop GUI automation | CUA/computer-use | manual verification | desktop screenshot, operator-safety notes |
+| External agent CLI | codex/gemini/opencode CLI | manual review | version check, exact command output |
+
 ## Skipped Skills
 
 | Skill | Reason | Fallback Evidence |
@@ -360,11 +438,27 @@ function skillEvidenceTemplate(): string {
 
 - TBD
 
+## Tool Selection Rationale
+
+TBD
+
 ## Used Skills
 
 | Skill | Phase | Trigger | Evidence | Status |
 | --- | --- | --- | --- | --- |
 | skill-id | plan/build/verify/review | why it was selected | command, screenshot, report, or artifact path | executed/skipped/fallback |
+
+## Browser Or Web Evidence
+
+| Tool | Target | Evidence | Result |
+| --- | --- | --- | --- |
+| web-access/agent-browser/Chrome DevTools MCP | URL or local target | screenshot, console log, network finding, source URL | passed/failed/skipped |
+
+## Desktop Or External CLI Evidence
+
+| Tool | Scope | Safety Boundary | Evidence | Result |
+| --- | --- | --- | --- | --- |
+| cua/codex/gemini/opencode/wps/wechat | command or app target | read-only/dry-run/test account/manual approval | output summary, screenshot, or report path | passed/failed/skipped |
 
 ## Skipped Skills
 
@@ -482,6 +576,94 @@ TBD
 ## Links Checked
 
 - TBD
+`
+}
+
+function resourceImpactTemplate(): string {
+  return `# Resource Impact
+
+## Resources Created
+
+| Path | Type | Git Policy | Retention |
+| --- | --- | --- | --- |
+| TBD | canonical-doc/task-artifact/evidence-report/temporary/reusable-script/generated-media/contract/decision-record | commit/ignore/lfs/external/review | TBD |
+
+## Resources Updated
+
+- TBD
+
+## Resources Promoted To Maintained Docs
+
+- TBD
+
+## Resources To Delete Or Archive Before Finish
+
+- TBD
+
+## Source Of Truth Updates
+
+- [ ] .scale/resource-policy.json
+- [ ] .scale/assets.json
+- [ ] docs/modules/<module>/README.md
+`
+}
+
+function standardsImpactTemplate(): string {
+  return `# Standards Impact
+
+## Standards Checked
+
+- [ ] Logging and redaction
+- [ ] Architecture boundaries
+- [ ] ORM/database access
+- [ ] Framework/component conventions
+- [ ] UI/UX acceptance where user-facing
+- [ ] Test and verification rigor
+- [ ] Security-sensitive inputs and outputs
+
+## Findings
+
+| Severity | Rule | Path | Decision |
+| --- | --- | --- | --- |
+| TBD | TBD | TBD | fix/accept/escalate |
+
+## Policy Updates
+
+- [ ] .scale/engineering-standards.json
+- [ ] .scale/frameworks.json
+- [ ] docs/standards/
+
+## Settlement
+
+- Standards scan:
+- Standards doctor:
+`
+}
+
+function architectureReviewTemplate(): string {
+  return `# Architecture Review
+
+## Scope
+
+- Modules touched:
+- Public contracts touched:
+- Data flow touched:
+
+## Boundary Checks
+
+- [ ] API/controller layer does not bypass service/usecase layer
+- [ ] Domain layer is not coupled to infrastructure details
+- [ ] Repository/ORM usage follows project conventions
+- [ ] Shared framework components are reused instead of duplicated
+- [ ] New abstractions remove real complexity
+
+## Risks
+
+- TBD
+
+## Decision
+
+- Approved/changes required:
 `
 }
 
@@ -706,6 +888,7 @@ function verificationMatrixTemplate(
       optionalToolsWarnOnly: true,
       artifactGate: options.artifactGate ?? (mode === 'critical' ? 'block' : 'warn'),
       artifactGateLevels: ['M', 'L', 'CRITICAL'],
+      engineeringStandardsGate: mode === 'minimal' ? 'warn' : 'block',
     },
   }, null, 2) + '\n'
 }

@@ -112,6 +112,16 @@ describe('Doctor', () => {
       optional: true,
       category: 'governance',
     })
+    expect(report.checks.find((c) => c.name === 'Resource policy')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
+    expect(report.checks.find((c) => c.name === 'Engineering standards')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
     expect(report.checks.find((c) => c.name === 'Governance drift')).toMatchObject({
       status: 'ok',
       optional: true,

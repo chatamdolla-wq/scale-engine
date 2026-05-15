@@ -6,6 +6,8 @@ docs/promote-article-*.html
 .scale/knowledge.db*
 .scale/events/
 .scale/evidence/
+.scale/reports/
+.scale/resource-reports/
 .scale/reviews/
 .scale/specs/
 .scale/specs/*.html
@@ -14,6 +16,7 @@ docs/promote-article-*.html
 .scale/reviews/*.html
 .scale/state/
 .scale/checkpoints/
+.scale/tmp/
 .scale/vectors/
 !.scale/artifacts/
 !.scale/rules/enforced/
@@ -25,3 +28,7 @@ scale-engine-compare
 .claude/
 .baoyu-skills/
 tmp/
+temp/
+test-results/
+playwright-report/
+coverage/

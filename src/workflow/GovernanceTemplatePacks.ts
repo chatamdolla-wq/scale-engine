@@ -6,6 +6,7 @@ export type GovernancePackId =
   | 'standard'
   | 'project-scaffold'
   | 'moe-workspace'
+  | 'resource-governance'
   | 'go-service-matrix'
   | 'node-library'
   | 'frontend-app'
@@ -81,6 +82,17 @@ const PACKS: GovernanceTemplatePack[] = [
     generatedFiles: [
       { path: '.scale/workspace.json', kind: 'config', owned: true, content: workspaceTopologyTemplate({ topology: 'moe' }) },
       { path: 'docs/workflow/moe-workspace.md', kind: 'doc', owned: true, content: moeWorkspaceGuide() },
+    ],
+  },
+  {
+    id: 'resource-governance',
+    version: 1,
+    description: 'Project resource lifecycle governance for docs, media, reports, scripts, and temporary outputs.',
+    modeDefaults,
+    generatedFiles: [
+      { path: 'docs/workflow/resource-governance.md', kind: 'doc', owned: true, content: resourceGovernanceGuide() },
+      { path: 'docs/modules/README.md', kind: 'doc', owned: true, content: moduleDocsIndex() },
+      { path: 'docs/workflow/templates/.gitignore.scale-assets.example', kind: 'template', owned: true, content: resourceGitignoreExample() },
     ],
   },
   {
@@ -161,5 +173,78 @@ codex/moe-workspace-governance-0515
 \`\`\`
 
 Protected branches such as \`main\` and \`master\` require explicit human authorization before direct pushes.
+`
+}
+
+function resourceGovernanceGuide(): string {
+  return `# Resource Governance
+
+This project uses SCALE resource governance to keep generated outputs, maintained documentation, task evidence, media, and temporary files from collapsing into one unmanaged document pile.
+
+## Source Of Truth
+
+- \`.scale/resource-policy.json\`: asset classes, retention rules, owners, module mapping, and size limits.
+- \`.scale/assets.json\`: explicit long-lived resource catalog and source-of-truth declarations.
+- \`docs/modules/\`: maintained module-level product, architecture, API, and operations documentation.
+- \`docs/decisions/\`: ADRs and superseded architecture decisions.
+
+## Default Git Policy
+
+| Resource | Default policy |
+| --- | --- |
+| Module docs, standards, ADRs, contracts, reusable scripts | Commit |
+| Task worklog artifacts | Review before commit |
+| E2E reports, coverage, screenshots, videos, logs | Ignore or external artifact storage |
+| Temporary scripts and scratch files | Ignore and delete after settlement |
+| Large media | Git LFS or external storage |
+
+## Required Finish Behavior
+
+Before reporting a M/L/CRITICAL task complete:
+
+1. Run \`scale assets scan --json\`.
+2. Run \`scale assets doctor --json\`.
+3. Run \`scale assets settle --task-id <task-id> --artifact-dir <task-dir>\`.
+4. Promote final product or architecture truth into maintained docs.
+5. Keep raw reports, screenshots, videos, and logs out of Git unless they are deliberately promoted.
+6. Delete or archive expired temporary files.
+`
+}
+
+function moduleDocsIndex(): string {
+  return `# Module Documentation
+
+Use one directory per maintained module:
+
+\`\`\`text
+docs/modules/<module>/
+├── README.md
+├── product.md
+├── architecture.md
+├── api.md
+└── operations.md
+\`\`\`
+
+Keep task-specific drafts in \`docs/worklog/tasks/\`. Promote only final, durable decisions and user-facing behavior into module documentation.
+`
+}
+
+function resourceGitignoreExample(): string {
+  return `# SCALE resource governance runtime outputs
+.scale/tmp/
+.scale/reports/
+.scale/resource-reports/
+tmp/
+temp/
+test-results/
+playwright-report/
+coverage/
+
+# Raw generated media should be promoted deliberately or stored externally
+*.webm
+*.mp4
+*.mov
+*.wav
+*.mp3
 `
 }

@@ -27,13 +27,15 @@ export interface PhaseSkillScanResult {
 
 const KNOWN_SKILL_SOURCES = {
   browserAutomation: [
-    { id: 'web-access', source: 'https://github.com/anthropics/claude-code/tree/main/skills/web-access', quality: 95, description: 'CDP browser automation' },
+    { id: 'web-access', source: 'https://github.com/eze-is/web-access', quality: 95, description: 'CDP browser automation for logged-in pages' },
+    { id: 'agent-browser', source: 'https://github.com/vercel-labs/agent-browser', quality: 88, description: 'Browser automation CLI for AI agents' },
+    { id: 'mcp-chrome-devtools', source: 'https://github.com/ChromeDevTools/chrome-devtools-mcp', quality: 86, description: 'Chrome DevTools MCP for console and network inspection' },
     { id: 'playwright', source: 'https://github.com/microsoft/playwright', quality: 92, description: 'CLI browser automation' },
     { id: 'cua', source: 'https://github.com/trycua/cua', quality: 90, description: 'Computer use agent' },
   ],
   uiDesign: [
-    { id: 'awesome-design-md', source: 'https://github.com/anthropics/anthropic-cookbook/tree/main/skills/awesome-design-md', quality: 88, description: 'Brand design specs' },
-    { id: 'ui-ux-pro-max', source: 'https://github.com/anthropics/claude-code/tree/main/skills/ui-ux-pro-max', quality: 85, description: 'UX guidelines database' },
+    { id: 'awesome-design-md', source: 'https://github.com/VoltAgent/awesome-design-md', quality: 88, description: 'DESIGN.md brand and product design system references' },
+    { id: 'ui-ux-pro-max', source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill', quality: 85, description: 'UX guidelines database' },
   ],
   diagrams: [
     { id: 'fireworks-tech-graph', source: 'https://github.com/yizhiyanhua-ai/fireworks-tech-graph', quality: 82, description: 'Tech flow diagrams' },

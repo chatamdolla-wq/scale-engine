@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "defaultProfile": "default",
+  "profiles": {
+    "default": {
+      "commands": {
+        "build": "npm run build",
+        "lint": "npm run lint",
+        "test": "npx vitest run --reporter=dot --testTimeout=30000"
+      },
+      "services": []
+    }
+  },
+  "services": [],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tmp",
+    "temp",
+    "coverage",
+    "test-results"
+  ],
+  "policy": {
+    "mode": "standard",
+    "optionalToolsWarnOnly": true,
+    "artifactGate": "warn",
+    "artifactGateLevels": [
+      "M",
+      "L",
+      "CRITICAL"
+    ],
+    "engineeringStandardsGate": "block"
+  }
+}

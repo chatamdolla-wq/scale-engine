@@ -30,9 +30,17 @@ import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
 import { ReviewStore } from '../workflow/ReviewStore.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
-import { resolveVerificationTargets } from '../workflow/VerificationProfile.js'
+import { resolveVerificationTargets, type VerificationEngineeringStandardsGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
+import {
+  doctorEngineeringStandards,
+  scanEngineeringStandards,
+  settleEngineeringStandards,
+  type EngineeringStandardFinding,
+  type EngineeringStandardsSummary,
+} from '../workflow/EngineeringStandards.js'
+import { doctorResourceAssets, scanResourceAssets, settleResourceAssets } from '../workflow/ResourceGovernance.js'
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
 import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
@@ -51,6 +59,7 @@ import {
 import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { SCALE_ENGINE_VERSION } from '../version.js'
 
 // ============================================================================
 // Engine bootstrap (单例 + lazy init)
@@ -85,6 +94,61 @@ function normalizePreflightProfile(value: unknown): PreflightProfile {
 function gatesForPreflightProfile(profile: PreflightProfile): GateStage[] {
   if (profile === 'quick') return ['G3', 'G0', 'G4', 'G5']
   return ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
+}
+
+interface EngineeringStandardsGateStatus {
+  mode: VerificationEngineeringStandardsGateMode
+  checked: boolean
+  blocked: boolean
+  ok: boolean
+  findings: EngineeringStandardFinding[]
+  summary?: EngineeringStandardsSummary
+  standardsImpactPath?: string
+}
+
+function evaluateEngineeringStandardsGate(options: {
+  policy: VerificationPolicy
+  taskId?: string
+  artifactsDir?: string
+  settle?: boolean
+}): EngineeringStandardsGateStatus {
+  const mode = normalizeEngineeringStandardsGateMode(options.policy.engineeringStandardsGate)
+  if (mode === 'off') {
+    return {
+      mode,
+      checked: false,
+      blocked: false,
+      ok: true,
+      findings: [],
+    }
+  }
+
+  const settlement = options.settle && options.artifactsDir
+    ? settleEngineeringStandards({
+        projectDir: PROJECT_DIR,
+        scaleDir: SCALE_DIR,
+        taskId: options.taskId,
+        artifactsDir: options.artifactsDir,
+      })
+    : undefined
+  const doctor = settlement?.doctor ?? doctorEngineeringStandards({
+    projectDir: PROJECT_DIR,
+    scaleDir: SCALE_DIR,
+  })
+
+  return {
+    mode,
+    checked: true,
+    blocked: mode === 'block' && !doctor.ok,
+    ok: doctor.ok,
+    findings: doctor.findings,
+    summary: doctor.scan.summary,
+    standardsImpactPath: settlement?.standardsImpactPath,
+  }
+}
+
+function normalizeEngineeringStandardsGateMode(value: unknown): VerificationEngineeringStandardsGateMode {
+  return value === 'off' || value === 'block' ? value : 'warn'
 }
 
 let _engine: ReturnType<typeof createEngine> | null = null
@@ -1087,6 +1151,9 @@ const preflight = defineCommand({
       profile: args.profile,
       service: args.service,
     })
+    const engineeringStandards = evaluateEngineeringStandardsGate({
+      policy: resolved.policy,
+    })
 
     const targetResults: Array<{
       service?: string
@@ -1101,6 +1168,12 @@ const preflight = defineCommand({
       console.log(`  Profile: ${resolved.profileName}`)
       console.log(`  Preflight profile: ${preflightProfile}`)
       console.log(`  Gates: ${gateStages.join(', ')}`)
+      if (engineeringStandards.checked) {
+        const status = engineeringStandards.blocked ? 'BLOCKED' : engineeringStandards.ok ? 'OK' : 'WARN'
+        console.log(`  Engineering standards: ${status} (${engineeringStandards.mode})`)
+      } else {
+        console.log('  Engineering standards: skipped')
+      }
     }
 
     for (const target of resolved.targets) {
@@ -1134,7 +1207,9 @@ const preflight = defineCommand({
       }
     }
 
-    const passed = targetResults.length > 0 && targetResults.every(target => target.passed)
+    const passed = targetResults.length > 0 &&
+      targetResults.every(target => target.passed) &&
+      !engineeringStandards.blocked
     const result = {
       phase: 'PREFLIGHT',
       profile: resolved.profileName,
@@ -1142,6 +1217,7 @@ const preflight = defineCommand({
       gates: gateStages,
       services: targetResults.map(target => target.service).filter(Boolean),
       policy: resolved.policy,
+      engineeringStandards,
       targets: targetResults,
       passed,
     }
@@ -1280,7 +1356,7 @@ const init = defineCommand({
     'governance-pack': {
       type: 'string',
       default: 'standard',
-      description: 'Governance template pack (standard/project-scaffold/moe-workspace/go-service-matrix/node-library/frontend-app)',
+      description: 'Governance template pack (standard/project-scaffold/moe-workspace/resource-governance/go-service-matrix/node-library/frontend-app)',
     },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
     interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },
@@ -1492,6 +1568,185 @@ const governanceDiff = defineCommand({
 const governance = defineCommand({
   meta: { name: 'governance', description: 'Governance template pack tools' },
   subCommands: { diff: governanceDiff },
+})
+
+// ============================================================================
+// assets command - Resource lifecycle governance
+// ============================================================================
+
+const assetsScan = defineCommand({
+  meta: { name: 'scan', description: 'Classify project docs, reports, media, scripts, and temporary outputs' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = scanResourceAssets({ projectDir: args.dir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Asset Scan')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Total resources: ${report.summary.total}`)
+    console.log(`  Tracked forbidden: ${report.summary.trackedForbidden}`)
+    console.log(`  Large tracked: ${report.summary.largeTracked}`)
+    console.log(`  Expired: ${report.summary.expired}`)
+    console.log('\nBy type:')
+    for (const [type, count] of Object.entries(report.summary.byType)) {
+      if (count > 0) console.log(`  ${type}: ${count}`)
+    }
+  },
+})
+
+const assetsDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Find resource lifecycle and Git policy problems' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = doctorResourceAssets({ projectDir: args.dir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log(`SCALE Asset Doctor: ${report.ok ? 'OK' : 'FAILED'}`)
+    if (report.findings.length === 0) {
+      console.log('  No resource lifecycle findings.')
+      return
+    }
+    for (const finding of report.findings) {
+      const path = finding.path ? ` ${finding.path}` : ''
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}${path}: ${finding.message}`)
+      if (finding.fix) console.log(`    fix: ${finding.fix}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const assetsSettle = defineCommand({
+  meta: { name: 'settle', description: 'Record resource lifecycle settlement evidence for a task' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id for the settlement record' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory where resource-impact.md should be updated' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = settleResourceAssets({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactsDir: args['artifact-dir'],
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      console.log(`SCALE Asset Settlement: ${report.ok ? 'OK' : 'FAILED'}`)
+      if (report.resourceImpactPath) console.log(`  Resource impact: ${report.resourceImpactPath}`)
+      if (report.doctor.findings.length > 0) {
+        for (const finding of report.doctor.findings) {
+          const path = finding.path ? ` ${finding.path}` : ''
+          console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}${path}: ${finding.message}`)
+        }
+      }
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const assets = defineCommand({
+  meta: { name: 'assets', description: 'Resource lifecycle governance for generated and maintained project assets' },
+  subCommands: { scan: assetsScan, doctor: assetsDoctor, settle: assetsSettle },
+})
+
+// ============================================================================
+// standards command - Engineering standards governance
+// ============================================================================
+
+const standardsScan = defineCommand({
+  meta: { name: 'scan', description: 'Scan source files for engineering standard violations' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = scanEngineeringStandards({ projectDir: args.dir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Standards Scan')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Files scanned: ${report.summary.filesScanned}`)
+    console.log(`  Findings: ${report.summary.totalFindings}`)
+    console.log(`  Blocking findings: ${report.summary.blockingFindings}`)
+    for (const finding of report.findings.slice(0, 20)) {
+      const line = finding.line ? `:${finding.line}` : ''
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.ruleId} ${finding.path}${line}: ${finding.message}`)
+    }
+    if (report.findings.length > 20) console.log(`  ... ${report.findings.length - 20} more finding(s)`)
+  },
+})
+
+const standardsDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Find blocking engineering standards problems' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = doctorEngineeringStandards({ projectDir: args.dir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE Standards Doctor: ${report.ok ? 'OK' : 'FAILED'}`)
+    if (report.findings.length === 0) {
+      console.log('  No engineering standards findings.')
+      return
+    }
+    for (const finding of report.findings) {
+      const line = finding.line ? `:${finding.line}` : ''
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.ruleId} ${finding.path}${line}: ${finding.message}`)
+      if (finding.fix) console.log(`    fix: ${finding.fix}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const standardsSettle = defineCommand({
+  meta: { name: 'settle', description: 'Record engineering standards settlement evidence for a task' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id for the settlement record' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory where standards-impact.md should be updated' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = settleEngineeringStandards({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactsDir: args['artifact-dir'],
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      console.log(`SCALE Standards Settlement: ${report.ok ? 'OK' : 'FAILED'}`)
+      if (report.standardsImpactPath) console.log(`  Standards impact: ${report.standardsImpactPath}`)
+      for (const finding of report.doctor.findings) {
+        const line = finding.line ? `:${finding.line}` : ''
+        console.log(`  [${finding.severity.toUpperCase()}] ${finding.ruleId} ${finding.path}${line}: ${finding.message}`)
+      }
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const standards = defineCommand({
+  meta: { name: 'standards', description: 'Engineering standards governance for logs, security, architecture, database, and code quality' },
+  subCommands: { scan: standardsScan, doctor: standardsDoctor, settle: standardsSettle },
 })
 
 // ============================================================================
@@ -2095,7 +2350,7 @@ import * as liteCommands from '../cli/liteCommands.js'
 import * as vibeCommands from '../cli/vibeCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.13.0', description: 'SCALE Engine v0.13.0 CLI - hardened phase workflow gates, governance templates, platform adapters, skill routing, and verification automation' },
+  meta: { name: 'scale', version: SCALE_ENGINE_VERSION, description: `SCALE Engine v${SCALE_ENGINE_VERSION} CLI - hardened phase workflow gates, governance templates, platform adapters, skill routing, and verification automation` },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,
@@ -2130,6 +2385,8 @@ const main = defineCommand({
     stats,
     preflight,
     governance,
+    assets,
+    standards,
     metrics,
     'task-artifacts': taskArtifacts,
     workspace,

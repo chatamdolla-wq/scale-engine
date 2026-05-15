@@ -37,6 +37,11 @@ export class SkillInstaller implements ISkillInstaller {
   private skillDir: string
 
   private INSTALL_CONFIGS: Map<string, SkillInstallConfig> = new Map([
+    ['agent-browser', { skillId: 'agent-browser', method: 'manual', sourceUrl: 'https://github.com/vercel-labs/agent-browser' }],
+    ['mcp-chrome-devtools', { skillId: 'mcp-chrome-devtools', method: 'manual', sourceUrl: 'https://github.com/ChromeDevTools/chrome-devtools-mcp' }],
+    ['codex-cli', { skillId: 'codex-cli', method: 'manual', sourceUrl: 'https://github.com/openai/codex' }],
+    ['gemini-cli', { skillId: 'gemini-cli', method: 'manual', sourceUrl: 'https://github.com/google-gemini/gemini-cli' }],
+    ['opencode-cli', { skillId: 'opencode-cli', method: 'manual', sourceUrl: 'https://github.com/sst/opencode' }],
     ['cua', { skillId: 'cua', method: 'pip-install', sourceUrl: 'https://github.com/trycua/cua', command: 'pip install cua', verification: 'python -c "import cua"' }],
     ['fireworks-tech-graph', { skillId: 'fireworks-tech-graph', method: 'git-clone', sourceUrl: 'https://github.com/yizhiyanhua-ai/fireworks-tech-graph', targetPath: '~/.claude/skills/fireworks-tech-graph' }],
     ['excalidraw-diagram-generator', { skillId: 'excalidraw-diagram-generator', method: 'git-clone', sourceUrl: 'https://github.com/github/awesome-copilot', targetPath: '~/.claude/skills/excalidraw-diagram-generator', postInstall: ['cp -r skills/excalidraw-diagram-generator ~/.claude/skills/'] }],

@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.12.2-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.15.1-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-560-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.12.2-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/tests-822-passing-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/npm-0.15.1-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.11.2
+# SCALE Engine v0.15.1
 
 SCALE Engine is an AI engineering workflow runtime for agentic coding tools. It turns prompt-level engineering rules into stateful workflow gates, persisted evidence, review records, and release checks.
 
@@ -28,7 +28,15 @@ Prompt instructions are advisory. Production engineering needs mechanisms:
 
 ## Current Release
 
-v0.11.1 introduces four priority improvements:
+v0.15.1 focuses on production-grade engineering governance templates:
+
+- Supports MOE and non-MOE workspace topology, child repository blockers, and temporary worktree cleanup candidates.
+- Adds resource asset governance for maintained docs, versioned outputs, task evidence, temporary files, and forbidden commit assets.
+- Adds engineering standards scans for noisy logs, sensitive data redaction, secure input handling, ORM/database usage, framework conventions, and test rigor.
+- Strengthens skill and tool orchestration with routing and evidence contracts for UI/UX, web research, browser E2E, desktop automation, and external Agent CLIs.
+- `scale init` / governance packs now generate service matrix, verification profile, artifact templates, metrics, resource policy, engineering standards, and tool orchestration rules.
+
+Historical v0.11.1 introduced four priority improvements:
 
 ### Phase Commands FSM Blocking
 - `canTransition` + `process.exit(1)` ensures FSM guard failures block execution, not continue
