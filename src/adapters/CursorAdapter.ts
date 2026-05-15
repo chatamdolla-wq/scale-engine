@@ -1,4 +1,4 @@
-// SCALE Engine — Cursor Adapter
+﻿// SCALE Engine — Cursor Adapter
 // 生成 .cursor/settings.json + .cursorrules + .cursor/skills/
 // Cursor: https://cursor.sh
 
@@ -164,7 +164,7 @@ This project uses SCALE Engine for AI engineering governance via Cursor.
     // 5. .gitignore
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

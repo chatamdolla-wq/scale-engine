@@ -1,4 +1,4 @@
-// SCALE Engine — Trae Adapter
+﻿// SCALE Engine — Trae Adapter
 // 生成 .trae/settings.json + TRAE.md
 // Trae: ByteDance AI 编程助手 (https://www.trae.ai)
 
@@ -152,7 +152,7 @@ This project uses SCALE Engine for AI engineering governance via Trae.
 
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

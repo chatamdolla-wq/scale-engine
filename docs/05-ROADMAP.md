@@ -12,6 +12,12 @@ W5-W8:    护栏期 - Guardrails + Context + Knowledge + Adapters
 W9-W12:   进化期 - MCP + Evolution + Eval + 真实联调
 ```
 
+## 当前治理模板落地计划
+
+`scale-engine` 作为工作流治理源头，`project-scaffold` 作为可生成的实践脚手架，`netdisk-project` 作为 Go 多服务真实验证样本。详细执行计划见：
+
+- `docs/plans/governance-template-pack-landing-plan.md`
+
 每周输出：
 1. 代码 + 单元测试 + 文档更新
 2. 一个可演示的 demo

@@ -1,4 +1,4 @@
-// SCALE Engine — Hermes Adapter
+﻿// SCALE Engine — Hermes Adapter
 // 生成 .hermes/settings.json + .hermes.md
 // Hermes: https://github.com/hermes-ai/hermes
 
@@ -156,7 +156,7 @@ This project uses SCALE Engine for AI engineering governance via Hermes.
     // 4. .gitignore
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

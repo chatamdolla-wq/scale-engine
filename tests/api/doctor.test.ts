@@ -112,7 +112,28 @@ describe('Doctor', () => {
       optional: true,
       category: 'governance',
     })
+    expect(report.checks.find((c) => c.name === 'Governance drift')).toMatchObject({
+      status: 'ok',
+      optional: true,
+      category: 'governance',
+    })
     expect(doc.formatReport(report)).toContain('Project Governance (Optional)')
+  })
+
+  it('warns when generated governance files drift', async () => {
+    const adapter = new ClaudeCodeAdapter()
+    await adapter.init({ projectDir: TMP })
+    writeGovernanceTemplates(TMP, { mode: 'standard', projectName: 'Doctor Test' })
+    writeFileSync(join(TMP, 'docs', 'workflow', 'README.md'), '# Changed\n', 'utf-8')
+
+    const doc = new Doctor(TMP)
+    const report = await doc.diagnose()
+
+    expect(report.checks.find((c) => c.name === 'Governance drift')).toMatchObject({
+      status: 'warn',
+      optional: true,
+      category: 'governance',
+    })
   })
 
   it('rules and hooks check on fresh install', async () => {

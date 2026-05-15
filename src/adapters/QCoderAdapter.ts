@@ -1,4 +1,4 @@
-// SCALE Engine — QCoder (Qwen Code) Adapter
+﻿// SCALE Engine — QCoder (Qwen Code) Adapter
 // 生成 .qwen/settings.json + QWEN.md
 // Qwen Code: 阿里通义千问 CLI (https://github.com/QwenLM/qwen-code)
 
@@ -152,7 +152,7 @@ This project uses SCALE Engine for AI engineering governance via Qwen Code CLI.
 
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

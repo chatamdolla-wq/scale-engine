@@ -261,6 +261,8 @@ define → plan → build → verify → review → ship
 *.db-wal
 events/
 checkpoints/
+evidence/
+state/
 hooks/*.sh
 `, 'utf-8')
       created.push(gitignorePath)

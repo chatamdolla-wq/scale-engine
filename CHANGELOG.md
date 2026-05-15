@@ -1,3 +1,15 @@
+## Unreleased
+
+### Governance template packs
+
+- Added versioned governance template packs for generated workflow scaffolds.
+- Added `.scale/governance.lock.json` and `scale governance diff` for generated governance drift detection.
+- Added `scale init --governance-pack <pack>` with `project-scaffold` and `go-service-matrix` support.
+- Added optional `scale doctor` governance drift warnings.
+- Added Go service-matrix defaults for `netdisk`, `auth`, and `gateway`, excluding reference modules from default gates.
+
+---
+
 ## 0.13.0 - 2026-05-14
 
 ### Artifact-based Gate verification + Autonomous dev loop

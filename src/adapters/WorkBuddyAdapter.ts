@@ -1,4 +1,4 @@
-// SCALE Engine — WorkBuddy Adapter
+﻿// SCALE Engine — WorkBuddy Adapter
 // 生成 .workbuddy/settings.json + WORKBUDDY.md
 // WorkBuddy: 腾讯 CodeBuddy 团队协作 AI (https://copilot.tencent.com/)
 
@@ -152,7 +152,7 @@ This project uses SCALE Engine for AI engineering governance via WorkBuddy.
 
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

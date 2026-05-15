@@ -1,4 +1,4 @@
-// SCALE Engine — OpenCode Adapter
+﻿// SCALE Engine — OpenCode Adapter
 // 生成 ~/.config/opencode/hooks.json + AGENTS.md + skills/
 // OpenCode: https://github.com/opencode-ai/opencode
 
@@ -165,7 +165,7 @@ This project uses SCALE Engine for AI engineering governance via OpenCode.
     // 5. .gitignore
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

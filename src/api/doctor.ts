@@ -5,6 +5,7 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
+import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 
 export interface DiagnosticResult {
   name: string
@@ -49,15 +50,19 @@ export class Doctor {
     const governanceTemplatesCheck = this.checkGovernanceTemplates()
     const verificationMatrixCheck = this.checkVerificationMatrix()
     const skillRoutingPolicyCheck = this.checkSkillRoutingPolicy()
+    const governanceDriftCheck = this.checkGovernanceDrift()
     governanceTemplatesCheck.optional = true
     verificationMatrixCheck.optional = true
     skillRoutingPolicyCheck.optional = true
+    governanceDriftCheck.optional = true
     governanceTemplatesCheck.category = 'governance'
     verificationMatrixCheck.category = 'governance'
     skillRoutingPolicyCheck.category = 'governance'
+    governanceDriftCheck.category = 'governance'
     checks.push(governanceTemplatesCheck)
     checks.push(verificationMatrixCheck)
     checks.push(skillRoutingPolicyCheck)
+    checks.push(governanceDriftCheck)
 
     // Optional knowledge graph checks (non-blocking)
     const pythonCheck = this.checkPython()
@@ -350,6 +355,31 @@ export class Doctor {
         message: '.scale/skills.json is invalid JSON',
         fix: 'Fix JSON syntax or regenerate with scale init',
       }
+    }
+  }
+
+  private checkGovernanceDrift(): DiagnosticResult {
+    const drift = computeGovernanceDrift(this.projectDir)
+    if (!drift.lockExists) {
+      return {
+        name: 'Governance drift',
+        status: 'warn',
+        message: 'Missing .scale/governance.lock.json',
+        fix: 'Run: scale init --governance-pack standard',
+      }
+    }
+    if (drift.missing.length > 0 || drift.changed.length > 0) {
+      return {
+        name: 'Governance drift',
+        status: 'warn',
+        message: `${drift.missing.length} missing, ${drift.changed.length} changed generated governance files`,
+        fix: 'Run: scale governance diff',
+      }
+    }
+    return {
+      name: 'Governance drift',
+      status: 'ok',
+      message: `${drift.clean.length} generated governance files clean`,
     }
   }
 

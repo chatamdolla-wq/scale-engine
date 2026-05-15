@@ -31,6 +31,7 @@ import { ReviewStore } from '../workflow/ReviewStore.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { resolveVerificationTargets } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
+import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
 import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
@@ -1063,6 +1064,11 @@ const init = defineCommand({
     agent: { type: 'string', default: '', description: `Agent type (${SUPPORTED_AGENTS.join('/')}) - auto-detected if not specified` },
     dir: { type: 'string', default: '.', description: 'Project directory' },
     scenario: { type: 'string', default: 'standard', description: 'Scenario mode (sandbox/standard/critical)' },
+    'governance-pack': {
+      type: 'string',
+      default: 'standard',
+      description: 'Governance template pack (standard/project-scaffold/go-service-matrix/node-library/frontend-app)',
+    },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
     interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },
     'coverage-threshold': { type: 'string', default: '80', description: 'Coverage threshold (default 80%)' },
@@ -1132,6 +1138,7 @@ const init = defineCommand({
       const governance = writeGovernanceTemplates(args.dir, {
         mode: governanceModeFromScenario(scenarioMode),
         projectName,
+        pack: args['governance-pack'],
       })
       result.created.push(...governance.created)
       result.skipped.push(...governance.skipped)
@@ -1159,7 +1166,7 @@ const init = defineCommand({
 
     // One-click quick start mode
     if (args.quick || !args.agent) {
-      const qsResult = await quickStart(args.dir)
+      const qsResult = await quickStart(args.dir, { governancePack: args['governance-pack'] })
       if (qsResult.success && qsResult.platform) {
         console.log(`\n✅ SCALE Engine Quick Start completed for ${qsResult.platform}`)
         console.log(`\n📁 Created (${qsResult.created.length}):`)
@@ -1188,6 +1195,7 @@ const init = defineCommand({
     const governance = writeGovernanceTemplates(args.dir, {
       mode: governanceModeFromScenario(args.scenario),
       projectName,
+      pack: args['governance-pack'],
     })
     result.created.push(...governance.created)
     result.skipped.push(...governance.skipped)
@@ -1205,6 +1213,40 @@ const init = defineCommand({
     console.log(`   → scale doctor`)
     console.log(`   → scale create Spec "<feature name>"`)
   },
+})
+
+// ============================================================================
+// governance command — Generated governance asset tooling
+// ============================================================================
+
+const governanceDiff = defineCommand({
+  meta: { name: 'diff', description: 'Check generated governance files for drift' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = computeGovernanceDrift(args.dir)
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    if (!report.lockExists) {
+      console.log('No governance lock found. Run: scale init --governance-pack <pack>')
+      return
+    }
+    if (report.missing.length === 0 && report.changed.length === 0) {
+      console.log('Governance generated files are clean.')
+      return
+    }
+    for (const item of report.missing) console.log(`missing: ${item.path}`)
+    for (const item of report.changed) console.log(`changed: ${item.path}`)
+  },
+})
+
+const governance = defineCommand({
+  meta: { name: 'governance', description: 'Governance template pack tools' },
+  subCommands: { diff: governanceDiff },
 })
 
 // ============================================================================
@@ -1763,6 +1805,7 @@ const main = defineCommand({
     evolve,
     stats,
     preflight,
+    governance,
     metrics,
     'task-artifacts': taskArtifacts,
     status,

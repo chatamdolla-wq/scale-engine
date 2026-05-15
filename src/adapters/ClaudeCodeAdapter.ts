@@ -235,6 +235,8 @@ This project uses SCALE Engine for AI engineering governance.
 *.db-journal
 events/
 checkpoints/
+evidence/
+state/
 hooks/*.sh
 `, 'utf-8')
       created.push(gitignorePath)

@@ -1,4 +1,4 @@
-// SCALE Engine — OpenClaw Adapter
+﻿// SCALE Engine — OpenClaw Adapter
 // 生成 .openclaw/settings.json + AGENTS.md
 // OpenClaw: https://github.com/openclaw-ai/openclaw
 
@@ -156,7 +156,7 @@ This project uses SCALE Engine for AI engineering governance via OpenClaw.
     // 4. .gitignore
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

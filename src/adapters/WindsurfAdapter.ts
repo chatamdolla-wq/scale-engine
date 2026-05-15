@@ -1,4 +1,4 @@
-// SCALE Engine — Windsurf Adapter
+﻿// SCALE Engine — Windsurf Adapter
 // 生成 .windsurf/settings.json + .windsurf/rules.md + .windsurf/skills/
 // Windsurf: AI-first code editor (https://codeium.com/windsurf)
 
@@ -180,7 +180,7 @@ This project uses SCALE Engine for AI engineering governance via Windsurf.
     // 5. .gitignore
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

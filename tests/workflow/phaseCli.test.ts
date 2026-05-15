@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -52,6 +52,35 @@ afterEach(() => {
 })
 
 describe('phase CLI workflow', () => {
+  it('initializes a project-scaffold governance pack and reports clean drift', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const init = await runScale([
+      'init',
+      '--agent',
+      'codex',
+      '--dir',
+      projectDir,
+      '--governance-pack',
+      'project-scaffold',
+    ], scaleDir, projectDir)
+
+    expect(init.exitCode).toBe(0)
+    expect(existsSync(join(projectDir, '.scale', 'governance.lock.json'))).toBe(true)
+    expect(existsSync(join(projectDir, 'scripts', 'workflow', 'new-task.sh'))).toBe(true)
+    expect(readFileSync(join(projectDir, 'scripts', 'workflow', 'new-task.sh'), 'utf-8')).toContain('@hongmaple0820/scale-engine@latest')
+
+    const diff = await runScale(['governance', 'diff', '--dir', projectDir, '--json'], scaleDir, projectDir)
+
+    expect(diff.exitCode).toBe(0)
+    expect(parseJson<{ lockExists: boolean; changed: unknown[]; missing: unknown[] }>(diff.stdout)).toMatchObject({
+      lockExists: true,
+      changed: [],
+      missing: [],
+    })
+  }, 120_000)
+
   it('runs service-aware preflight without requiring a task', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()

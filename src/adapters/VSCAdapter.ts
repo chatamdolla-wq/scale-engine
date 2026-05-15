@@ -1,4 +1,4 @@
-// SCALE Engine — VSC Adapter
+﻿// SCALE Engine — VSC Adapter
 // 生成 .vscode/scale.json + VSC.md
 // VSC: VS Code Copilot CLI / agent runtime
 
@@ -152,7 +152,7 @@ This project uses SCALE Engine for AI engineering governance via VS Code Copilot
 
     const gitignorePath = join(this.scaleDir, '.gitignore')
     if (!existsSync(gitignorePath)) {
-      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nhooks/*.sh\n`, 'utf-8')
+      writeFileSync(gitignorePath, `*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n`, 'utf-8')
       created.push(gitignorePath)
     }
 

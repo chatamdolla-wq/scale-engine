@@ -1,6 +1,13 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { skillRoutingPolicyTemplate } from '../skills/routing/SkillPolicy.js'
+import { readGovernanceLock, writeGovernanceLock } from './GovernanceLock.js'
+import {
+  resolveGovernanceTemplatePack,
+  type GovernanceGeneratedFile,
+  type GovernancePackId,
+} from './GovernanceTemplatePacks.js'
+import type { VerificationService } from './VerificationProfile.js'
 
 export type GovernanceMode = 'minimal' | 'standard' | 'critical'
 export type GovernanceArtifactTemplateName =
@@ -21,6 +28,9 @@ export type GovernanceArtifactTemplateName =
 export interface GovernanceTemplateOptions {
   mode?: GovernanceMode
   projectName?: string
+  pack?: GovernancePackId | string
+  services?: VerificationService[]
+  exclude?: string[]
 }
 
 export interface GovernanceTemplateResult {
@@ -34,27 +44,52 @@ export function writeGovernanceTemplates(
 ): GovernanceTemplateResult {
   const mode = options.mode ?? 'standard'
   const projectName = options.projectName ?? 'Project'
+  const pack = resolveGovernanceTemplatePack(options.pack)
+  const packMode = pack.modeDefaults[mode]
+  const services = options.services ?? pack.defaultServices ?? []
+  const exclude = options.exclude ?? pack.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor']
   const result: GovernanceTemplateResult = { created: [], skipped: [] }
+  const lockFiles = new Map<string, { path: string; owned: boolean; sha256?: string }>()
+  for (const file of readGovernanceLock(projectDir)?.files ?? []) {
+    lockFiles.set(file.path, file)
+  }
 
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'README.md'), workflowReadme(projectName, mode))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'explore.md'), governanceTemplateContent('explore.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'mini-prd.md'), governanceTemplateContent('mini-prd.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'skill-plan.md'), governanceTemplateContent('skill-plan.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'ui-spec.md'), governanceTemplateContent('ui-spec.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'visual-review.md'), governanceTemplateContent('visual-review.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'api-contract.md'), governanceTemplateContent('api-contract.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'security-review.md'), governanceTemplateContent('security-review.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'db-change-plan.md'), governanceTemplateContent('db-change-plan.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'e2e-plan.md'), governanceTemplateContent('e2e-plan.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'plan.md'), governanceTemplateContent('plan.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'verification.md'), governanceTemplateContent('verification.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'review.md'), governanceTemplateContent('review.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'summary.md'), governanceTemplateContent('summary.md'))
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), githubActionsPreflightTemplate())
-  writeIfMissing(result, join(projectDir, 'docs', 'workflow', 'templates', 'pre-push-scale-preflight.sh'), prePushPreflightTemplate())
-  writeIfMissing(result, join(projectDir, 'docs', 'worklog', 'metrics.md'), metricsTemplate())
-  writeIfMissing(result, join(projectDir, '.scale', 'verification.json'), verificationMatrixTemplate(mode))
-  writeIfMissing(result, join(projectDir, '.scale', 'skills.json'), skillRoutingPolicyTemplate(mode))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/README.md', workflowReadme(projectName, mode, pack.id))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/explore.md', governanceTemplateContent('explore.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/ui-spec.md', governanceTemplateContent('ui-spec.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/plan.md', governanceTemplateContent('plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/verification.md', governanceTemplateContent('verification.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/review.md', governanceTemplateContent('review.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/summary.md', governanceTemplateContent('summary.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/github-actions-scale-preflight.yml', githubActionsPreflightTemplate())
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/pre-push-scale-preflight.sh', prePushPreflightTemplate())
+  writeTracked(result, lockFiles, projectDir, 'docs/worklog/metrics.md', metricsTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/verification.json', verificationMatrixTemplate(mode, {
+    services,
+    exclude,
+    artifactGate: packMode.artifactGate,
+  }))
+  writeTracked(result, lockFiles, projectDir, '.scale/skills.json', skillRoutingPolicyTemplate(mode))
+
+  for (const file of pack.generatedFiles) {
+    writePackGeneratedFile(result, lockFiles, projectDir, pack.id, pack.version, file)
+  }
+
+  const lockPath = join(projectDir, '.scale', 'governance.lock.json')
+  writeGovernanceLock(projectDir, {
+    pack: pack.id,
+    packVersion: pack.version,
+    scaleVersion: packageVersion(),
+    files: [...lockFiles.values()],
+  })
+  result.created.push(lockPath)
 
   return result
 }
@@ -77,21 +112,60 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
   }
 }
 
-function writeIfMissing(result: GovernanceTemplateResult, path: string, content: string): void {
+function writeIfMissing(result: GovernanceTemplateResult, path: string, content: string): boolean {
   if (existsSync(path)) {
     result.skipped.push(path)
-    return
+    return false
   }
   const dir = path.split(/[\\/]/).slice(0, -1).join('/')
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(path, content, 'utf-8')
   result.created.push(path)
+  return true
 }
 
-function workflowReadme(projectName: string, mode: GovernanceMode): string {
+function writeTracked(
+  result: GovernanceTemplateResult,
+  lockFiles: Map<string, { path: string; owned: boolean; sha256?: string }>,
+  projectDir: string,
+  relativePath: string,
+  content: string,
+): void {
+  const created = writeIfMissing(result, join(projectDir, relativePath), content)
+  if (created) lockFiles.set(relativePath, { path: relativePath, owned: true })
+}
+
+function writePackGeneratedFile(
+  result: GovernanceTemplateResult,
+  lockFiles: Map<string, { path: string; owned: boolean; sha256?: string }>,
+  projectDir: string,
+  packId: string,
+  packVersion: number,
+  file: GovernanceGeneratedFile,
+): void {
+  const content = shouldUseGeneratedHeader(file)
+    ? generatedHeader(packId, packVersion) + file.content
+    : file.content
+  const created = writeIfMissing(result, join(projectDir, file.path), content)
+  if (created) lockFiles.set(file.path, { path: file.path, owned: file.owned })
+}
+
+function shouldUseGeneratedHeader(file: GovernanceGeneratedFile): boolean {
+  return file.kind === 'doc' || file.kind === 'template' || file.kind === 'script'
+}
+
+function generatedHeader(packId: string, packVersion: number): string {
+  return `# Generated by scale-engine governance pack: ${packId}@${packVersion}
+# Edit policy: prefer editing the pack in scale-engine; local overrides should be documented.
+
+`
+}
+
+function workflowReadme(projectName: string, mode: GovernanceMode, packId = 'standard'): string {
   return `# ${projectName} Workflow
 
 Governance mode: ${mode}
+Governance pack: ${packId}
 
 ## Task Levels
 
@@ -501,25 +575,37 @@ function metricsTemplate(): string {
 `
 }
 
-function verificationMatrixTemplate(mode: GovernanceMode): string {
+function verificationMatrixTemplate(
+  mode: GovernanceMode,
+  options: { services?: VerificationService[]; exclude?: string[]; artifactGate?: 'off' | 'warn' | 'block' } = {},
+): string {
   return JSON.stringify({
     version: 1,
     defaultProfile: 'default',
     profiles: {
       default: {
         commands: {},
-        services: [],
+        services: options.services?.filter(service => service.required !== false).map(service => service.name) ?? [],
       },
     },
-    services: [],
-    exclude: ['node_modules', 'dist', 'tmp', 'vendor'],
+    services: options.services ?? [],
+    exclude: options.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor'],
     policy: {
       mode,
       optionalToolsWarnOnly: true,
-      artifactGate: mode === 'critical' ? 'block' : 'warn',
+      artifactGate: options.artifactGate ?? (mode === 'critical' ? 'block' : 'warn'),
       artifactGateLevels: ['M', 'L', 'CRITICAL'],
     },
   }, null, 2) + '\n'
+}
+
+function packageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')) as { version?: string }
+    return pkg.version ?? '0.0.0-dev'
+  } catch {
+    return '0.0.0-dev'
+  }
 }
 
 function githubActionsPreflightTemplate(): string {

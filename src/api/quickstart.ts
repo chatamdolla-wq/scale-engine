@@ -56,7 +56,7 @@ export interface QuickStartResult {
   nextSteps: string[]
 }
 
-export async function quickStart(projectDir: string = '.', options?: { installKnowledgeGraph?: boolean }): Promise<QuickStartResult> {
+export async function quickStart(projectDir: string = '.', options?: { installKnowledgeGraph?: boolean; governancePack?: string }): Promise<QuickStartResult> {
   const result: QuickStartResult = {
     success: false, platform: null, created: [], skipped: [],
     constraintsApplied: 0, capabilitiesEnabled: ['browser', 'search', 'computer'], nextSteps: []
@@ -75,12 +75,12 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
   }
   const gitignorePath = join(scaleDir, '.gitignore')
   if (!existsSync(gitignorePath)) {
-    writeFileSync(gitignorePath, '*.db\n*.db-journal\nevents/\ncheckpoints/\n')
+    writeFileSync(gitignorePath, '*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n')
     result.created.push(gitignorePath)
   }
   result.constraintsApplied = PHYSICAL_CONSTRAINTS.length
   const projectName = projectDir.split(/[/\\]/).pop() || 'Project'
-  const governance = writeGovernanceTemplates(projectDir, { mode: 'standard', projectName })
+  const governance = writeGovernanceTemplates(projectDir, { mode: 'standard', projectName, pack: options?.governancePack })
   result.created.push(...governance.created)
   result.skipped.push(...governance.skipped)
 
