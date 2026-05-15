@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { writeGovernanceTemplates } from '../../src/workflow/GovernanceTemplates.js'
+import { governanceTemplateContent, writeGovernanceTemplates } from '../../src/workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../../src/workflow/GovernanceLock.js'
 
 let dirs: string[] = []
@@ -78,6 +78,31 @@ describe('writeGovernanceTemplates', () => {
     expect(matrix.profiles.default.services).toEqual(['netdisk', 'auth', 'gateway'])
     expect(matrix.services.map((service: { name: string }) => service.name)).toEqual(['netdisk', 'auth', 'gateway'])
     expect(matrix.exclude).toEqual(expect.arrayContaining(['OpenList', 'gfast', 'mcp-zero']))
+  })
+
+  it('generates whitespace-clean markdown templates', () => {
+    const names = [
+      'explore.md',
+      'mini-prd.md',
+      'skill-plan.md',
+      'ui-spec.md',
+      'visual-review.md',
+      'api-contract.md',
+      'security-review.md',
+      'db-change-plan.md',
+      'e2e-plan.md',
+      'plan.md',
+      'verification.md',
+      'review.md',
+      'summary.md',
+    ] as const
+
+    for (const name of names) {
+      const content = governanceTemplateContent(name)
+      expect(content).toMatch(/\n$/)
+      expect(content).not.toMatch(/\n\n$/)
+      expect(content.split('\n').some(line => /[ \t]$/.test(line))).toBe(false)
+    }
   })
 
   it('does not overwrite existing templates', () => {

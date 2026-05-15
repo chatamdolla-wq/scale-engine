@@ -227,20 +227,22 @@ function exploreTemplate(): string {
 
 ## Files Read
 
-- 
+- TBD
 
 ## Current Behavior
 
+TBD
 
 ## Main Conflict
 
+TBD
 
 ## Affected Modules
 
+TBD
 
 ## Evidence
-
-
+TBD
 `
 }
 
@@ -249,38 +251,44 @@ function miniPrdTemplate(): string {
 
 ## Background
 
+TBD
 
 ## Target Users
 
+TBD
 
 ## Core Scenario
 
+TBD
 
 ## Non-Goals
 
+TBD
 
 ## User Path
 
+TBD
 
 ## Permission Rules
 
+TBD
 
 ## Data Impact
 
+TBD
 
 ## Exception Scenarios
 
-1. 
-2. 
-3. 
+1. TBD
+2. TBD
+3. TBD
 
 ## Acceptance Criteria
 
-- [ ] 
+- [ ] TBD
 
 ## Rollback Or Disable Strategy
-
-
+TBD
 `
 }
 
@@ -295,19 +303,19 @@ function skillPlanTemplate(): string {
 
 ## Required Skills
 
-- 
+- TBD
 
 ## Recommended Skills
 
-- 
+- TBD
 
 ## Required Artifacts
 
-- 
+- TBD
 
 ## Required Verification Evidence
 
-- 
+- TBD
 
 ## Skipped Skills
 
@@ -322,9 +330,11 @@ function uiSpecTemplate(): string {
 
 ## User Goal
 
+TBD
 
 ## Primary Flow
 
+TBD
 
 ## Interaction States
 
@@ -336,13 +346,15 @@ function uiSpecTemplate(): string {
 
 ## Responsive Behavior
 
+TBD
 
 ## Accessibility Requirements
 
+TBD
 
 ## Acceptance Criteria
 
-- [ ] 
+- [ ] TBD
 `
 }
 
@@ -351,19 +363,22 @@ function visualReviewTemplate(): string {
 
 ## Screenshots Or Evidence
 
+TBD
 
 ## Layout And Responsiveness
 
+TBD
 
 ## Text Fit And Overlap
 
+TBD
 
 ## Accessibility Notes
 
+TBD
 
 ## Final Verdict
-
-
+TBD
 `
 }
 
@@ -372,25 +387,31 @@ function apiContractTemplate(): string {
 
 ## Endpoint Or Interface
 
+TBD
 
 ## Request
 
+TBD
 
 ## Response
 
+TBD
 
 ## Errors
 
+TBD
 
 ## Permission Rules
 
+TBD
 
 ## Compatibility Notes
 
+TBD
 
 ## Acceptance Criteria
 
-- [ ] 
+- [ ] TBD
 `
 }
 
@@ -399,25 +420,28 @@ function securityReviewTemplate(): string {
 
 ## Assets And Trust Boundaries
 
+TBD
 
 ## Authorization Rules
 
+TBD
 
 ## Abuse Cases
 
-1. 
-2. 
-3. 
+1. TBD
+2. TBD
+3. TBD
 
 ## Sensitive Data Impact
 
+TBD
 
 ## Rollback Or Disable Strategy
 
+TBD
 
 ## Final Verdict
-
-
+TBD
 `
 }
 
@@ -426,19 +450,22 @@ function dbChangePlanTemplate(): string {
 
 ## Schema Or Data Change
 
+TBD
 
 ## Backward Compatibility
 
+TBD
 
 ## Migration Steps
 
+TBD
 
 ## Rollback Plan
 
+TBD
 
 ## Verification
-
-
+TBD
 `
 }
 
@@ -447,19 +474,22 @@ function e2ePlanTemplate(): string {
 
 ## User Paths
 
+TBD
 
 ## Browser Coverage
 
+TBD
 
 ## Test Data
 
+TBD
 
 ## Assertions
 
+TBD
 
 ## Evidence
-
-
+TBD
 `
 }
 
@@ -468,22 +498,24 @@ function planTemplate(): string {
 
 ## Approach
 
+TBD
 
 ## Boundaries
 
+TBD
 
 ## Exception Contract
 
-1. 
-2. 
-3. 
+1. TBD
+2. TBD
+3. TBD
 
 ## Rollback Plan
 
+TBD
 
 ## Test Strategy
-
-
+TBD
 `
 }
 
@@ -498,13 +530,14 @@ function verificationTemplate(): string {
 
 ## Output Summary
 
+TBD
 
 ## Failures And Fixes
 
+TBD
 
 ## Final Status
-
-
+TBD
 `
 }
 
@@ -513,16 +546,18 @@ function reviewTemplate(): string {
 
 ## Code Review
 
+TBD
 
 ## Security Review
 
+TBD
 
 ## Same-Pattern Scan
 
+TBD
 
 ## Residual Risks
-
-
+TBD
 `
 }
 
@@ -531,12 +566,15 @@ function summaryTemplate(): string {
 
 ## Delivered Changes
 
+TBD
 
 ## Remaining Risks
 
+TBD
 
 ## Follow-Ups
 
+TBD
 
 ## Metric Row
 
@@ -559,19 +597,22 @@ function metricsTemplate(): string {
 
 ### Repeated Failure Patterns
 
+TBD
 
 ### Slowest Gates
 
+TBD
 
 ### Documentation Gaps
 
+TBD
 
 ### Product Design Misses
 
+TBD
 
 ### Proposed Workflow Changes
-
-
+TBD
 `
 }
 
