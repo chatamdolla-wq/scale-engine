@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { execa } from 'execa'
 
 export type WorkspaceRepositoryKind = 'root' | 'submodule' | 'nested-repo'
@@ -41,6 +41,23 @@ export interface WorkspaceLifecycleOptions {
   projectDir?: string
 }
 
+export interface WorkspaceCleanupOptions extends WorkspaceLifecycleOptions {
+  apply?: boolean
+  confirm?: string
+}
+
+export interface WorkspaceCleanupResult {
+  mode: 'dry-run' | 'apply'
+  canApply: boolean
+  applied: boolean
+  targetPath: string
+  confirmationToken: string | null
+  blockers: string[]
+  warnings: string[]
+  commands: string[]
+  report: WorkspaceLifecycleReport
+}
+
 export async function inspectWorkspaceLifecycle(
   options: WorkspaceLifecycleOptions = {},
 ): Promise<WorkspaceLifecycleReport> {
@@ -51,6 +68,74 @@ export async function inspectWorkspaceLifecycle(
   const finish = decideFinish(root, childRepositories)
 
   return { root, childRepositories, finish }
+}
+
+export async function cleanupWorkspaceLifecycle(
+  options: WorkspaceCleanupOptions = {},
+): Promise<WorkspaceCleanupResult> {
+  const report = await inspectWorkspaceLifecycle(options)
+  const targetPath = resolve(report.root.path)
+  const mode = options.apply ? 'apply' : 'dry-run'
+  const confirmationToken = report.root.branch ?? report.root.head
+  const blockers = [...report.finish.blockers]
+  const warnings = [...report.finish.warnings]
+
+  if (!report.root.isLinkedWorktree) {
+    blockers.push('Workspace root is not a linked worktree')
+  }
+  if (report.root.isSubmodule) {
+    blockers.push('Workspace root is a submodule; clean it up from the parent repository workflow')
+  }
+  if (!report.root.gitCommonDir) {
+    blockers.push('Workspace git common directory could not be resolved')
+  }
+  if (!confirmationToken) {
+    blockers.push('Cleanup confirmation token could not be resolved from branch or HEAD')
+  }
+
+  const mainRoot = report.root.gitCommonDir ? resolve(dirname(report.root.gitCommonDir)) : null
+  if (mainRoot && normalizeAbsolute(mainRoot) === normalizeAbsolute(targetPath)) {
+    blockers.push('Refusing to remove the main repository checkout')
+  }
+  if (mainRoot && !await isRegisteredWorktree(mainRoot, targetPath)) {
+    blockers.push('Workspace root is not registered in git worktree list')
+  }
+
+  if (mode === 'apply') {
+    if (!options.confirm || options.confirm !== confirmationToken) {
+      blockers.push(`Cleanup apply requires confirmation token "${confirmationToken ?? '(unknown)'}"; pass --confirm ${confirmationToken ?? '(unknown)'}`)
+    }
+  }
+
+  const canApply = blockers.length === 0
+  const commands = [`git worktree remove "${targetPath}"`]
+
+  if (mode === 'apply' && canApply && mainRoot) {
+    await execa('git', ['worktree', 'remove', targetPath], { cwd: mainRoot })
+    return {
+      mode,
+      canApply,
+      applied: true,
+      targetPath,
+      confirmationToken,
+      blockers,
+      warnings,
+      commands,
+      report,
+    }
+  }
+
+  return {
+    mode,
+    canApply,
+    applied: false,
+    targetPath,
+    confirmationToken,
+    blockers,
+    warnings,
+    commands,
+    report,
+  }
 }
 
 async function inspectRepository(
@@ -190,6 +275,16 @@ function findNestedGitRepositories(rootDir: string): string[] {
 async function isGitRepository(dir: string): Promise<boolean> {
   const result = await execa('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir, reject: false })
   return result.exitCode === 0 && result.stdout.trim() === 'true'
+}
+
+async function isRegisteredWorktree(mainRoot: string, targetPath: string): Promise<boolean> {
+  const result = await execa('git', ['worktree', 'list', '--porcelain'], { cwd: mainRoot, reject: false })
+  if (result.exitCode !== 0) return false
+  const normalizedTarget = normalizeAbsolute(targetPath)
+  return result.stdout
+    .split(/\r?\n/)
+    .filter(line => line.startsWith('worktree '))
+    .some(line => normalizeAbsolute(line.slice('worktree '.length)) === normalizedTarget)
 }
 
 async function readAheadBehind(repoDir: string): Promise<{ ahead: number; behind: number }> {

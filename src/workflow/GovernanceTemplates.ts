@@ -218,9 +218,11 @@ Before finishing an agent-created branch or deleting a temporary worktree, inspe
 \`\`\`bash
 scale workspace status --json
 scale workspace finish --json
+scale workspace cleanup --dir <temporary-worktree> --dry-run --json
+scale workspace cleanup --dir <temporary-worktree> --apply --confirm <branch-or-head> --json
 \`\`\`
 
-Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates.
+Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates. Cleanup defaults to dry-run. Applying cleanup requires the reported confirmation token, normally the temporary branch name.
 
 ## Automation Templates
 

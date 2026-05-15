@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execa } from 'execa'
-import { inspectWorkspaceLifecycle } from '../../src/workflow/WorkspaceLifecycle.js'
+import { cleanupWorkspaceLifecycle, inspectWorkspaceLifecycle } from '../../src/workflow/WorkspaceLifecycle.js'
 
 let dirs: string[] = []
 
@@ -72,6 +72,67 @@ describe('WorkspaceLifecycle', () => {
     expect(result.root.isSubmodule).toBe(false)
     expect(result.finish.canCleanup).toBe(true)
     expect(result.finish.nextActions).toContain('Safe to remove linked worktree after branch is pushed, merged, or intentionally discarded')
+  })
+
+  it('dry-runs linked worktree cleanup without deleting it', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n', 'utf-8')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['commit', '-m', 'ignore worktrees'])
+    const worktree = join(root, '.worktrees', 'agent-task')
+    await git(root, ['worktree', 'add', worktree, '-b', 'claude/agent-task-0515'])
+
+    const result = await cleanupWorkspaceLifecycle({ projectDir: worktree })
+
+    expect(result.mode).toBe('dry-run')
+    expect(result.canApply).toBe(true)
+    expect(result.applied).toBe(false)
+    expect(result.targetPath).toBe(worktree)
+    expect(result.confirmationToken).toBe('claude/agent-task-0515')
+    expect(result.commands).toContain(`git worktree remove "${worktree}"`)
+    expect(existsSync(worktree)).toBe(true)
+  })
+
+  it('requires confirmation before applying linked worktree cleanup', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n', 'utf-8')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['commit', '-m', 'ignore worktrees'])
+    const worktree = join(root, '.worktrees', 'agent-task')
+    await git(root, ['worktree', 'add', worktree, '-b', 'claude/agent-task-apply-0515'])
+
+    const rejected = await cleanupWorkspaceLifecycle({
+      projectDir: worktree,
+      apply: true,
+      confirm: 'wrong-token',
+    })
+
+    expect(rejected.applied).toBe(false)
+    expect(rejected.canApply).toBe(false)
+    expect(rejected.blockers.join('\n')).toContain('confirmation token')
+    expect(existsSync(worktree)).toBe(true)
+
+    const applied = await cleanupWorkspaceLifecycle({
+      projectDir: worktree,
+      apply: true,
+      confirm: 'claude/agent-task-apply-0515',
+    })
+
+    expect(applied.applied).toBe(true)
+    expect(applied.canApply).toBe(true)
+    expect(existsSync(worktree)).toBe(false)
+  })
+
+  it('blocks cleanup for an ordinary checkout', async () => {
+    const root = makeDir()
+    await initRepo(root)
+
+    const result = await cleanupWorkspaceLifecycle({ projectDir: root })
+
+    expect(result.canApply).toBe(false)
+    expect(result.blockers.join('\n')).toContain('not a linked worktree')
   })
 
   it('keeps porcelain leading spaces so unstaged changes are not counted as staged', async () => {

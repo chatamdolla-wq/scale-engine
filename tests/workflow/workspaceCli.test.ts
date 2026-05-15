@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execa } from 'execa'
 
@@ -65,5 +65,62 @@ describe('workspace CLI', () => {
     ]))
     expect(json.finish.canCleanup).toBe(false)
     expect(json.finish.blockers).toContain('Child repository services/resource has uncommitted changes')
+  })
+
+  it('dry-runs linked worktree cleanup as JSON', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n', 'utf-8')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['commit', '-m', 'ignore worktrees'])
+    const worktree = join(root, '.worktrees', 'agent-task')
+    await git(root, ['worktree', 'add', worktree, '-b', 'claude/workspace-cli-cleanup-0515'])
+
+    const cleanup = await runScale(['workspace', 'cleanup', '--dir', worktree, '--dry-run', '--json'], root)
+
+    expect(cleanup.exitCode).toBe(0)
+    const json = JSON.parse(cleanup.stdout) as {
+      mode: string
+      canApply: boolean
+      applied: boolean
+      confirmationToken: string | null
+    }
+    expect(json.mode).toBe('dry-run')
+    expect(json.canApply).toBe(true)
+    expect(json.applied).toBe(false)
+    expect(json.confirmationToken).toBe('claude/workspace-cli-cleanup-0515')
+    expect(existsSync(worktree)).toBe(true)
+  })
+
+  it('applies linked worktree cleanup only with the reported confirmation token', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n', 'utf-8')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['commit', '-m', 'ignore worktrees'])
+    const worktree = join(root, '.worktrees', 'agent-task-apply')
+    await git(root, ['worktree', 'add', worktree, '-b', 'claude/workspace-cli-apply-0515'])
+
+    const rejected = await runScale(
+      ['workspace', 'cleanup', '--dir', worktree, '--apply', '--confirm', 'wrong-token', '--json'],
+      root,
+    )
+
+    expect(rejected.exitCode).toBe(1)
+    const rejectedJson = JSON.parse(rejected.stdout) as { applied: boolean; blockers: string[] }
+    expect(rejectedJson.applied).toBe(false)
+    expect(rejectedJson.blockers.join('\n')).toContain('confirmation token')
+    expect(existsSync(worktree)).toBe(true)
+
+    const applied = await runScale(
+      ['workspace', 'cleanup', '--dir', worktree, '--apply', '--confirm', 'claude/workspace-cli-apply-0515', '--json'],
+      root,
+    )
+
+    expect(applied.exitCode).toBe(0)
+    const appliedJson = JSON.parse(applied.stdout) as { applied: boolean; canApply: boolean }
+    expect(appliedJson.applied).toBe(true)
+    expect(appliedJson.canApply).toBe(true)
+    expect(existsSync(worktree)).toBe(false)
   })
 })

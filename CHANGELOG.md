@@ -11,6 +11,7 @@
 ### Workspace lifecycle
 
 - Added `scale workspace status` and `scale workspace finish` to inspect root worktree state plus child repositories.
+- Added `scale workspace cleanup` with dry-run by default, confirmation-token guarded apply, and registered linked-worktree safety checks.
 - Added cleanup safety decisions so temporary worktrees are blocked when submodules or nested repositories still have uncommitted or unpushed work.
 - Added linked-worktree detection that distinguishes real worktrees from submodules.
 

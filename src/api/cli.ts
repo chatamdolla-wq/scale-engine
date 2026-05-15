@@ -35,7 +35,12 @@ import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
 import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
-import { inspectWorkspaceLifecycle, type WorkspaceLifecycleReport } from '../workflow/WorkspaceLifecycle.js'
+import {
+  cleanupWorkspaceLifecycle,
+  inspectWorkspaceLifecycle,
+  type WorkspaceCleanupResult,
+  type WorkspaceLifecycleReport,
+} from '../workflow/WorkspaceLifecycle.js'
 import type { GateResult } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -886,6 +891,19 @@ function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
   for (const action of report.finish.nextActions) console.log(`  [NEXT] ${action}`)
 }
 
+function printWorkspaceCleanup(result: WorkspaceCleanupResult): void {
+  printWorkspaceLifecycle(result.report)
+  console.log('\n  Cleanup plan:')
+  console.log(`    Mode: ${result.mode}`)
+  console.log(`    Target: ${result.targetPath}`)
+  console.log(`    Can apply: ${result.canApply ? 'yes' : 'no'}`)
+  console.log(`    Applied: ${result.applied ? 'yes' : 'no'}`)
+  console.log(`    Confirmation token: ${result.confirmationToken ?? '(unavailable)'}`)
+  for (const command of result.commands) console.log(`    Command: ${command}`)
+  for (const blocker of result.blockers) console.log(`  [BLOCKER] ${blocker}`)
+  for (const warning of result.warnings) console.log(`  [WARN] ${warning}`)
+}
+
 const workspaceStatus = defineCommand({
   meta: { name: 'status', description: 'Inspect root worktree and child repository lifecycle state' },
   args: {
@@ -929,11 +947,38 @@ const workspaceFinish = defineCommand({
   },
 })
 
+const workspaceCleanup = defineCommand({
+  meta: { name: 'cleanup', description: 'Dry-run or apply safe removal of a linked temporary worktree' },
+  args: {
+    dir: { type: 'string', description: 'Linked worktree directory; defaults to current project directory' },
+    'dry-run': { type: 'boolean', default: false, description: 'Preview cleanup; this is the default unless --apply is set' },
+    apply: { type: 'boolean', default: false, description: 'Actually run git worktree remove after safety checks' },
+    confirm: { type: 'string', description: 'Required confirmation token for --apply, usually the worktree branch name' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const result = await cleanupWorkspaceLifecycle({
+      projectDir: args.dir ?? PROJECT_DIR,
+      apply: isTruthyFlag(args.apply),
+      confirm: args.confirm,
+    })
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      printWorkspaceCleanup(result)
+    }
+
+    if (!result.canApply || (isTruthyFlag(args.apply) && !result.applied)) process.exitCode = 1
+  },
+})
+
 const workspace = defineCommand({
   meta: { name: 'workspace', description: 'Inspect worktree, branch, and child repository lifecycle safety' },
   subCommands: {
     status: workspaceStatus,
     finish: workspaceFinish,
+    cleanup: workspaceCleanup,
   },
 })
 
