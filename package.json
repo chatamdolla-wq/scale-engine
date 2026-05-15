@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
   "version": "0.13.0",
-  "description": "SCALE Engine v0.13.0 - Artifact-based Gate verification, autonomous dev loop, 16 platform adapters, OWASP Top 10 detector, 649 tests",
+  "description": "SCALE Engine v0.13.0 - Artifact-based gate verification, autonomous dev loop, platform adapters, OWASP-oriented detector, and governance workflow automation",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"

@@ -6,8 +6,9 @@ export interface EvaluateSkillGateOptions {
   projectDir?: string
   artifactsDir?: string
   level: SkillTaskLevel
-  plan?: Pick<SkillPlan, 'mode' | 'required' | 'requiredArtifacts'> | null
+  plan?: Pick<SkillPlan, 'mode' | 'required' | 'requiredArtifacts' | 'requiredSkills'> | null
   requiredArtifacts?: string[]
+  requiredSkills?: string[]
   mode?: SkillRoutingMode
   enforceLevels?: SkillTaskLevel[]
 }
@@ -20,6 +21,10 @@ export function evaluateSkillGate(options: EvaluateSkillGateOptions): SkillGateR
     ...(options.plan?.required ? ['skill-plan.md'] : []),
     ...(options.plan?.requiredArtifacts ?? []),
     ...(options.requiredArtifacts ?? []),
+  ])
+  const requiredSkills = unique([
+    ...(options.plan?.requiredSkills ?? []),
+    ...(options.requiredSkills ?? []),
   ])
   if (!applies) {
     return { mode, applies, checked: false, complete: true, blocked: false, required: [], missing: [], incomplete: [], warnings: [] }
@@ -50,7 +55,7 @@ export function evaluateSkillGate(options: EvaluateSkillGateOptions): SkillGateR
       missing.push(artifact)
       continue
     }
-    const reason = incompleteReason(artifact, readFileSync(path, 'utf-8'))
+    const reason = incompleteReason(artifact, readFileSync(path, 'utf-8'), requiredSkills)
     if (reason) incomplete.push({ file: artifact, reason })
   }
 
@@ -68,8 +73,9 @@ export function evaluateSkillGate(options: EvaluateSkillGateOptions): SkillGateR
   }
 }
 
-function incompleteReason(file: string, content: string): string | null {
+function incompleteReason(file: string, content: string, requiredSkills: string[] = []): string | null {
   if (file === 'skill-plan.md' && /## Detected Intents[\s\S]+## Required Skills/i.test(content)) return null
+  if (file === 'skill-evidence.md') return skillEvidenceIncompleteReason(content, requiredSkills)
   const substantive = content
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -84,6 +90,16 @@ function incompleteReason(file: string, content: string): string | null {
     .filter(line => !/^\|\s*\|/.test(line))
     .filter(line => !/^[-*]\s*(\[ \])?\s*$/.test(line))
   return substantive.length >= 2 ? null : `contains only template placeholders (${substantive.length}/2 substantive lines)`
+}
+
+function skillEvidenceIncompleteReason(content: string, requiredSkills: string[]): string | null {
+  if (/\bTBD\b|skill-id/i.test(content)) return 'contains template placeholders'
+  const missingSkills = requiredSkills.filter(skill => !content.includes(skill))
+  if (missingSkills.length > 0) return `missing evidence for required skills: ${missingSkills.join(', ')}`
+  if (!/\b(executed|used|verified|passed|skipped|fallback|manual)\b/i.test(content)) {
+    return 'does not state executed/skipped/fallback evidence status'
+  }
+  return null
 }
 
 function unique<T>(items: T[]): T[] {

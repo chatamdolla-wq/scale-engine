@@ -81,6 +81,95 @@ describe('phase CLI workflow', () => {
     })
   }, 120_000)
 
+  it('honors --agent when quick init is requested and can emit clean JSON', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const init = await runScale([
+      'init',
+      '--quick',
+      '--agent',
+      'codex',
+      '--dir',
+      projectDir,
+      '--governance-pack',
+      'project-scaffold',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(init.exitCode).toBe(0)
+    const result = parseJson<{ ok: boolean; mode: string; agent: string; created: string[] }>(init.stdout)
+    expect(result).toMatchObject({ ok: true, mode: 'quick-agent', agent: 'codex' })
+    expect(existsSync(join(projectDir, '.codex', 'hooks.json'))).toBe(true)
+    expect(existsSync(join(projectDir, '.scale', 'governance.lock.json'))).toBe(true)
+  }, 120_000)
+
+  it('prints workflow list as machine-readable JSON', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const list = await runScale(['workflow', 'list', '--json'], scaleDir, projectDir)
+
+    expect(list.exitCode).toBe(0)
+    const result = parseJson<{ ok: boolean; count: number; presets: Array<{ id: string; steps: unknown[] }> }>(list.stdout)
+    expect(result.ok).toBe(true)
+    expect(result.count).toBeGreaterThan(0)
+    expect(result.presets[0].id).toBeTruthy()
+  }, 120_000)
+
+  it('prints skill doctor as machine-readable JSON', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const doctor = await runScale(['skill', 'doctor', '--dir', projectDir, '--json'], scaleDir, projectDir)
+
+    expect(doctor.exitCode).toBe(0)
+    const result = parseJson<{ total: number; installed: number; missing: number; skills: Array<{ id: string; installCommand: string }> }>(doctor.stdout)
+    expect(result.total).toBeGreaterThan(0)
+    expect(result.installed + result.missing).toBe(result.total)
+    expect(result.skills.map(skill => skill.id)).toEqual(expect.arrayContaining(['frontend-design', 'webapp-testing', 'code-reviewer']))
+    expect(result.skills.find(skill => skill.id === 'frontend-design')?.installCommand).toContain('frontend-design')
+  }, 120_000)
+
+  it('can include required skill installation status in skill checks', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(scaleDir, 'state'), { recursive: true })
+    writeFileSync(join(scaleDir, 'state', 'current.json'), JSON.stringify({
+      schemaVersion: 1,
+      taskId: 'TASK-skill-install',
+      level: 'M',
+      phase: 'verify',
+      exploredFiles: [],
+      fileCount: 0,
+      mainContradiction: '',
+      completedGates: [],
+      openTasks: [],
+      filesModified: [],
+      skillRoutingMode: 'block',
+      requiredSkills: ['missing-required-skill'],
+      requiredSkillArtifacts: [],
+      updatedAt: '2026-05-15T00:00:00.000Z',
+    }, null, 2), 'utf-8')
+
+    const check = await runScale(['skill', 'check', '--require-installed', '--json'], scaleDir, projectDir)
+
+    expect(check.exitCode).toBe(0)
+    const result = parseJson<{
+      complete: boolean
+      blocked: boolean
+      skillInstallation: { checked: boolean; ok: boolean; missing: string[]; unknown: string[] }
+    }>(check.stdout)
+    expect(result.complete).toBe(false)
+    expect(result.blocked).toBe(true)
+    expect(result.skillInstallation).toMatchObject({
+      checked: true,
+      ok: false,
+      missing: ['missing-required-skill'],
+      unknown: ['missing-required-skill'],
+    })
+  }, 120_000)
+
   it('runs service-aware preflight without requiring a task', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -101,6 +190,8 @@ describe('phase CLI workflow', () => {
       'preflight',
       '--service',
       'all',
+      '--preflight-profile',
+      'full',
       '--build-cmd',
       'node -v',
       '--lint-cmd',
@@ -117,6 +208,28 @@ describe('phase CLI workflow', () => {
     expect(result.passed).toBe(true)
     expect(result.services).toEqual(['api', 'gateway'])
     expect(result.targets.every(target => target.passed)).toBe(true)
+  }, 120_000)
+
+  it('uses a quick preflight profile by default without requiring coverage', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const preflight = await runScale([
+      'preflight',
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(preflight.exitCode).toBe(0)
+    const result = parseJson<{ passed: boolean; preflightProfile: string; gates: string[] }>(preflight.stdout)
+    expect(result.passed).toBe(true)
+    expect(result.preflightProfile).toBe('quick')
+    expect(result.gates).toEqual(['G3', 'G0', 'G4', 'G5'])
   }, 120_000)
 
   it('blocks ship before review, then allows review -> ship --no-commit without changing HEAD', async () => {
@@ -205,9 +318,25 @@ describe('phase CLI workflow', () => {
 
     const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
     expect(review.exitCode).toBe(0)
-    const reviewResult = parseJson<{ passed: boolean; reviewId: string }>(review.stdout)
+    const reviewResult = parseJson<{
+      passed: boolean
+      reviewId: string
+      karpathy: {
+        passed: boolean
+        context: { hypothesesListed: boolean; hasExtraFeatures: boolean; changesTraceable: boolean; hasVerifiableGoal: boolean }
+        checks: Array<{ principle: string; passed: boolean }>
+      }
+    }>(review.stdout)
     expect(reviewResult.passed).toBe(true)
     expect(reviewResult.reviewId).toMatch(/^REVIEW-/)
+    expect(reviewResult.karpathy.passed).toBe(true)
+    expect(reviewResult.karpathy.context).toMatchObject({
+      hypothesesListed: true,
+      hasExtraFeatures: false,
+      changesTraceable: true,
+      hasVerifiableGoal: true,
+    })
+    expect(reviewResult.karpathy.checks).toHaveLength(4)
 
     const headBefore = await execa('git', ['rev-parse', 'HEAD'])
     const ship = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir, projectDir)
@@ -219,6 +348,41 @@ describe('phase CLI workflow', () => {
     expect(shipResult.reviewValidation.ok).toBe(true)
     expect(shipResult.evidenceValidation.ok).toBe(true)
     expect(headAfter.stdout).toBe(headBefore.stdout)
+  }, 120_000)
+
+  it('derives Karpathy review context from task scope instead of hardcoded pass values', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'src'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'loose-change.ts'), 'export const loose = true\n', 'utf-8')
+
+    const review = await runScale(['review', '--json'], scaleDir, projectDir)
+    expect(review.exitCode).toBe(0)
+    const reviewResult = parseJson<{
+      passed: boolean
+      changedFiles: string[]
+      karpathy: {
+        passed: boolean
+        context: { hypothesesListed: boolean; hasExtraFeatures: boolean; changesTraceable: boolean; hasVerifiableGoal: boolean }
+        violations: string[]
+      }
+    }>(review.stdout)
+
+    expect(reviewResult.passed).toBe(true)
+    expect(reviewResult.changedFiles).toContain('src/loose-change.ts')
+    expect(reviewResult.karpathy.passed).toBe(false)
+    expect(reviewResult.karpathy.context).toMatchObject({
+      hypothesesListed: false,
+      hasExtraFeatures: false,
+      changesTraceable: false,
+      hasVerifiableGoal: false,
+    })
+    expect(reviewResult.karpathy.violations).toEqual(expect.arrayContaining([
+      expect.stringContaining('K1'),
+      expect.stringContaining('K3'),
+      expect.stringContaining('K4'),
+    ]))
   }, 120_000)
 
   it('uses changed files during verify to refresh skill routing evidence requirements', async () => {

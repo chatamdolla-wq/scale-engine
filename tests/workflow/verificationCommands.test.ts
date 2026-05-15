@@ -34,7 +34,19 @@ describe('detectVerificationCommands', () => {
     expect(commands.build.cwd).toBe(dir)
     expect(commands.lint.command).toBe('npm run lint')
     expect(commands.test.command).toBe('npm test')
-    expect(commands.coverage.command).toBe('npm test -- --coverage')
+    expect(commands.coverage.source).toBe('missing')
+    expect(commands.coverage.reason).toContain('no "coverage" script')
+  })
+
+  it('uses an explicit coverage script instead of guessing coverage flags', () => {
+    const dir = makeProject({
+      scripts: { test: 'vitest', coverage: 'vitest run --coverage' },
+    })
+
+    const commands = detectVerificationCommands(dir)
+
+    expect(commands.coverage.command).toBe('npm run coverage')
+    expect(commands.coverage.source).toBe('package-script')
   })
 
   it('honors declared packageManager before lockfiles', () => {

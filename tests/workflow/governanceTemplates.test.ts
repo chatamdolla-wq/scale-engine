@@ -39,7 +39,7 @@ describe('writeGovernanceTemplates', () => {
       join(dir, '.scale', 'governance.lock.json'),
     ]))
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance mode: critical')
-    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), 'utf-8')).toContain('scale-engine@latest preflight --service all')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), 'utf-8')).toContain('scale-engine@latest preflight --service all --preflight-profile ci')
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'verification.json'), 'utf-8')).policy).toMatchObject({
       mode: 'critical',
       artifactGate: 'block',

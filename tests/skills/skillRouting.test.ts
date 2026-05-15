@@ -135,4 +135,39 @@ describe('skill routing', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('requires skill evidence to cover required skills with concrete status', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-skill-evidence-'))
+    try {
+      const artifactsDir = join(dir, 'task')
+      mkdirSync(artifactsDir)
+      writeFileSync(join(artifactsDir, 'skill-plan.md'), '# Skill Plan\n\n## Detected Intents\n\n## Required Skills\n', 'utf-8')
+      writeFileSync(join(artifactsDir, 'skill-evidence.md'), '# Skill Evidence\n\n| Skill | Status |\n| --- | --- |\n| TBD | TBD |\n', 'utf-8')
+
+      const placeholder = evaluateSkillGate({
+        projectDir: dir,
+        artifactsDir,
+        level: 'M',
+        requiredArtifacts: ['skill-plan.md', 'skill-evidence.md'],
+        requiredSkills: ['frontend-design'],
+        mode: 'block',
+      })
+      expect(placeholder.blocked).toBe(true)
+      expect(placeholder.incomplete[0]).toMatchObject({ file: 'skill-evidence.md', reason: 'contains template placeholders' })
+
+      writeFileSync(join(artifactsDir, 'skill-evidence.md'), '# Skill Evidence\n\n| Skill | Status | Evidence |\n| --- | --- | --- |\n| frontend-design | executed | docs/worklog/tasks/demo/ui-spec.md |\n', 'utf-8')
+      const complete = evaluateSkillGate({
+        projectDir: dir,
+        artifactsDir,
+        level: 'M',
+        requiredArtifacts: ['skill-plan.md', 'skill-evidence.md'],
+        requiredSkills: ['frontend-design'],
+        mode: 'block',
+      })
+      expect(complete.complete).toBe(true)
+      expect(complete.blocked).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

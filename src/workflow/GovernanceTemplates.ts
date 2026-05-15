@@ -200,10 +200,12 @@ Use service-aware verification when configured:
 
 \`\`\`bash
 scale preflight --service all
+scale preflight --service all --preflight-profile full
 scale verify <task-id> --profile default
 scale verify <task-id> --service <service-name>
 scale verify <task-id> --artifact-gate warn
 scale verify <task-id> --artifact-gate block
+scale verify <task-id> --require-installed-skills
 scale task-artifacts check --dir docs/worklog/tasks/<task-dir> --level L
 \`\`\`
 
@@ -216,6 +218,13 @@ Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITI
 SCALE plans required skills from task description, service selection, and changed files. UI/API work requires a Mini-PRD plus domain evidence such as \`ui-spec.md\`, \`visual-review.md\`, or \`api-contract.md\`. Security and database work require explicit review or rollback artifacts.
 
 When a task records \`servicesTouched\`, \`scale verify <task-id>\` uses those services automatically. You can still override selection with \`--service all\`, \`--service api\`, or \`--service api,gateway\`.
+
+Before M/L work, check whether required workflow skills are physically installed:
+
+\`\`\`bash
+scale skill doctor --json
+scale skill check --require-installed --json
+\`\`\`
 
 ## Workspace Lifecycle
 
@@ -234,10 +243,10 @@ Do not remove a temporary worktree while any submodule or nested repository has 
 
 Optional automation templates are generated under \`docs/workflow/templates/\`:
 
-- \`github-actions-scale-preflight.yml\`: CI workflow that runs \`scale preflight --service all\`.
-- \`pre-push-scale-preflight.sh\`: local pre-push hook template for the same checks.
+- \`github-actions-scale-preflight.yml\`: CI workflow that runs \`scale preflight --service all --preflight-profile ci\`.
+- \`pre-push-scale-preflight.sh\`: local pre-push hook template that runs the default quick preflight.
 
-Keep these templates advisory until \`scale preflight --service all\` is reliable locally for the project.
+Keep these templates advisory until \`scale preflight --service all --preflight-profile full\` is reliable locally for the project.
 `
 }
 
@@ -355,13 +364,13 @@ function skillEvidenceTemplate(): string {
 
 | Skill | Phase | Trigger | Evidence | Status |
 | --- | --- | --- | --- | --- |
-| TBD | TBD | TBD | TBD | TBD |
+| skill-id | plan/build/verify/review | why it was selected | command, screenshot, report, or artifact path | executed/skipped/fallback |
 
 ## Skipped Skills
 
 | Skill | Reason | Fallback Evidence |
 | --- | --- | --- |
-| TBD | TBD | TBD |
+| skill-id | why it could not run | manual review, alternate command, or explicit risk |
 `
 }
 
@@ -742,7 +751,7 @@ jobs:
           fi
 
       - name: Run SCALE preflight
-        run: npx @hongmaple0820/scale-engine@latest preflight --service all
+        run: npx @hongmaple0820/scale-engine@latest preflight --service all --preflight-profile ci
 `
 }
 

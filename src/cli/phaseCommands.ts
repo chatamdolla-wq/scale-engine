@@ -14,6 +14,7 @@ import { SkillRegistry } from '../skills/SkillRegistry.js'
 import { registerCoreSkills } from '../skills/coreSkills.js'
 import { registerExternalSkills } from '../skills/ExternalSkills.js'
 import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, type SkillGateResult, type SkillPlan } from '../skills/routing/index.js'
+import { inspectRequiredWorkflowSkills } from '../skills/SkillDoctor.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
 import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
@@ -22,6 +23,7 @@ import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/
 import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
+import type { KarpathyCheck } from '../workflow/types.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
@@ -854,6 +856,7 @@ export const phaseVerify = defineCommand({
     service: { type: 'string', description: 'Service name from .scale/verification.json' },
     'artifact-gate': { type: 'string', description: 'Task artifact policy override: off, warn, or block' },
     'require-artifacts': { type: 'boolean', default: false, description: 'Fail verification when required M/L/CRITICAL artifacts are incomplete' },
+    'require-installed-skills': { type: 'boolean', default: false, description: 'Fail verification when required workflow skills are not installed locally' },
     'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
     'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
     'residual-risk': { type: 'string', description: 'Residual risk statement to record in task metrics' },
@@ -1027,6 +1030,9 @@ export const phaseVerify = defineCommand({
           enforceLevels: skillPolicy.policy.enforceLevels,
         })
       : undefined
+    const requireInstalledSkills = isTruthyFlag(args['require-installed-skills'])
+    const skillInstallation = inspectRequiredWorkflowSkills(updatedPayload.requiredSkills ?? [], { projectDir: PROJECT_DIR })
+    const skillInstallationBlocked = requireInstalledSkills && !skillInstallation.ok
 
     // Attempt FSM transition to COMPLETED
     // Guards: build_passed, lint_passed, tests_passed, and optional artifact policy.
@@ -1036,7 +1042,7 @@ export const phaseVerify = defineCommand({
                        results.testPassed === true &&
                        (results.testCoverage ?? 0) >= 80 &&
                        results.securityPassed === true
-    const completionEligible = codePassed && !artifactGate.blocked && !(skillGate?.blocked ?? false)
+    const completionEligible = codePassed && !artifactGate.blocked && !(skillGate?.blocked ?? false) && !skillInstallationBlocked
 
     let transitionResult = null
     if (completionEligible) {
@@ -1060,6 +1066,8 @@ export const phaseVerify = defineCommand({
       console.log('\n   Artifact gate blocked completion - required task artifacts are incomplete')
     } else if (!args.json && skillGate?.blocked) {
       console.log('\n   Skill gate blocked completion - required skill evidence artifacts are incomplete')
+    } else if (!args.json && skillInstallationBlocked) {
+      console.log('\n   Skill installation gate blocked completion - required workflow skills are missing')
     }
 
     const passed = completionEligible && (transitionResult?.success ?? false)
@@ -1096,10 +1104,10 @@ export const phaseVerify = defineCommand({
       artifactGateMode: finalArtifactGate.mode,
       artifactGatePassed: !finalArtifactGate.blocked,
       artifactComplete: artifactCheck?.complete,
-      skillGatePassed: finalSkillGate ? !finalSkillGate.blocked : undefined,
+      skillGatePassed: finalSkillGate ? !finalSkillGate.blocked && !skillInstallationBlocked : !skillInstallationBlocked,
     }
     await store.update(args['task-id'], { payload: finalPayload })
-    const metricGateStatus = codePassed && (finalArtifactGate.blocked || finalSkillGate?.blocked) ? 'blocked' : undefined
+    const metricGateStatus = codePassed && (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked) ? 'blocked' : undefined
     const metricRecord = await recordVerificationMetric({
       taskId: args['task-id'],
       taskName: task.title,
@@ -1121,6 +1129,11 @@ export const phaseVerify = defineCommand({
       artifactCheck,
       artifactGate: finalArtifactGate,
       skillGate: finalSkillGate,
+      skillInstallation: {
+        ...skillInstallation,
+        checked: requireInstalledSkills,
+        blocked: skillInstallationBlocked,
+      },
       metric: metricRecord,
       passed
     }
@@ -1133,6 +1146,9 @@ export const phaseVerify = defineCommand({
       }
       if (finalSkillGate && !finalSkillGate.complete) {
         console.log(`   Skill evidence gaps: ${finalSkillGate.missing.length} missing, ${finalSkillGate.incomplete.length} incomplete`)
+      }
+      if (skillInstallationBlocked) {
+        console.log(`   Missing required workflow skills: ${skillInstallation.missing.join(', ')}`)
       }
       if (passed) console.log(`\n   Next: scale review\n`)
       else console.log(`\n   Fix issues and re-run: scale verify ${args['task-id']}\n`)
@@ -1271,6 +1287,127 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
   return { stagedFiles, unreviewedFiles: [] }
 }
 
+interface ReviewKarpathyContext {
+  hypothesesListed: boolean
+  hasExtraFeatures: boolean
+  changesTraceable: boolean
+  hasVerifiableGoal: boolean
+}
+
+interface ReviewKarpathyReport {
+  context: ReviewKarpathyContext
+  checks: KarpathyCheck[]
+  passed: boolean
+  violations: string[]
+}
+
+function collectTaskReviewText(taskPayload?: TaskPayload): string {
+  if (!taskPayload) return ''
+  const brief = taskPayload.agentBrief
+  const parts = [
+    taskPayload.description,
+    taskPayload.workflowLevel,
+    taskPayload.residualRisk,
+    ...(taskPayload.servicesTouched ?? []),
+    ...(taskPayload.filesInvolved ?? []),
+    ...(taskPayload.requiredCapabilities ?? []),
+    ...(taskPayload.skillIntents ?? []),
+    ...(taskPayload.requiredSkills ?? []),
+    ...(taskPayload.recommendedSkills ?? []),
+    brief?.category,
+    brief?.summary,
+    brief?.currentBehavior,
+    brief?.desiredBehavior,
+    ...(brief?.keyInterfaces ?? []),
+    ...(brief?.acceptanceCriteria ?? []),
+    ...(brief?.outOfScope ?? []),
+  ]
+  return parts
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .join('\n')
+    .toLowerCase()
+}
+
+function isDeclaredReviewFile(path: string, declaredFiles: Set<string>): boolean {
+  const normalized = normalizeGitPath(path)
+  if (declaredFiles.has(normalized)) return true
+  for (const declared of declaredFiles) {
+    const clean = declared.replace(/\/+$/, '')
+    if (clean && normalized.startsWith(`${clean}/`)) return true
+  }
+  return false
+}
+
+function pathTraceableToTaskText(path: string, taskText: string): boolean {
+  if (!taskText) return false
+  const normalized = normalizeGitPath(path).toLowerCase()
+  if (taskText.includes(normalized)) return true
+  const ignored = new Set(['src', 'lib', 'test', 'tests', 'spec', 'index', 'main', 'types', 'utils', 'docs'])
+  const tokens = normalized
+    .split(/[\/_.-]+/)
+    .map(token => token.trim())
+    .filter(token => token.length >= 4 && !ignored.has(token))
+  return tokens.some(token => taskText.includes(token))
+}
+
+function hasTaskHypotheses(taskPayload?: TaskPayload): boolean {
+  if (!taskPayload) return false
+  const brief = taskPayload.agentBrief
+  return Boolean(
+    (brief?.currentBehavior && brief.desiredBehavior && (brief.acceptanceCriteria?.length ?? 0) > 0) ||
+    (taskPayload.skillIntents?.length ?? 0) > 0 ||
+    (taskPayload.requiredSkills?.length ?? 0) > 0 ||
+    (taskPayload.requiredCapabilities?.length ?? 0) > 0,
+  )
+}
+
+function hasVerifiableTaskGoal(taskPayload?: TaskPayload): boolean {
+  if (!taskPayload) return false
+  const brief = taskPayload.agentBrief
+  const text = collectTaskReviewText(taskPayload)
+  return Boolean(
+    (taskPayload.verificationEvidenceIds?.length ?? 0) > 0 ||
+    taskPayload.testPassed === true ||
+    taskPayload.buildStatus === 'success' ||
+    taskPayload.lintStatus === 'success' ||
+    (brief?.acceptanceCriteria?.length ?? 0) > 0 ||
+    /\b(verify|verified|test|coverage|acceptance|criteria|evidence|gate)\b/.test(text),
+  )
+}
+
+function hasOutOfScopeReviewChange(reviewedFiles: string[], taskPayload?: TaskPayload): boolean {
+  const outOfScope = taskPayload?.agentBrief?.outOfScope ?? []
+  if (outOfScope.length === 0 || reviewedFiles.length === 0) return false
+  const changedText = reviewedFiles.join('\n').toLowerCase()
+  return outOfScope
+    .map(item => item.toLowerCase().trim())
+    .filter(item => item.length >= 4)
+    .some(item => changedText.includes(item))
+}
+
+function deriveReviewKarpathyContext(
+  review: { changedFiles: ChangedFile[]; findings: ReviewFinding[] },
+  taskPayload?: TaskPayload,
+): ReviewKarpathyContext {
+  const reviewedFiles = review.changedFiles
+    .map(file => normalizeGitPath(file.path))
+    .filter(path => shouldReviewFile(path))
+  const declaredFiles = new Set((taskPayload?.filesInvolved ?? []).map(normalizeGitPath))
+  const taskText = collectTaskReviewText(taskPayload)
+  const changesTraceable = reviewedFiles.length === 0 || reviewedFiles.every(file =>
+    isDeclaredReviewFile(file, declaredFiles) || pathTraceableToTaskText(file, taskText),
+  )
+  const hasExtraFeatures = hasOutOfScopeReviewChange(reviewedFiles, taskPayload) ||
+    review.findings.some(finding => /extra|out[-\s]?of[-\s]?scope|scope creep/i.test(`${finding.category} ${finding.description}`))
+
+  return {
+    hypothesesListed: hasTaskHypotheses(taskPayload) || reviewedFiles.length === 0,
+    hasExtraFeatures,
+    changesTraceable,
+    hasVerifiableGoal: hasVerifiableTaskGoal(taskPayload) || reviewedFiles.length === 0,
+  }
+}
+
 // REVIEW Phase - KarpathyEvaluator + deterministic review evidence
 export const phaseReview = defineCommand({
   meta: { name: 'review', description: 'REVIEW: Code review with Karpathy Principles (/review)' },
@@ -1298,21 +1435,22 @@ export const phaseReview = defineCommand({
       taskPayload = task.payload as TaskPayload
     }
 
-    // === WorkflowEngine Integration ===
-    // Step 1: Karpathy Principles Check
-    const karpathyResult = workflowEngine.checkKarpathy({
-      hypothesesListed: true,    // Would be determined from actual context
-      hasExtraFeatures: false,   // Would be determined from actual context
-      changesTraceable: true,    // Would be determined from actual context
-      hasVerifiableGoal: true    // Would be determined from actual context
-    })
+    const review = await reviewGitChanges(taskPayload)
+    const karpathyContext = deriveReviewKarpathyContext(review, taskPayload)
+    const karpathyResult = workflowEngine.checkKarpathy(karpathyContext)
+    const karpathyReport: ReviewKarpathyReport = {
+      context: karpathyContext,
+      checks: karpathyResult,
+      passed: karpathyResult.every(check => check.passed),
+      violations: workflowEngine.getKarpathyEvaluator().getViolations(),
+    }
 
     if (!args.json) {
       console.log('\nKarpathy Principles Check:')
+      console.log(`   Derived context: hypotheses=${karpathyContext.hypothesesListed}, extraFeatures=${karpathyContext.hasExtraFeatures}, traceable=${karpathyContext.changesTraceable}, verifiableGoal=${karpathyContext.hasVerifiableGoal}`)
       console.log(workflowEngine.getKarpathyEvaluator().formatReport())
     }
 
-    const review = await reviewGitChanges(taskPayload)
     const findings = review.findings
     const summary = summarizeFindings(findings)
     const passed = summary.critical === 0 && summary.high === 0
@@ -1371,9 +1509,12 @@ export const phaseReview = defineCommand({
       findings,
       changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
+      karpathy: karpathyReport,
       passed,
       format: reviewOutputFormat,
-      recommendation: passed ? 'Ready to ship' : 'Fix CRITICAL issues before shipping'
+      recommendation: passed
+        ? karpathyReport.passed ? 'Ready to ship' : 'Review passed; address Karpathy advisory warnings before release hardening'
+        : 'Fix CRITICAL issues before shipping'
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))

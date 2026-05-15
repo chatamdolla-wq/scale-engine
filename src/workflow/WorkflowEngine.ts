@@ -14,7 +14,7 @@ import { UltraworkEngine, ModelRouter } from './execution/UltraworkEngine.js'
 import { HonestDelivery } from './quality/HonestDelivery.js'
 import { KarpathyEvaluator } from './quality/KarpathyEvaluator.js'
 import { WorkflowArtifactWriter } from './WorkflowArtifactWriter.js'
-import type { PRDDocument, UserStory, TaskDefinition, GateStage, AmbiguityScoreResult, SocraticSession } from './types.js'
+import type { PRDDocument, UserStory, TaskDefinition, GateStage, AmbiguityScoreResult, SocraticSession, KarpathyCheck } from './types.js'
 
 export interface WorkflowEngineConfig {
   eventBus: IEventBus
@@ -38,6 +38,10 @@ export interface PlanOptions {
   modules?: string[]
   persistArtifact?: boolean
   runGate?: boolean
+}
+
+export interface VerifyOptions extends VerificationCommandConfig {
+  gates?: GateStage[]
 }
 
 export class WorkflowEngine {
@@ -169,11 +173,11 @@ export class WorkflowEngine {
   }
 
   // Phase 4: Verify with build and quality gates
-  async verify(commandOverrides?: VerificationCommandConfig): Promise<import('./types.js').GateResult[]> {
+  async verify(commandOverrides?: VerifyOptions): Promise<import('./types.js').GateResult[]> {
     if (commandOverrides) {
       this.gateSystem = new GateSystem(this.eventBus, commandOverrides, this.artifactWriter)
     }
-    const results = await this.gateSystem.executeAll(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
+    const results = await this.gateSystem.executeAll(commandOverrides?.gates ?? ['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
     return results
   }
 
@@ -190,7 +194,7 @@ export class WorkflowEngine {
     hasExtraFeatures: boolean
     changesTraceable: boolean
     hasVerifiableGoal: boolean
-  }): unknown {
+  }): KarpathyCheck[] {
     return this.karpathyEvaluator.evaluateAll(context)
   }
 

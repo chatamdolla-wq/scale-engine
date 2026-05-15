@@ -124,17 +124,9 @@ function resolveCoverageCommand(
     }
   }
 
-  if (scripts.test) {
-    return {
-      command: `${runScriptCommand(packageManager, 'test')} -- --coverage`,
-      source: 'fallback',
-      reason: 'no "coverage" script; using test script with coverage flag',
-    }
-  }
-
   return {
     source: 'missing',
-    reason: 'package.json has neither "coverage" nor "test" script',
+    reason: 'package.json has no "coverage" script; add one or pass --coverage-cmd for full coverage gates',
   }
 }
 

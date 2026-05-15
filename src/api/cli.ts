@@ -24,6 +24,7 @@ import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '.
 import { Doctor } from './doctor.js'
 import { quickStart, detectPlatform } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
+import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
@@ -41,7 +42,7 @@ import {
   type WorkspaceCleanupResult,
   type WorkspaceLifecycleReport,
 } from '../workflow/WorkspaceLifecycle.js'
-import type { GateResult } from '../workflow/types.js'
+import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
@@ -65,6 +66,19 @@ function ensureDir(dir: string) {
 
 function isTruthyFlag(value: unknown): boolean {
   return value === true || value === '' || value === 'true' || value === '1'
+}
+
+type PreflightProfile = 'quick' | 'full' | 'ci'
+
+function normalizePreflightProfile(value: unknown): PreflightProfile {
+  const normalized = String(value ?? 'quick').trim().toLowerCase()
+  if (normalized === 'full' || normalized === 'ci') return normalized
+  return 'quick'
+}
+
+function gatesForPreflightProfile(profile: PreflightProfile): GateStage[] {
+  if (profile === 'quick') return ['G3', 'G0', 'G4', 'G5']
+  return ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
 }
 
 let _engine: ReturnType<typeof createEngine> | null = null
@@ -990,6 +1004,7 @@ const preflight = defineCommand({
     'test-cmd': { type: 'string', description: 'Override test command' },
     'coverage-cmd': { type: 'string', description: 'Override coverage command' },
     profile: { type: 'string', description: 'Verification profile from .scale/verification.json' },
+    'preflight-profile': { type: 'string', default: 'quick', description: 'Gate intensity profile (quick/full/ci); quick skips coverage and security' },
     service: { type: 'string', description: 'Service name from .scale/verification.json; use all for required services' },
     'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
     'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
@@ -997,6 +1012,8 @@ const preflight = defineCommand({
   },
   async run({ args }) {
     const { workflowEngine } = getEngine()
+    const preflightProfile = normalizePreflightProfile(args['preflight-profile'])
+    const gateStages = gatesForPreflightProfile(preflightProfile)
     const resolved = resolveVerificationTargets({
       projectDir: PROJECT_DIR,
       scaleDir: SCALE_DIR,
@@ -1015,6 +1032,8 @@ const preflight = defineCommand({
       console.log('\nSCALE Preflight')
       for (const warning of resolved.warnings) console.log(`  [WARN] ${warning}`)
       console.log(`  Profile: ${resolved.profileName}`)
+      console.log(`  Preflight profile: ${preflightProfile}`)
+      console.log(`  Gates: ${gateStages.join(', ')}`)
     }
 
     for (const target of resolved.targets) {
@@ -1030,6 +1049,7 @@ const preflight = defineCommand({
         coverage: args['coverage-cmd'] ?? target.config.coverage,
         tddEvidence: args['tdd-evidence'],
         tddStrict: isTruthyFlag(args['tdd-strict']),
+        gates: gateStages,
       })
       const passed = gates.every(gate => gate.passed)
       targetResults.push({
@@ -1051,6 +1071,8 @@ const preflight = defineCommand({
     const result = {
       phase: 'PREFLIGHT',
       profile: resolved.profileName,
+      preflightProfile,
+      gates: gateStages,
       services: targetResults.map(target => target.service).filter(Boolean),
       policy: resolved.policy,
       targets: targetResults,
@@ -1186,6 +1208,7 @@ const init = defineCommand({
   args: {
     agent: { type: 'string', default: '', description: `Agent type (${SUPPORTED_AGENTS.join('/')}) - auto-detected if not specified` },
     dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Output initialization result as JSON' },
     scenario: { type: 'string', default: 'standard', description: 'Scenario mode (sandbox/standard/critical)' },
     'governance-pack': {
       type: 'string',
@@ -1288,8 +1311,24 @@ const init = defineCommand({
     }
 
     // One-click quick start mode
-    if (args.quick || !args.agent) {
+    if (!args.agent) {
       const qsResult = await quickStart(args.dir, { governancePack: args['governance-pack'] })
+      if (args.json) {
+        const detection = qsResult.success ? undefined : detectPlatform(args.dir)
+        console.log(JSON.stringify({
+          ok: qsResult.success,
+          mode: 'quick',
+          platform: qsResult.platform,
+          created: qsResult.created,
+          skipped: qsResult.skipped,
+          constraintsApplied: qsResult.constraintsApplied,
+          capabilitiesEnabled: qsResult.capabilitiesEnabled,
+          knowledgeGraph: qsResult.knowledgeGraph,
+          nextSteps: qsResult.nextSteps,
+          suggestions: detection?.suggestions ?? [],
+        }, null, 2))
+        return
+      }
       if (qsResult.success && qsResult.platform) {
         console.log(`\n✅ SCALE Engine Quick Start completed for ${qsResult.platform}`)
         console.log(`\n📁 Created (${qsResult.created.length}):`)
@@ -1322,6 +1361,22 @@ const init = defineCommand({
     })
     result.created.push(...governance.created)
     result.skipped.push(...governance.skipped)
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        mode: args.quick ? 'quick-agent' : 'manual',
+        agent: args.agent,
+        scenario: args.scenario,
+        governancePack: args['governance-pack'],
+        settingsPath: result.settingsPath,
+        knowledgeDocPath: result.knowledgeDocPath,
+        scaleDir: result.scaleDir,
+        created: result.created,
+        skipped: result.skipped,
+        nextSteps: ['scale doctor', 'scale create Spec "<feature name>"'],
+      }, null, 2))
+      return
+    }
     console.log(`\n✅ SCALE Engine initialized for ${args.agent} (scenario: ${args.scenario})`)
     console.log(`\n📁 Created:`)
     for (const f of result.created) console.log(`   + ${f}`)
@@ -1420,11 +1475,30 @@ const workflowList = defineCommand({
   meta: { name: 'list', description: 'List all workflow presets' },
   args: {
     scenario: { type: 'string', description: 'Filter by scenario mode (sandbox/standard/critical)' },
+    json: { type: 'boolean', default: false, description: 'Output workflow presets as JSON' },
   },
   async run({ args }) {
     const presets = args.scenario
       ? getPresetsByScenario(args.scenario as 'sandbox' | 'standard' | 'critical')
       : listWorkflowPresets()
+
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        scenario: args.scenario ?? null,
+        count: presets.length,
+        presets: presets.map(preset => ({
+          id: preset.id,
+          name: preset.name,
+          nameZh: preset.nameZh,
+          description: preset.description,
+          scenarioMode: preset.scenarioMode,
+          requiredArtifacts: preset.requiredArtifacts,
+          steps: preset.steps,
+        })),
+      }, null, 2))
+      return
+    }
 
     if (presets.length === 0) {
       console.log('No workflow presets found.')
@@ -1615,10 +1689,20 @@ const skillScan = defineCommand({
   meta: { name: 'scan', description: 'Scan for installed skills' },
   args: {
     dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Output scan result as JSON' },
   },
   async run({ args }) {
     const discovery = new SkillDiscovery(args.dir)
     const platform = discovery.detectPlatform()
+    if (!platform && args.json) {
+      console.log(JSON.stringify({
+        ok: false,
+        platform: null,
+        skills: [],
+        message: 'No agent platform detected. Run `scale init` first.',
+      }, null, 2))
+      return
+    }
 
     if (!platform) {
       console.log('\n⚠️  No agent platform detected. Run `scale init` first.')
@@ -1626,6 +1710,15 @@ const skillScan = defineCommand({
     }
 
     const result = discovery.scanSkills(platform)
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        platform: result.platform,
+        count: result.skills.length,
+        skills: result.skills,
+      }, null, 2))
+      return
+    }
     console.log(`\n🔍 Platform: ${result.platform}`)
     console.log(`📦 Skills found: ${result.skills.length}`)
 
@@ -1718,11 +1811,35 @@ const skillPlanCommand = defineCommand({
   },
 })
 
+const skillDoctorCommand = defineCommand({
+  meta: { name: 'doctor', description: 'Check workflow skill installation status' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Output skill doctor report as JSON' },
+  },
+  run({ args }) {
+    const report = inspectWorkflowSkills({ projectDir: args.dir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('\nSCALE Skill Doctor')
+    console.log(`  Installed: ${report.installed}/${report.total}`)
+    for (const skill of report.skills) {
+      console.log(`  ${skill.installed ? '[OK]' : '[MISSING]'} ${skill.id}`)
+      if (skill.detectedPath) console.log(`    path: ${skill.detectedPath}`)
+      if (!skill.installed) console.log(`    install: ${skill.installCommand}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 const skillCheckCommand = defineCommand({
   meta: { name: 'check', description: 'Check required skill evidence artifacts' },
   args: {
     dir: { type: 'string', description: 'Task artifact directory; defaults to current state artifactsDir' },
     level: { type: 'string', description: 'Task level: S, M, L, or CRITICAL; defaults to current state level or M' },
+    'require-installed': { type: 'boolean', default: false, description: 'Fail when required workflow skills are not installed locally' },
     json: { type: 'boolean', default: false },
   },
   run({ args }) {
@@ -1735,25 +1852,44 @@ const skillCheckCommand = defineCommand({
       level,
       requiredArtifacts: state?.requiredSkillArtifacts,
       mode: state?.skillRoutingMode ?? policy.policy.mode,
-      enforceLevels: policy.policy.enforceLevels,
+        enforceLevels: policy.policy.enforceLevels,
     })
+    const skillInstallation = inspectRequiredWorkflowSkills(state?.requiredSkills ?? [], { projectDir: PROJECT_DIR })
+    const requireInstalled = isTruthyFlag(args['require-installed'])
+    const blocked = result.blocked || (requireInstalled && !skillInstallation.ok)
+    const output = {
+      ...result,
+      complete: result.complete && (!requireInstalled || skillInstallation.ok),
+      blocked,
+      skillInstallation: {
+        ...skillInstallation,
+        checked: requireInstalled,
+      },
+    }
 
     if (args.json) {
-      console.log(JSON.stringify(result, null, 2))
+      console.log(JSON.stringify(output, null, 2))
       return
     }
-    console.log(`\nSkill Gate: ${result.complete ? 'COMPLETE' : 'INCOMPLETE'}`)
-    console.log(`  Mode: ${result.mode}`)
-    console.log(`  Required: ${result.required.join(', ') || 'none'}`)
-    for (const file of result.missing) console.log(`  [MISSING] ${file}`)
-    for (const item of result.incomplete) console.log(`  [INCOMPLETE] ${item.file}: ${item.reason}`)
-    if (result.blocked) process.exitCode = 1
+    console.log(`\nSkill Gate: ${output.complete ? 'COMPLETE' : 'INCOMPLETE'}`)
+    console.log(`  Mode: ${output.mode}`)
+    console.log(`  Required artifacts: ${output.required.join(', ') || 'none'}`)
+    console.log(`  Required skills: ${skillInstallation.required.join(', ') || 'none'}`)
+    for (const file of output.missing) console.log(`  [MISSING] ${file}`)
+    for (const item of output.incomplete) console.log(`  [INCOMPLETE] ${item.file}: ${item.reason}`)
+    if (requireInstalled && !skillInstallation.ok) {
+      for (const skill of skillInstallation.skills.filter(skill => !skill.installed)) {
+        console.log(`  [MISSING_SKILL] ${skill.id}: ${skill.installCommand}`)
+      }
+      for (const skill of skillInstallation.unknown) console.log(`  [UNKNOWN_SKILL] ${skill}`)
+    }
+    if (blocked) process.exitCode = 1
   },
 })
 
 const skill = defineCommand({
   meta: { name: 'skill', description: 'Skill discovery and management' },
-  subCommands: { scan: skillScan, plan: skillPlanCommand, check: skillCheckCommand },
+  subCommands: { scan: skillScan, doctor: skillDoctorCommand, plan: skillPlanCommand, check: skillCheckCommand },
 })
 
 // ============================================================================
@@ -1761,11 +1897,9 @@ const skill = defineCommand({
 // ============================================================================
 
 import { AgentPool } from '../agents/AgentPool.js'
-import { AgentChannel } from '../agents/AgentChannel.js'
 import { PROFESSIONAL_AGENTS, getProfile, listProfiles } from '../agents/profiles.js'
 
 const agentPool = new AgentPool()
-const agentChannel = new AgentChannel(getEngine().eventBus)
 
 const agentSpawn = defineCommand({
   meta: { name: 'spawn', description: 'Spawn a new agent instance' },
@@ -1894,7 +2028,7 @@ import * as liteCommands from '../cli/liteCommands.js'
 import * as vibeCommands from '../cli/vibeCommands.js'
 
 const main = defineCommand({
-  meta: { name: 'scale', version: '0.13.0', description: 'SCALE Engine v0.13.0 CLI - hardened phase workflow gates: define/plan/build/verify/review/ship; Vibe templates: scale vibe; 16 platform adapters; 12 agents; 10 workflows; 19 detectors' },
+  meta: { name: 'scale', version: '0.13.0', description: 'SCALE Engine v0.13.0 CLI - hardened phase workflow gates, governance templates, platform adapters, skill routing, and verification automation' },
   subCommands: {
     // Lite Mode (agent-skills style interactive entry)
     lite: liteCommands.liteCommand,
