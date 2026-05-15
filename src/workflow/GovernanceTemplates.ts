@@ -211,6 +211,17 @@ SCALE plans required skills from task description, service selection, and change
 
 When a task records \`servicesTouched\`, \`scale verify <task-id>\` uses those services automatically. You can still override selection with \`--service all\`, \`--service api\`, or \`--service api,gateway\`.
 
+## Workspace Lifecycle
+
+Before finishing an agent-created branch or deleting a temporary worktree, inspect root and child repository state:
+
+\`\`\`bash
+scale workspace status --json
+scale workspace finish --json
+\`\`\`
+
+Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates.
+
 ## Automation Templates
 
 Optional automation templates are generated under \`docs/workflow/templates/\`:

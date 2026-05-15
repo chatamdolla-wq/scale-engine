@@ -35,6 +35,7 @@ import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
 import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
+import { inspectWorkspaceLifecycle, type WorkspaceLifecycleReport } from '../workflow/WorkspaceLifecycle.js'
 import type { GateResult } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -857,6 +858,83 @@ const taskArtifactsCheck = defineCommand({
 const taskArtifacts = defineCommand({
   meta: { name: 'task-artifacts', description: 'Inspect task artifact completeness' },
   subCommands: { check: taskArtifactsCheck },
+})
+
+function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
+  console.log('\nSCALE Workspace Lifecycle')
+  console.log(`  Root: ${report.root.path}`)
+  console.log(`  Branch: ${report.root.branch ?? '(detached)'}`)
+  console.log(`  Linked worktree: ${report.root.isLinkedWorktree ? 'yes' : 'no'}`)
+  console.log(`  Root status: ${report.root.clean ? 'clean' : 'dirty'}`)
+  if (!report.root.clean) {
+    console.log(`    staged=${report.root.staged} unstaged=${report.root.unstaged} untracked=${report.root.untracked}`)
+  }
+
+  if (report.childRepositories.length) {
+    console.log('\n  Child repositories:')
+    for (const child of report.childRepositories) {
+      console.log(`    ${child.clean ? '[CLEAN]' : '[DIRTY]'} ${child.relativePath} (${child.kind}) branch=${child.branch ?? '(detached)'}`)
+      if (!child.clean) console.log(`      staged=${child.staged} unstaged=${child.unstaged} untracked=${child.untracked}`)
+    }
+  } else {
+    console.log('\n  Child repositories: none')
+  }
+
+  console.log(`\n  Cleanup candidate: ${report.finish.canCleanup ? 'yes' : 'no'}`)
+  for (const blocker of report.finish.blockers) console.log(`  [BLOCKER] ${blocker}`)
+  for (const warning of report.finish.warnings) console.log(`  [WARN] ${warning}`)
+  for (const action of report.finish.nextActions) console.log(`  [NEXT] ${action}`)
+}
+
+const workspaceStatus = defineCommand({
+  meta: { name: 'status', description: 'Inspect root worktree and child repository lifecycle state' },
+  args: {
+    dir: { type: 'string', description: 'Repository or worktree directory; defaults to current project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const report = await inspectWorkspaceLifecycle({ projectDir: args.dir ?? PROJECT_DIR })
+
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      printWorkspaceLifecycle(report)
+    }
+
+    if (report.finish.blockers.length > 0) process.exitCode = 1
+  },
+})
+
+const workspaceFinish = defineCommand({
+  meta: { name: 'finish', description: 'Check whether a temporary worktree can be safely finished or cleaned up' },
+  args: {
+    dir: { type: 'string', description: 'Repository or worktree directory; defaults to current project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const report = await inspectWorkspaceLifecycle({ projectDir: args.dir ?? PROJECT_DIR })
+    const result = {
+      root: report.root,
+      childRepositories: report.childRepositories,
+      finish: report.finish,
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+    } else {
+      printWorkspaceLifecycle(report)
+    }
+
+    if (report.finish.blockers.length > 0) process.exitCode = 1
+  },
+})
+
+const workspace = defineCommand({
+  meta: { name: 'workspace', description: 'Inspect worktree, branch, and child repository lifecycle safety' },
+  subCommands: {
+    status: workspaceStatus,
+    finish: workspaceFinish,
+  },
 })
 
 const preflight = defineCommand({
@@ -1808,6 +1886,7 @@ const main = defineCommand({
     governance,
     metrics,
     'task-artifacts': taskArtifacts,
+    workspace,
     status,
     workflow,
     evidence,

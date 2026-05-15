@@ -8,6 +8,12 @@
 - Added optional `scale doctor` governance drift warnings.
 - Added Go service-matrix defaults for `netdisk`, `auth`, and `gateway`, excluding reference modules from default gates.
 
+### Workspace lifecycle
+
+- Added `scale workspace status` and `scale workspace finish` to inspect root worktree state plus child repositories.
+- Added cleanup safety decisions so temporary worktrees are blocked when submodules or nested repositories still have uncommitted or unpushed work.
+- Added linked-worktree detection that distinguishes real worktrees from submodules.
+
 ---
 
 ## 0.13.0 - 2026-05-14
