@@ -15,9 +15,19 @@ describe('External Skills Integration', () => {
     registerExternalSkills(registry, eventBus)
   })
 
-  it('should register 12 external skills', () => {
+  it('should register workflow official and ecosystem skills', () => {
     const all = registry.listAll()
-    expect(all.length).toBe(12)
+    expect(all.length).toBe(20)
+    expect(all.map(skill => skill.id)).toEqual(expect.arrayContaining([
+      'frontend-design',
+      'webapp-testing',
+      'code-reviewer',
+      'fix',
+      'pr-creator',
+      'update-docs',
+      'find-skills',
+      'fullstack-developer',
+    ]))
   })
 
   it('should have graphify installed', () => {
@@ -81,5 +91,25 @@ describe('External Skills Integration', () => {
     })
     expect(recommendations.length).toBeGreaterThan(0)
     expect(recommendations.some(r => r.skillId === 'playwright')).toBe(true)
+  })
+
+  it('should recommend frontend-design for UI design tasks', () => {
+    const recommendations = registry.recommend({
+      taskType: 'ui-design',
+      phase: 'plan',
+      keywords: ['frontend', 'visual', 'responsive'],
+    })
+
+    expect(recommendations.some(r => r.skillId === 'frontend-design')).toBe(true)
+  })
+
+  it('should recommend code-reviewer for review tasks', () => {
+    const recommendations = registry.recommend({
+      taskType: 'code-review',
+      phase: 'verify',
+      keywords: ['review', 'critical', 'pull request'],
+    })
+
+    expect(recommendations.some(r => r.skillId === 'code-reviewer')).toBe(true)
   })
 })

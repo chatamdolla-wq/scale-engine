@@ -14,9 +14,11 @@ export type GovernanceArtifactTemplateName =
   | 'explore.md'
   | 'mini-prd.md'
   | 'skill-plan.md'
+  | 'skill-evidence.md'
   | 'ui-spec.md'
   | 'visual-review.md'
   | 'api-contract.md'
+  | 'docs-impact.md'
   | 'security-review.md'
   | 'db-change-plan.md'
   | 'e2e-plan.md'
@@ -58,9 +60,11 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/explore.md', governanceTemplateContent('explore.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-evidence.md', governanceTemplateContent('skill-evidence.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/ui-spec.md', governanceTemplateContent('ui-spec.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/docs-impact.md', governanceTemplateContent('docs-impact.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'))
@@ -99,9 +103,11 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
     case 'explore.md': return exploreTemplate()
     case 'mini-prd.md': return miniPrdTemplate()
     case 'skill-plan.md': return skillPlanTemplate()
+    case 'skill-evidence.md': return skillEvidenceTemplate()
     case 'ui-spec.md': return uiSpecTemplate()
     case 'visual-review.md': return visualReviewTemplate()
     case 'api-contract.md': return apiContractTemplate()
+    case 'docs-impact.md': return docsImpactTemplate()
     case 'security-review.md': return securityReviewTemplate()
     case 'db-change-plan.md': return dbChangePlanTemplate()
     case 'e2e-plan.md': return e2ePlanTemplate()
@@ -338,6 +344,27 @@ function skillPlanTemplate(): string {
 `
 }
 
+function skillEvidenceTemplate(): string {
+  return `# Skill Evidence
+
+## Planned Skills
+
+- TBD
+
+## Used Skills
+
+| Skill | Phase | Trigger | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| TBD | TBD | TBD | TBD | TBD |
+
+## Skipped Skills
+
+| Skill | Reason | Fallback Evidence |
+| --- | --- | --- |
+| TBD | TBD | TBD |
+`
+}
+
 function uiSpecTemplate(): string {
   return `# UI Spec
 
@@ -425,6 +452,27 @@ TBD
 ## Acceptance Criteria
 
 - [ ] TBD
+`
+}
+
+function docsImpactTemplate(): string {
+  return `# Docs Impact
+
+## Code Changes Requiring Docs
+
+- TBD
+
+## Documentation Updated
+
+- TBD
+
+## No-Docs-Needed Rationale
+
+TBD
+
+## Links Checked
+
+- TBD
 `
 }
 

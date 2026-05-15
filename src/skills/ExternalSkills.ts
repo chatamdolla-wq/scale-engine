@@ -1,6 +1,7 @@
 // SCALE Engine - External Skills Registration
 import type { SkillDefinition, SkillRegistry } from './SkillRegistry.js'
 import type { IEventBus } from '../core/eventBus.js'
+import { workflowAgentSkillDefinitions } from './SkillCatalog.js'
 
 export function registerExternalSkills(registry: SkillRegistry, eventBus: IEventBus): void {
   const skills: SkillDefinition[] = [
@@ -17,6 +18,7 @@ export function registerExternalSkills(registry: SkillRegistry, eventBus: IEvent
     { id: 'architecture-diagram-generator', name: 'Architecture Diagram', description: 'System architecture diagrams', domain: 'planning', triggers: [{ type: 'taskType', value: ['architecture-diagram'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/architecture-diagram-generator/SKILL.md' } }, priority: 85, installed: false, source: 'https://github.com/Cocoon-AI/architecture-diagram-generator' },
     { id: 'hyperframes', name: 'Hyperframes', description: 'HeyGen video generation', domain: 'execution', triggers: [{ type: 'taskType', value: ['video-generation'], weight: 1.0 }], execution: { type: 'cli-command', config: { command: 'npx @heygen/hyperframes' } }, priority: 75, installed: false, source: 'https://github.com/heygen-com/hyperframes' },
     { id: 'guizang-ppt-skill', name: 'Guizang PPT', description: 'PPT auto generation', domain: 'execution', triggers: [{ type: 'taskType', value: ['ppt-generation'], weight: 1.0 }], execution: { type: 'skill-file', config: { skillPath: '~/.claude/skills/guizang-ppt-skill/SKILL.md' } }, priority: 70, installed: false, source: 'https://github.com/op7418/guizang-ppt-skill' },
+    ...workflowAgentSkillDefinitions(),
   ]
   registry.registerBatch(skills)
   eventBus.emit('external-skills.registered', { count: skills.length })

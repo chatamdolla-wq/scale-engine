@@ -23,17 +23,18 @@ export const DEFAULT_SKILL_ROUTING_POLICY: ResolvedSkillRoutingPolicy = {
         files: ['src/**/*.tsx', 'src/**/*.jsx', 'app/**/*.tsx', 'pages/**/*.tsx', 'components/**/*.tsx', '**/*.css', '**/*.scss'],
         keywords: ['ui', 'ux', 'frontend', 'component', 'page', 'layout', 'responsive', 'visual', '界面', '页面', '交互', '视觉', '前端'],
       },
-      recommendedSkills: ['ui-ux-pro-max', 'frontend-design', 'design-review'],
-      requiredArtifacts: ['skill-plan.md', 'mini-prd.md', 'ui-spec.md', 'visual-review.md'],
-      requiredVerification: ['screenshot', 'responsive-check'],
+      requiredSkills: ['frontend-design'],
+      recommendedSkills: ['ui-ux-pro-max', 'webapp-testing', 'design-review'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'mini-prd.md', 'ui-spec.md', 'visual-review.md'],
+      requiredVerification: ['screenshot', 'responsive-check', 'browser-run'],
     },
     e2e: {
       detect: {
         files: ['tests/e2e/**', 'e2e/**', 'playwright.config.*'],
         keywords: ['e2e', 'browser', 'playwright', 'end-to-end', '端到端', '浏览器'],
       },
-      recommendedSkills: ['playwright', 'playwright-interactive'],
-      requiredArtifacts: ['skill-plan.md', 'e2e-plan.md'],
+      recommendedSkills: ['webapp-testing', 'playwright', 'playwright-interactive'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'e2e-plan.md'],
       requiredVerification: ['browser-run'],
     },
     api: {
@@ -69,18 +70,44 @@ export const DEFAULT_SKILL_ROUTING_POLICY: ResolvedSkillRoutingPolicy = {
     docs: {
       detect: {
         files: ['docs/**', '**/*.md'],
-        keywords: ['docs', 'documentation', 'readme', '文档'],
+        keywords: ['docs', 'documentation', 'document', 'readme', '文档'],
       },
-      recommendedSkills: ['workflow-guide'],
-      requiredArtifacts: ['skill-plan.md'],
+      recommendedSkills: ['update-docs', 'workflow-guide'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'docs-impact.md'],
+    },
+    review: {
+      detect: {
+        files: ['.github/PULL_REQUEST_TEMPLATE.md', '.github/pull_request_template.md'],
+        keywords: ['review', 'code review', 'pull request', 'pr', 'merge request', 'changes reviewed', '审查', '评审'],
+      },
+      requiredSkills: ['code-reviewer'],
+      recommendedSkills: ['pr-creator'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'review.md'],
+      requiredVerification: ['review-evidence'],
     },
     release: {
       detect: {
         files: ['CHANGELOG.md', 'package.json', '.github/workflows/**'],
-        keywords: ['release', 'ship', 'publish', 'deploy', '发版', '发布', '部署'],
+        keywords: ['release', 'ship', 'publish', 'deploy', 'pull request', 'pr', '发版', '发布', '部署'],
       },
-      recommendedSkills: ['verification', 'code-review'],
-      requiredArtifacts: ['skill-plan.md', 'review.md', 'summary.md'],
+      requiredSkills: ['code-reviewer'],
+      recommendedSkills: ['pr-creator', 'fix', 'verification', 'code-review'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'review.md', 'summary.md'],
+      requiredVerification: ['preflight'],
+    },
+    skillDiscovery: {
+      detect: {
+        keywords: ['skill', 'capability', 'missing capability', 'install skill', 'find skill'],
+      },
+      recommendedSkills: ['find-skills'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md'],
+    },
+    fullstackPrototype: {
+      detect: {
+        keywords: ['fullstack', 'full-stack', 'mvp', 'prototype', 'next.js', 'react api', 'node api'],
+      },
+      recommendedSkills: ['fullstack-developer'],
+      requiredArtifacts: ['skill-plan.md', 'skill-evidence.md', 'mini-prd.md', 'api-contract.md'],
       requiredVerification: ['preflight'],
     },
   },

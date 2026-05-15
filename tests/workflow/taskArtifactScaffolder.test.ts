@@ -42,6 +42,7 @@ describe('TaskArtifactScaffolder', () => {
     expect(result.relativeDir).toContain('docs/worklog/tasks/')
     expect(result.created).toEqual(expect.arrayContaining([
       join(result.dir!, 'skill-plan.md'),
+      join(result.dir!, 'skill-evidence.md'),
       join(result.dir!, 'ui-spec.md'),
       join(result.dir!, 'visual-review.md'),
     ]))
@@ -62,6 +63,32 @@ describe('TaskArtifactScaffolder', () => {
 
     expect(result.created).toEqual([])
     expect(result.relativeDir).toBeUndefined()
+  })
+
+  it('creates docs impact artifacts when skill routing requires documentation evidence', () => {
+    const projectDir = makeProject()
+    const skillPlan = createSkillPlan({
+      taskId: 'TASK-DOCS',
+      taskName: 'Document CLI',
+      description: 'Update docs and README for CLI behavior',
+      level: 'M',
+      files: ['docs/workflow/README.md', 'src/api/cli.ts'],
+      policy: resolveSkillRoutingPolicy(null),
+    })
+
+    const result = scaffoldTaskArtifacts({
+      projectDir,
+      taskId: 'TASK-DOCS',
+      taskName: 'Document CLI',
+      description: 'Update docs and README for CLI behavior',
+      level: 'M',
+      skillPlan,
+    })
+
+    expect(result.created).toEqual(expect.arrayContaining([
+      join(result.dir!, 'docs-impact.md'),
+      join(result.dir!, 'skill-evidence.md'),
+    ]))
   })
 
   it('appends verification evidence to verification.md', () => {

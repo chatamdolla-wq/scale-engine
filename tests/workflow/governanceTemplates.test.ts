@@ -28,7 +28,9 @@ describe('writeGovernanceTemplates', () => {
       join(dir, 'docs', 'workflow', 'README.md'),
       join(dir, 'docs', 'workflow', 'templates', 'mini-prd.md'),
       join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'),
       join(dir, 'docs', 'workflow', 'templates', 'ui-spec.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'docs-impact.md'),
       join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'),
       join(dir, 'docs', 'workflow', 'templates', 'pre-push-scale-preflight.sh'),
       join(dir, 'docs', 'worklog', 'metrics.md'),
@@ -46,6 +48,11 @@ describe('writeGovernanceTemplates', () => {
       mode: 'block',
       requireSkillPlan: true,
     })
+    const skills = JSON.parse(readFileSync(join(dir, '.scale', 'skills.json'), 'utf-8'))
+    expect(skills.domains.ui.requiredSkills).toContain('frontend-design')
+    expect(skills.domains.ui.recommendedSkills).toContain('webapp-testing')
+    expect(skills.domains.review.requiredSkills).toContain('code-reviewer')
+    expect(skills.domains.docs.recommendedSkills).toContain('update-docs')
   })
 
   it('generates project-scaffold pack wrappers and governance lock', () => {
@@ -85,8 +92,10 @@ describe('writeGovernanceTemplates', () => {
       'explore.md',
       'mini-prd.md',
       'skill-plan.md',
+      'skill-evidence.md',
       'ui-spec.md',
       'visual-review.md',
+      'docs-impact.md',
       'api-contract.md',
       'security-review.md',
       'db-change-plan.md',

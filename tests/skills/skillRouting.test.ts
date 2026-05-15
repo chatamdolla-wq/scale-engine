@@ -62,6 +62,57 @@ describe('skill routing', () => {
     expect(apiPlan.requiredArtifacts).toEqual(expect.arrayContaining(['mini-prd.md', 'api-contract.md']))
   })
 
+  it('routes UI work to frontend-design with browser testing evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-UI-SKILLS',
+      taskName: 'Dashboard visual polish',
+      description: 'Improve React dashboard UI, responsive states, and browser interaction quality',
+      level: 'M',
+      files: ['src/components/Dashboard.tsx', 'src/styles/dashboard.css'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('ui')
+    expect(plan.requiredSkills).toContain('frontend-design')
+    expect(plan.recommendedSkills).toContain('webapp-testing')
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-evidence.md', 'ui-spec.md', 'visual-review.md']))
+    expect(plan.requiredVerification).toEqual(expect.arrayContaining(['screenshot', 'responsive-check', 'browser-run']))
+  })
+
+  it('routes docs impact work to update-docs and docs-impact evidence', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-DOCS',
+      taskName: 'Document CLI cleanup',
+      description: 'Update documentation and README for a CLI behavior change',
+      level: 'M',
+      files: ['docs/workflow/README.md', 'src/api/cli.ts'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toContain('docs')
+    expect(plan.recommendedSkills).toContain('update-docs')
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['docs-impact.md', 'skill-evidence.md']))
+  })
+
+  it('routes PR and review work to code-reviewer and pr-creator', () => {
+    const policy = resolveSkillRoutingPolicy(null)
+    const plan = createSkillPlan({
+      taskId: 'TASK-PR',
+      taskName: 'Prepare PR',
+      description: 'Review local changes and create a pull request for the feature branch',
+      level: 'M',
+      files: ['src/api/cli.ts'],
+      policy,
+    })
+
+    expect(plan.intents.map(intent => intent.domain)).toEqual(expect.arrayContaining(['review', 'release']))
+    expect(plan.requiredSkills).toContain('code-reviewer')
+    expect(plan.recommendedSkills).toContain('pr-creator')
+    expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['review.md', 'skill-evidence.md']))
+  })
+
   it('checks required skill artifacts', () => {
     const dir = mkdtempSync(join(tmpdir(), 'scale-skill-gate-'))
     try {

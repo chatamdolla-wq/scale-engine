@@ -5,6 +5,7 @@ export { TriggerEngine, type ITriggerEngine, type TriggerEvent } from "./Trigger
 export { SkillExecutor, type ISkillExecutor, type SkillExecutionResult } from "./SkillExecutor.js"
 export { CORE_SKILLS, getCoreSkill, registerCoreSkills } from "./coreSkills.js"
 export { registerExternalSkills } from "./ExternalSkills.js"
+export * from './SkillCatalog.js'
 export { SkillInstaller, type ISkillInstaller, type SkillInstallConfig, type InstallResult, type InstallMethod } from "./SkillInstaller.js"
 export { SkillDiscovery, type ISkillDiscovery, type DiscoveryContext, type DiscoveryResult } from "./SkillDiscovery.js"
 export * from "./routing/index.js"
