@@ -1,3 +1,29 @@
+## 0.16.0 - 2026-05-17
+
+### Governed skill orchestration
+
+- Added a progressive skill repository with governed UI/UX, web access, browser automation, Chrome DevTools MCP, desktop automation, and external Agent CLI capabilities.
+- Added skill recommendation and install-safety scanning for HTTPS source checks, dangerous shell patterns, script-review requirements, npm audit-signature guidance, and pinned-source verification.
+- Added CLI flows for `scale skill repo`, `scale skill recommend`, and `scale skill safety`.
+
+### Visual prompt and leadership workflows
+
+- Added visual Vibe Coding prompt templates for product discovery, UI/UX direction, technical architecture, implementation slicing, and release verification.
+- Added CLI flows for browsing, selecting, and rendering copyable prompt templates.
+- Added CEO, CTO, product, UX, QA, security, and delivery leadership presets so generated governance can make role ownership explicit.
+
+### Tool and resource governance
+
+- Added tool capability orchestration, evidence capture, and policy gates for MCP, skills, browser automation, CLI tools, desktop automation, and external agent calls.
+- Strengthened resource governance for maintained documents, durable specifications, task evidence, temporary outputs, generated reports, and repository hygiene.
+- Extended engineering standards checks for noisy logs, sensitive-data handling, ORM/database conventions, framework boundaries, architecture consistency, UI/UX expectations, testing rigor, deployment readiness, and security controls.
+
+### Verification
+
+- Added tests covering skill repository safety, leadership presets, Vibe prompt templates, tool orchestration, resource governance, standards scanning, and CLI behavior.
+
+---
+
 ## 0.15.1 - 2026-05-15
 
 ### Tool orchestration governance
