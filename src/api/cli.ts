@@ -25,6 +25,13 @@ import { Doctor } from './doctor.js'
 import { quickStart, detectPlatform } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
+import {
+  evaluateSkillInstallSafety,
+  listSkillRepositoryEntries,
+  recommendSkillWorkflow,
+  renderSkillRepositoryMarkdown,
+} from '../skills/SkillRepository.js'
+import { listLeadershipPresets, renderLeadershipPresetsMarkdown } from '../agents/LeadershipPresets.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
@@ -34,6 +41,7 @@ import { resolveVerificationTargets, type VerificationEngineeringStandardsGateMo
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import {
+  baselineEngineeringStandards,
   doctorEngineeringStandards,
   scanEngineeringStandards,
   settleEngineeringStandards,
@@ -44,6 +52,11 @@ import { doctorResourceAssets, scanResourceAssets, settleResourceAssets } from '
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
 import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
+import { inspectToolCapabilities } from '../tools/ToolCapabilityRegistry.js'
+import { evaluateToolEvidenceGate } from '../tools/ToolEvidenceGate.js'
+import { ToolEvidenceStore } from '../tools/ToolEvidenceStore.js'
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.js'
+import { loadToolPolicy, toolPolicyTemplate, type ResolvedToolPolicy, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
 import {
   cleanupWorkspaceLifecycle,
   inspectWorkspaceLifecycle,
@@ -59,6 +72,7 @@ import {
 import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 
 // ============================================================================
@@ -976,6 +990,53 @@ function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
   for (const action of report.finish.nextActions) console.log(`  [NEXT] ${action}`)
 }
 
+function compactList(values: string[], limit = 5): string {
+  if (values.length <= limit) return values.join(', ')
+  return `${values.slice(0, limit).join(', ')} (+${values.length - limit} more)`
+}
+
+function printWorkspaceSummary(report: WorkspaceLifecycleReport): void {
+  const dirtyChildren = report.childRepositories
+    .filter(child => !child.clean)
+    .map(child => child.relativePath)
+  const unpushedChildren = report.childRepositories
+    .filter(child => child.ahead > 0 || (report.topology.finishPolicy.requirePushedBranches && report.topology.topology === 'moe' && !child.upstream && Boolean(child.branch)))
+    .map(child => child.relativePath)
+  const noUpstreamChildren = report.childRepositories
+    .filter(child => !child.upstream && Boolean(child.branch))
+    .map(child => child.relativePath)
+  const rootStatus = report.root.clean
+    ? 'clean'
+    : `dirty (staged=${report.root.staged}, unstaged=${report.root.unstaged}, untracked=${report.root.untracked})`
+  const status = report.finish.blockers.length > 0 ? 'BLOCKED' : 'READY'
+
+  console.log('\nSCALE Workspace Summary')
+  console.log(`  Status: ${status}`)
+  console.log(`  Topology: ${report.topology.topology}${report.topology.configured ? '' : ' (default)'}`)
+  console.log(`  Root: ${rootStatus}`)
+  console.log(`  Children: ${report.childRepositories.length} total, ${dirtyChildren.length} dirty, ${unpushedChildren.length} unpushed, ${noUpstreamChildren.length} no upstream`)
+
+  if (dirtyChildren.length > 0) console.log(`  Dirty child repositories: ${compactList(dirtyChildren)}`)
+  if (unpushedChildren.length > 0) console.log(`  Unpushed child repositories: ${compactList(unpushedChildren)}`)
+
+  if (report.finish.blockers.length > 0) {
+    console.log('\n  Blockers:')
+    for (const blocker of report.finish.blockers.slice(0, 8)) console.log(`    - ${blocker}`)
+    if (report.finish.blockers.length > 8) console.log(`    - ... ${report.finish.blockers.length - 8} more blocker(s)`)
+  }
+
+  if (report.finish.warnings.length > 0) {
+    console.log(`\n  Warnings: ${report.finish.warnings.length} warning(s); run scale workspace finish --json for details`)
+  }
+
+  console.log('\n  Next:')
+  const nextActions = report.finish.blockers.length > 0
+    ? report.finish.nextActions
+    : ['Proceed with scale ship <task-id> or cleanup when the branch policy is satisfied']
+  for (const action of nextActions.slice(0, 3)) console.log(`    - ${action}`)
+  console.log('    - Run scale workspace finish --json for full details')
+}
+
 function printWorkspaceTopology(topology: ReturnType<typeof resolveWorkspaceTopology>, written?: string | null): void {
   console.log('\nSCALE Workspace Topology')
   console.log(`  Topology: ${topology.topology}${topology.configured ? '' : ' (default)'}`)
@@ -1005,6 +1066,7 @@ const workspaceStatus = defineCommand({
   meta: { name: 'status', description: 'Inspect root worktree and child repository lifecycle state' },
   args: {
     dir: { type: 'string', description: 'Repository or worktree directory; defaults to current project directory' },
+    summary: { type: 'boolean', default: false, description: 'Print concise human summary instead of the full repository listing' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -1012,6 +1074,8 @@ const workspaceStatus = defineCommand({
 
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
+    } else if (isTruthyFlag(args.summary)) {
+      printWorkspaceSummary(report)
     } else {
       printWorkspaceLifecycle(report)
     }
@@ -1056,6 +1120,7 @@ const workspaceFinish = defineCommand({
   meta: { name: 'finish', description: 'Check whether a temporary worktree can be safely finished or cleaned up' },
   args: {
     dir: { type: 'string', description: 'Repository or worktree directory; defaults to current project directory' },
+    summary: { type: 'boolean', default: false, description: 'Print concise human summary instead of the full repository listing' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -1069,6 +1134,8 @@ const workspaceFinish = defineCommand({
 
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
+    } else if (isTruthyFlag(args.summary)) {
+      printWorkspaceSummary(report)
     } else {
       printWorkspaceLifecycle(report)
     }
@@ -1084,6 +1151,7 @@ const workspaceCleanup = defineCommand({
     'dry-run': { type: 'boolean', default: false, description: 'Preview cleanup; this is the default unless --apply is set' },
     apply: { type: 'boolean', default: false, description: 'Actually run git worktree remove after safety checks' },
     confirm: { type: 'string', description: 'Required confirmation token for --apply, usually the worktree branch name' },
+    summary: { type: 'boolean', default: false, description: 'Print concise human summary before the cleanup plan' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -1095,6 +1163,13 @@ const workspaceCleanup = defineCommand({
 
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
+    } else if (isTruthyFlag(args.summary)) {
+      printWorkspaceSummary(result.report)
+      console.log('\n  Cleanup:')
+      console.log(`    Mode: ${result.mode}`)
+      console.log(`    Can apply: ${result.canApply ? 'yes' : 'no'}`)
+      console.log(`    Applied: ${result.applied ? 'yes' : 'no'}`)
+      console.log(`    Confirmation token: ${result.confirmationToken ?? '(unavailable)'}`)
     } else {
       printWorkspaceCleanup(result)
     }
@@ -1664,14 +1739,48 @@ const assets = defineCommand({
 // standards command - Engineering standards governance
 // ============================================================================
 
+function resolveChangedFilesArg(args: { dir?: string; changed?: boolean; 'changed-files'?: string }): string[] | undefined {
+  const explicit = splitChangedFiles(args['changed-files'])
+  if (explicit.length > 0) return explicit
+  if (!args.changed) return undefined
+  return readGitChangedFiles(args.dir ?? '.')
+}
+
+function splitChangedFiles(value?: string): string[] {
+  if (!value) return []
+  return value
+    .split(/[\n,]/)
+    .map(item => item.trim())
+    .filter(Boolean)
+}
+
+function readGitChangedFiles(projectDir: string): string[] {
+  const tracked = readGitPathList(projectDir, ['diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD', '--'])
+  const untracked = readGitPathList(projectDir, ['ls-files', '--others', '--exclude-standard'])
+  return Array.from(new Set([...tracked, ...untracked]))
+}
+
+function readGitPathList(projectDir: string, args: string[]): string[] {
+  try {
+    return execFileSync('git', ['-C', projectDir, ...args], { encoding: 'utf-8' })
+      .split(/\r?\n/)
+      .map(item => item.trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 const standardsScan = defineCommand({
   meta: { name: 'scan', description: 'Scan source files for engineering standard violations' },
   args: {
     dir: { type: 'string', default: '.', description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
     json: { type: 'boolean', default: false, description: 'Print JSON output' },
   },
   run({ args }) {
-    const report = scanEngineeringStandards({ projectDir: args.dir })
+    const report = scanEngineeringStandards({ projectDir: args.dir, changedFiles: resolveChangedFilesArg(args) })
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
       return
@@ -1693,10 +1802,12 @@ const standardsDoctor = defineCommand({
   meta: { name: 'doctor', description: 'Find blocking engineering standards problems' },
   args: {
     dir: { type: 'string', default: '.', description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
     json: { type: 'boolean', default: false, description: 'Print JSON output' },
   },
   run({ args }) {
-    const report = doctorEngineeringStandards({ projectDir: args.dir })
+    const report = doctorEngineeringStandards({ projectDir: args.dir, changedFiles: resolveChangedFilesArg(args) })
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
       if (!report.ok) process.exitCode = 1
@@ -1722,6 +1833,8 @@ const standardsSettle = defineCommand({
     dir: { type: 'string', default: '.', description: 'Project directory' },
     'task-id': { type: 'string', description: 'Task id for the settlement record' },
     'artifact-dir': { type: 'string', description: 'Task artifact directory where standards-impact.md should be updated' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
     json: { type: 'boolean', default: false, description: 'Print JSON output' },
   },
   run({ args }) {
@@ -1729,6 +1842,7 @@ const standardsSettle = defineCommand({
       projectDir: args.dir,
       taskId: args['task-id'],
       artifactsDir: args['artifact-dir'],
+      changedFiles: resolveChangedFilesArg(args),
     })
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
@@ -1744,9 +1858,40 @@ const standardsSettle = defineCommand({
   },
 })
 
+const standardsBaseline = defineCommand({
+  meta: { name: 'baseline', description: 'Generate a legacy standards baseline and classification report' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    write: { type: 'boolean', default: false, description: 'Write .scale/engineering-standards-baseline.json' },
+    'task-id': { type: 'string', description: 'Task id for the legacy debt report' },
+    'artifact-dir': { type: 'string', description: 'Directory where standards-legacy-debt.md should be written' },
+    reason: { type: 'string', default: 'legacy standards debt accepted for staged remediation', description: 'Reason recorded on generated baseline entries' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = baselineEngineeringStandards({
+      projectDir: args.dir,
+      writeBaseline: args.write,
+      taskId: args['task-id'],
+      artifactsDir: args['artifact-dir'],
+      reason: args.reason,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log(`Standards baseline: ${report.wroteBaseline ? 'written' : 'dry-run'}`)
+    console.log(`  Baseline entries: ${report.baselineEntries.length}`)
+    console.log(`  Blocking findings: ${report.debt.blockingFindings}`)
+    console.log(`  Baseline path: ${report.baselinePath}`)
+    if (report.legacyDebtPath) console.log(`  Legacy debt report: ${report.legacyDebtPath}`)
+    if (!report.wroteBaseline) console.log('  Re-run with --write to update .scale/engineering-standards-baseline.json.')
+  },
+})
+
 const standards = defineCommand({
   meta: { name: 'standards', description: 'Engineering standards governance for logs, security, architecture, database, and code quality' },
-  subCommands: { scan: standardsScan, doctor: standardsDoctor, settle: standardsSettle },
+  subCommands: { scan: standardsScan, doctor: standardsDoctor, settle: standardsSettle, baseline: standardsBaseline },
 })
 
 // ============================================================================
@@ -2209,9 +2354,325 @@ const skillCheckCommand = defineCommand({
   },
 })
 
+const skillRepoCommand = defineCommand({
+  meta: { name: 'repo', description: 'Show SCALE progressive skill repository guide' },
+  args: {
+    category: { type: 'string', description: 'Filter by category: ui/browser/desktop/testing/review/docs/agent-cli/role-library/discovery' },
+    output: { type: 'string', alias: 'o', description: 'Write markdown guide to file' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    if (args.json) {
+      console.log(JSON.stringify(listSkillRepositoryEntries(args.category ? { category: args.category as never } : undefined), null, 2))
+      return
+    }
+    const markdown = renderSkillRepositoryMarkdown()
+    if (args.output) {
+      const outputPath = resolve(PROJECT_DIR, args.output)
+      ensureDir(resolve(outputPath, '..'))
+      writeFileSync(outputPath, markdown, 'utf-8')
+      console.log(`[OK] Skill 仓库指南已生成: ${outputPath}`)
+      return
+    }
+    console.log(markdown)
+  },
+})
+
+const skillSafetyCommand = defineCommand({
+  meta: { name: 'safety', description: 'Evaluate skill install command and source safety' },
+  args: {
+    source: { type: 'string', description: 'Skill source URL' },
+    command: { type: 'string', description: 'Install command to review' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = evaluateSkillInstallSafety({
+      sourceUrl: args.source,
+      installCommand: args.command,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('\nSCALE Skill Safety')
+    console.log(`  Risk: ${report.risk}`)
+    console.log(`  Blocked: ${report.blocked}`)
+    for (const finding of report.findings) {
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.rule}: ${finding.message}`)
+    }
+    console.log('  Required checks:')
+    for (const check of report.requiredChecks) console.log(`  - ${check}`)
+    if (report.blocked) process.exitCode = 1
+  },
+})
+
+const skillRecommendCommand = defineCommand({
+  meta: { name: 'recommend', description: 'Recommend a composable skill workflow for a task' },
+  args: {
+    task: { type: 'string', required: true, description: 'Task description' },
+    phase: { type: 'string', description: 'Workflow phase' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const plan = recommendSkillWorkflow({
+      description: args.task,
+      phase: args.phase,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(plan, null, 2))
+      return
+    }
+    console.log('\nSCALE Skill Recommendation')
+    console.log(`  Primary: ${plan.primarySkills.join(', ') || 'none'}`)
+    console.log(`  Supporting: ${plan.supportingSkills.join(', ') || 'none'}`)
+    console.log(`  Safety required: ${plan.safetyRequired}`)
+    console.log(`  Evidence: ${plan.requiredEvidence.join(', ') || 'none'}`)
+    for (const reason of plan.rationale) console.log(`  - ${reason}`)
+  },
+})
+
 const skill = defineCommand({
   meta: { name: 'skill', description: 'Skill discovery and management' },
-  subCommands: { scan: skillScan, doctor: skillDoctorCommand, plan: skillPlanCommand, check: skillCheckCommand },
+  subCommands: {
+    scan: skillScan,
+    doctor: skillDoctorCommand,
+    plan: skillPlanCommand,
+    check: skillCheckCommand,
+    repo: skillRepoCommand,
+    safety: skillSafetyCommand,
+    recommend: skillRecommendCommand,
+  },
+})
+
+// ============================================================================
+// tool command - Skills/MCP/CLI orchestration governance
+// ============================================================================
+
+function normalizeToolMode(value: unknown): ToolOrchestrationMode {
+  const normalized = String(value ?? 'evidence-required')
+  if (normalized === 'off' || normalized === 'advisory' || normalized === 'evidence-required' || normalized === 'block') return normalized
+  return 'evidence-required'
+}
+
+function parseToolIds(value: unknown): string[] | undefined {
+  const raw = String(value ?? '').trim()
+  if (!raw) return undefined
+  return raw.split(',').map(item => item.trim()).filter(Boolean)
+}
+
+function parseCommaList(value: unknown): string[] {
+  return parseToolIds(value) ?? []
+}
+
+function createToolExecutionPlanFromArgs(args: Record<string, unknown>) {
+  const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+  const level = normalizeTaskArtifactLevel(args.level ?? 'M')
+  const skillPolicy = loadSkillRoutingPolicy(projectDir, SCALE_DIR)
+  const skillPlan = createSkillPlan({
+    taskId: String(args['task-id'] ?? `TOOL-${Date.now()}`),
+    taskName: String(args.task ?? 'Tool orchestration task'),
+    description: String(args.task ?? ''),
+    level,
+    files: parseCommaList(args.files),
+    services: parseCommaList(args.services),
+    policy: skillPolicy,
+  })
+  const toolPolicy = loadToolPolicy(projectDir, SCALE_DIR)
+  const toolIds = uniqueStrings([
+    ...skillPlan.requiredSkills,
+    ...skillPlan.recommendedSkills,
+    ...Object.keys(toolPolicy.tools).filter(toolId => {
+      const config = toolPolicy.tools[toolId]
+      const domains = new Set(skillPlan.intents.map(intent => intent.domain))
+      return config.enabled && (
+        config.requiredFor.some(domain => domains.has(domain)) ||
+        (config.recommendedFor ?? []).some(domain => domains.has(domain))
+      )
+    }),
+  ])
+  const capabilityReport = inspectToolCapabilities({
+    projectDir,
+    toolIds,
+  })
+  const orchestrator = new ToolOrchestrator({
+    projectDir,
+    policy: toolPolicy,
+    capabilityReport,
+    evidenceStore: new ToolEvidenceStore({ projectDir, scaleDir: SCALE_DIR }),
+  })
+  return {
+    projectDir,
+    skillPlan,
+    orchestrator,
+    plan: orchestrator.plan({ skillPlan }),
+    capabilityReport,
+  }
+}
+
+function uniqueStrings(items: string[]): string[] {
+  return [...new Set(items)]
+}
+
+const toolPolicyCommand = defineCommand({
+  meta: { name: 'policy', description: 'Show resolved tool orchestration policy' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    mode: { type: 'string', description: 'Render a starter policy mode instead of reading .scale/tools.json' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const policy: ResolvedToolPolicy = args.mode
+      ? JSON.parse(toolPolicyTemplate(normalizeToolMode(args.mode))) as ResolvedToolPolicy
+      : loadToolPolicy(args.dir, SCALE_DIR)
+    if (args.json) {
+      console.log(JSON.stringify(policy, null, 2))
+      return
+    }
+    console.log('\nSCALE Tool Policy')
+    console.log(`  Mode: ${policy.mode}`)
+    console.log(`  Tools: ${Object.keys(policy.tools).length}`)
+    for (const [id, config] of Object.entries(policy.tools)) {
+      const state = config.enabled ? '[ON]' : '[OFF]'
+      console.log(`  ${state} ${id}: requiredFor=${config.requiredFor.join(',') || 'none'}`)
+    }
+  },
+})
+
+const toolDoctorCommand = defineCommand({
+  meta: { name: 'doctor', description: 'Check skill, MCP, and CLI tool availability' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    tools: { type: 'string', description: 'Comma-separated tool ids to check' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = inspectToolCapabilities({
+      projectDir: args.dir,
+      toolIds: parseToolIds(args.tools),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      console.log('\nSCALE Tool Doctor')
+      console.log(`  Installed: ${report.summary.installed}/${report.summary.total}`)
+      for (const entry of report.tools) {
+        console.log(`  ${entry.installed ? '[OK]' : '[MISSING]'} ${entry.id}`)
+        if (entry.detectedPath) console.log(`    path: ${entry.detectedPath}`)
+        if (entry.version) console.log(`    version: ${entry.version}`)
+        if (entry.missingReason) console.log(`    reason: ${entry.missingReason}`)
+      }
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const toolPlanCommand = defineCommand({
+  meta: { name: 'plan', description: 'Create a tool execution plan from task intent' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', required: true, description: 'Task id for evidence linkage' },
+    task: { type: 'string', required: true, description: 'Task description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const result = createToolExecutionPlanFromArgs(args)
+    if (args.json) {
+      console.log(JSON.stringify(result.plan, null, 2))
+      return
+    }
+    console.log('\nSCALE Tool Plan')
+    console.log(`  Task: ${result.plan.taskId}`)
+    console.log(`  Mode: ${result.plan.mode}`)
+    console.log(`  Steps: ${result.plan.steps.length}`)
+    for (const step of result.plan.steps) {
+      console.log(`  ${step.status === 'ready' ? '[READY]' : '[MISSING]'} ${step.toolId} (${step.adapter}) required=${step.required}`)
+    }
+    for (const blocker of result.plan.blockers) console.log(`  [BLOCKER] ${blocker}`)
+    for (const warning of result.plan.warnings) console.log(`  [WARN] ${warning}`)
+  },
+})
+
+const toolRunCommand = defineCommand({
+  meta: { name: 'run', description: 'Run or dry-run a tool execution plan and write tool evidence' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', required: true, description: 'Task id for evidence linkage' },
+    task: { type: 'string', required: true, description: 'Task description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    'dry-run': { type: 'boolean', default: false, description: 'Plan and record skipped evidence without executing tools' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const result = createToolExecutionPlanFromArgs(args)
+    const report = await result.orchestrator.run(result.plan, {
+      dryRun: isTruthyFlag(args['dry-run']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      console.log('\nSCALE Tool Run')
+      console.log(`  Task: ${report.taskId}`)
+      console.log(`  Dry-run: ${report.dryRun}`)
+      console.log(`  Evidence: ${report.evidence.length}`)
+      for (const record of report.evidence) {
+        console.log(`  [${record.status.toUpperCase()}] ${record.tool} -> ${record.id}`)
+      }
+      for (const blocker of report.blockers) console.log(`  [BLOCKER] ${blocker}`)
+      for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const toolEvidenceCommand = defineCommand({
+  meta: { name: 'evidence', description: 'Check required tool execution evidence for a task' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', required: true, description: 'Task id for evidence linkage' },
+    task: { type: 'string', required: true, description: 'Task description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    mode: { type: 'string', description: 'Override tool gate mode: off, advisory, evidence-required, or block' },
+    'allow-skipped': { type: 'boolean', default: false, description: 'Allow skipped/manual fallback evidence to satisfy required tools' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const result = createToolExecutionPlanFromArgs(args)
+    const gate = evaluateToolEvidenceGate({
+      projectDir: result.projectDir,
+      level: normalizeTaskArtifactLevel(args.level ?? 'M'),
+      plan: result.plan,
+      evidenceStore: new ToolEvidenceStore({ projectDir: result.projectDir, scaleDir: SCALE_DIR }),
+      mode: args.mode ? normalizeToolMode(args.mode) : result.plan.mode,
+      allowSkipped: isTruthyFlag(args['allow-skipped']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(gate, null, 2))
+    } else {
+      console.log('\nSCALE Tool Evidence Gate')
+      console.log(`  Task: ${gate.taskId ?? args['task-id']}`)
+      console.log(`  Mode: ${gate.mode}`)
+      console.log(`  Complete: ${gate.complete}`)
+      console.log(`  Required tools: ${gate.requiredTools.join(', ') || 'none'}`)
+      for (const item of gate.missing) console.log(`  [MISSING] ${item.toolId}: ${item.reason}`)
+      for (const item of gate.failed) console.log(`  [FAILED] ${item.toolId}: ${item.reason}`)
+      for (const item of gate.skipped) console.log(`  [SKIPPED] ${item.toolId}: ${item.reason}`)
+      for (const item of gate.passed) console.log(`  [PASS] ${item.toolId}: ${item.evidenceId ?? 'evidence'}`)
+      for (const warning of gate.warnings) console.log(`  [WARN] ${warning}`)
+    }
+    if (gate.blocked) process.exitCode = 1
+  },
+})
+
+const tool = defineCommand({
+  meta: { name: 'tool', description: 'Skills, MCP, browser, desktop, and external CLI governance' },
+  subCommands: { policy: toolPolicyCommand, doctor: toolDoctorCommand, plan: toolPlanCommand, run: toolRunCommand, evidence: toolEvidenceCommand },
 })
 
 // ============================================================================
@@ -2274,9 +2735,33 @@ const agentProfiles = defineCommand({
   },
 })
 
+const agentLeaders = defineCommand({
+  meta: { name: 'leaders', description: 'List SCALE leader presets such as CEO and CTO' },
+  args: {
+    output: { type: 'string', alias: 'o', description: 'Write markdown guide to file' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const presets = listLeadershipPresets()
+    if (args.json) {
+      console.log(JSON.stringify(presets, null, 2))
+      return
+    }
+    const markdown = renderLeadershipPresetsMarkdown()
+    if (args.output) {
+      const outputPath = resolve(PROJECT_DIR, args.output)
+      ensureDir(resolve(outputPath, '..'))
+      writeFileSync(outputPath, markdown, 'utf-8')
+      console.log(`[OK] 领导者角色指南已生成: ${outputPath}`)
+      return
+    }
+    console.log(markdown)
+  },
+})
+
 const agent = defineCommand({
   meta: { name: 'agent', description: 'Multi-Agent system management' },
-  subCommands: { spawn: agentSpawn, list: agentList, profiles: agentProfiles },
+  subCommands: { spawn: agentSpawn, list: agentList, profiles: agentProfiles, leaders: agentLeaders },
 })
 
 // ============================================================================
@@ -2393,6 +2878,7 @@ const main = defineCommand({
     status,
     workflow,
     evidence,
+    tool,
     skill,
     skills: skill,
     agent,

@@ -12,6 +12,7 @@ export type EngineeringStandardCategory =
   | 'uiux'
 
 export type EngineeringStandardSeverity = 'info' | 'warn' | 'fail'
+export type EngineeringStandardsDebtScope = 'production' | 'test' | 'generated'
 
 export interface EngineeringStandardFinding {
   severity: EngineeringStandardSeverity
@@ -48,6 +49,16 @@ export interface EngineeringStandardsPolicyFile {
     reason?: string
   }>
   baselineFindings?: Array<{
+    ruleId: string
+    path: string
+    line?: number
+    reason?: string
+  }>
+}
+
+export interface EngineeringStandardsBaselineFile {
+  version?: number
+  findings?: Array<{
     ruleId: string
     path: string
     line?: number
@@ -118,6 +129,8 @@ export interface EngineeringStandardsScanOptions {
   projectDir?: string
   scaleDir?: string
   now?: Date
+  changedFiles?: string[]
+  includeBaselineFindings?: boolean
 }
 
 export interface EngineeringStandardsSummary {
@@ -131,6 +144,7 @@ export interface EngineeringStandardsSummary {
 export interface EngineeringStandardsScanReport {
   projectDir: string
   policyPath: string
+  baselinePath: string
   frameworksPath: string
   policy: ResolvedEngineeringStandardsPolicy
   frameworks: ResolvedFrameworksCatalog
@@ -151,11 +165,67 @@ export interface EngineeringStandardsSettleOptions extends EngineeringStandardsS
   artifactsDir?: string
 }
 
+export interface EngineeringStandardsBaselineOptions extends EngineeringStandardsScanOptions {
+  taskId?: string
+  artifactsDir?: string
+  writeBaseline?: boolean
+  reason?: string
+  maxFindingsInReport?: number
+}
+
 export interface EngineeringStandardsSettleReport {
   ok: boolean
   taskId?: string
   standardsImpactPath?: string
   doctor: EngineeringStandardsDoctorReport
+}
+
+export interface EngineeringStandardsBaselineEntry {
+  ruleId: string
+  path: string
+  line?: number
+  reason: string
+  severity: EngineeringStandardSeverity
+  category: EngineeringStandardCategory
+  message: string
+}
+
+export interface EngineeringStandardsDebtGroup {
+  total: number
+  blocking: number
+  warn: number
+  info: number
+}
+
+export interface EngineeringStandardsDebtRuleGroup extends EngineeringStandardsDebtGroup {
+  category: EngineeringStandardCategory
+}
+
+export interface EngineeringStandardsDebtFileGroup extends EngineeringStandardsDebtGroup {
+  path: string
+}
+
+export interface EngineeringStandardsDebtSummary {
+  filesScanned: number
+  totalFindings: number
+  blockingFindings: number
+  bySeverity: Record<EngineeringStandardSeverity, number>
+  byScope: Record<EngineeringStandardsDebtScope, EngineeringStandardsDebtGroup>
+  byCategory: Record<EngineeringStandardCategory, EngineeringStandardsDebtGroup>
+  byRule: Record<string, EngineeringStandardsDebtRuleGroup>
+  topFiles: EngineeringStandardsDebtFileGroup[]
+}
+
+export interface EngineeringStandardsBaselineReport {
+  ok: boolean
+  projectDir: string
+  baselinePath: string
+  legacyDebtPath?: string
+  wroteBaseline: boolean
+  baselineEntries: EngineeringStandardsBaselineEntry[]
+  debt: EngineeringStandardsDebtSummary
+  scan: EngineeringStandardsScanReport
+  warnings: string[]
 }
 
 const DEFAULT_SOURCE_DIRECTORIES = ['src', 'app', 'packages', 'services', 'cmd', 'internal', 'pkg']
@@ -217,6 +287,10 @@ export function frameworksCatalogPath(projectDir = process.cwd(), scaleDir = '.s
   return join(projectDir, scaleDir, 'frameworks.json')
 }
 
+export function engineeringStandardsBaselinePath(projectDir = process.cwd(), scaleDir = '.scale'): string {
+  return join(projectDir, scaleDir, 'engineering-standards-baseline.json')
+}
+
 export function engineeringStandardsPolicyTemplate(): string {
   return JSON.stringify({
     version: 1,
@@ -236,6 +310,15 @@ export function engineeringStandardsPolicyTemplate(): string {
     blockingRules: [],
     allowedFindingPatterns: [],
     baselineFindings: [],
+  }, null, 2) + '\n'
+}
+
+export function engineeringStandardsBaselineTemplate(): string {
+  return JSON.stringify({
+    version: 1,
+    generatedAt: '',
+    scope: 'Legacy findings tracked separately. New findings and changed-file findings must still be fixed before completion.',
+    findings: [],
   }, null, 2) + '\n'
 }
 
@@ -297,6 +380,35 @@ export function loadEngineeringStandardsPolicy(projectDir = process.cwd(), scale
         .map(item => ({
           ...item,
           line: typeof item.line === 'number' ? item.line : undefined,
+        }))
+      : [],
+    warnings,
+  }
+}
+
+export function loadEngineeringStandardsBaseline(
+  projectDir = process.cwd(),
+  scaleDir = '.scale',
+): { findings: ResolvedEngineeringStandardsPolicy['baselineFindings']; warnings: string[] } {
+  const path = engineeringStandardsBaselinePath(projectDir, scaleDir)
+  const warnings: string[] = []
+  let parsed: EngineeringStandardsBaselineFile = {}
+  if (!existsSync(path)) return { findings: [], warnings }
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf-8')) as EngineeringStandardsBaselineFile
+  } catch (error) {
+    warnings.push(`Failed to read ${path}: ${(error as Error).message}; external standards baseline ignored.`)
+    return { findings: [], warnings }
+  }
+  return {
+    findings: Array.isArray(parsed.findings)
+      ? parsed.findings
+        .filter(item => typeof item.ruleId === 'string' && typeof item.path === 'string')
+        .map(item => ({
+          ruleId: item.ruleId,
+          path: normalizePath(item.path),
+          line: typeof item.line === 'number' ? item.line : undefined,
+          reason: typeof item.reason === 'string' ? item.reason : undefined,
         }))
       : [],
     warnings,
@@ -389,21 +501,27 @@ export function scanEngineeringStandards(options: EngineeringStandardsScanOption
   const projectDir = options.projectDir ?? process.cwd()
   const scaleDir = options.scaleDir ?? '.scale'
   const policy = loadEngineeringStandardsPolicy(projectDir, scaleDir)
+  const externalBaseline = loadEngineeringStandardsBaseline(projectDir, scaleDir)
+  const baselineFindings = [...policy.baselineFindings, ...externalBaseline.findings]
   const frameworks = loadFrameworksCatalog(projectDir, scaleDir, options.now)
-  const files = findSourceFiles(projectDir, policy)
+  const files = findSourceFiles(projectDir, policy, options.changedFiles)
   const findings = files
     .flatMap(file => scanFile(projectDir, file, policy, frameworks))
     .map(finding => applyRuleSeverityPolicy(finding, policy))
-    .filter(finding => !isAllowedFindingPattern(finding, policy) && !isBaselineFinding(finding, policy))
+    .filter(finding =>
+      !isAllowedFindingPattern(finding, policy) &&
+      (options.includeBaselineFindings || !isBaselineFinding(finding, baselineFindings)),
+    )
   return {
     projectDir,
     policyPath: engineeringStandardsPolicyPath(projectDir, scaleDir),
+    baselinePath: engineeringStandardsBaselinePath(projectDir, scaleDir),
     frameworksPath: frameworksCatalogPath(projectDir, scaleDir),
     policy,
     frameworks,
     findings,
     summary: summarizeStandards(files.length, findings),
-    warnings: [...policy.warnings, ...frameworks.warnings.map(warning => warning.message)],
+    warnings: [...policy.warnings, ...externalBaseline.warnings, ...frameworks.warnings.map(warning => warning.message)],
   }
 }
 
@@ -449,6 +567,56 @@ export function settleEngineeringStandards(options: EngineeringStandardsSettleOp
     taskId: options.taskId,
     standardsImpactPath,
     doctor,
+  }
+}
+
+export function baselineEngineeringStandards(options: EngineeringStandardsBaselineOptions = {}): EngineeringStandardsBaselineReport {
+  const projectDir = options.projectDir ?? process.cwd()
+  const scaleDir = options.scaleDir ?? '.scale'
+  const reason = options.reason ?? 'legacy standards debt accepted for staged remediation'
+  const scan = scanEngineeringStandards({
+    ...options,
+    projectDir,
+    scaleDir,
+    changedFiles: undefined,
+    includeBaselineFindings: true,
+  })
+  const baselineEntries = baselineEntriesFromFindings(scan.findings, reason)
+  const debt = classifyStandardsDebt(scan.summary.filesScanned, scan.findings)
+  const baselinePath = engineeringStandardsBaselinePath(projectDir, scaleDir)
+  if (options.writeBaseline) {
+    writeStandardsBaselineFile({
+      projectDir,
+      scaleDir,
+      baselinePath,
+      taskId: options.taskId,
+      reason,
+      entries: baselineEntries,
+    })
+  }
+  const legacyDebtPath = options.artifactsDir
+    ? writeLegacyDebtReport({
+      projectDir,
+      artifactsDir: options.artifactsDir,
+      taskId: options.taskId,
+      wroteBaseline: Boolean(options.writeBaseline),
+      baselinePath,
+      baselineEntries,
+      debt,
+      findings: scan.findings,
+      maxFindingsInReport: options.maxFindingsInReport ?? 200,
+    })
+    : undefined
+  return {
+    ok: true,
+    projectDir,
+    baselinePath,
+    legacyDebtPath,
+    wroteBaseline: Boolean(options.writeBaseline),
+    baselineEntries,
+    debt,
+    scan,
+    warnings: scan.warnings,
   }
 }
 
@@ -660,7 +828,8 @@ function emptyCatchFinding(path: string, line: number, text: string): Engineerin
   }
 }
 
-function findSourceFiles(projectDir: string, policy: ResolvedEngineeringStandardsPolicy): string[] {
+function findSourceFiles(projectDir: string, policy: ResolvedEngineeringStandardsPolicy, changedFiles?: string[]): string[] {
+  if (changedFiles) return findChangedSourceFiles(projectDir, policy, changedFiles)
   const files: string[] = []
   for (const sourceDir of policy.sourceDirectories) {
     const absolute = join(projectDir, sourceDir)
@@ -668,6 +837,42 @@ function findSourceFiles(projectDir: string, policy: ResolvedEngineeringStandard
     walk(absolute, projectDir, policy, files)
   }
   return files
+}
+
+function findChangedSourceFiles(projectDir: string, policy: ResolvedEngineeringStandardsPolicy, changedFiles: string[]): string[] {
+  const files: string[] = []
+  const seen = new Set<string>()
+  for (const changedFile of changedFiles) {
+    const normalized = normalizeChangedPath(projectDir, changedFile)
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    if (!SOURCE_EXTENSIONS.has(extname(normalized).toLowerCase())) continue
+    if (!isUnderSourceDirectory(normalized, policy)) continue
+    if (isIgnoredPath(normalized, policy)) continue
+    const absolute = resolve(projectDir, ...normalized.split('/'))
+    if (!existsSync(absolute) || !statSync(absolute).isFile()) continue
+    if (statSync(absolute).size <= 1024 * 1024) files.push(absolute)
+  }
+  return files
+}
+
+function normalizeChangedPath(projectDir: string, path: string): string {
+  const relativePath = isAbsolute(path) ? relative(projectDir, path) : path
+  const normalized = normalizePath(relativePath)
+  if (!normalized || normalized.startsWith('..')) return ''
+  return normalized
+}
+
+function isUnderSourceDirectory(path: string, policy: ResolvedEngineeringStandardsPolicy): boolean {
+  return policy.sourceDirectories
+    .map(normalizePath)
+    .some(sourceDir => path === sourceDir || path.startsWith(`${sourceDir}/`))
+}
+
+function isIgnoredPath(path: string, policy: ResolvedEngineeringStandardsPolicy): boolean {
+  return policy.ignoredDirectories
+    .map(normalizePath)
+    .some(ignored => path === ignored || path.startsWith(`${ignored}/`) || path.split('/').includes(ignored))
 }
 
 function walk(dir: string, projectDir: string, policy: ResolvedEngineeringStandardsPolicy, files: string[]): void {
@@ -721,6 +926,181 @@ ${findings}
 `
 }
 
+function baselineEntriesFromFindings(findings: EngineeringStandardFinding[], reason: string): EngineeringStandardsBaselineEntry[] {
+  const entries = new Map<string, EngineeringStandardsBaselineEntry>()
+  for (const finding of [...findings].sort(compareFindings)) {
+    const path = normalizePath(finding.path)
+    const key = `${finding.ruleId}\0${path}\0${finding.line ?? ''}`
+    if (entries.has(key)) continue
+    entries.set(key, {
+      ruleId: finding.ruleId,
+      path,
+      line: finding.line,
+      reason,
+      severity: finding.severity,
+      category: finding.category,
+      message: finding.message,
+    })
+  }
+  return [...entries.values()]
+}
+
+function writeStandardsBaselineFile(options: {
+  projectDir: string
+  scaleDir: string
+  baselinePath: string
+  taskId?: string
+  reason: string
+  entries: EngineeringStandardsBaselineEntry[]
+}): void {
+  mkdirSync(join(options.projectDir, options.scaleDir), { recursive: true })
+  writeFileSync(options.baselinePath, JSON.stringify({
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    taskId: options.taskId,
+    scope: 'Legacy findings tracked separately. New findings and changed-file findings must still be fixed before completion.',
+    reason: options.reason,
+    findings: options.entries.map(entry => ({
+      ruleId: entry.ruleId,
+      path: entry.path,
+      ...(entry.line === undefined ? {} : { line: entry.line }),
+      reason: entry.reason,
+    })),
+  }, null, 2) + '\n', 'utf-8')
+}
+
+function classifyStandardsDebt(filesScanned: number, findings: EngineeringStandardFinding[]): EngineeringStandardsDebtSummary {
+  const bySeverity = { info: 0, warn: 0, fail: 0 }
+  const byCategory = emptyDebtCategorySummary()
+  const byScope = emptyDebtScopeSummary()
+  const byRule: Record<string, EngineeringStandardsDebtRuleGroup> = {}
+  const byFile = new Map<string, EngineeringStandardsDebtFileGroup>()
+  for (const finding of findings) {
+    bySeverity[finding.severity] += 1
+    incrementDebtGroup(byCategory[finding.category], finding.severity)
+    incrementDebtGroup(byScope[classifyDebtScope(finding.path)], finding.severity)
+    byRule[finding.ruleId] ??= { ...emptyDebtGroup(), category: finding.category }
+    incrementDebtGroup(byRule[finding.ruleId], finding.severity)
+    const fileGroup = byFile.get(finding.path) ?? { ...emptyDebtGroup(), path: finding.path }
+    incrementDebtGroup(fileGroup, finding.severity)
+    byFile.set(finding.path, fileGroup)
+  }
+  return {
+    filesScanned,
+    totalFindings: findings.length,
+    blockingFindings: findings.filter(finding => finding.severity === 'fail').length,
+    bySeverity,
+    byScope,
+    byCategory,
+    byRule,
+    topFiles: [...byFile.values()]
+      .sort((a, b) => b.total - a.total || a.path.localeCompare(b.path))
+      .slice(0, 20),
+  }
+}
+
+function writeLegacyDebtReport(options: {
+  projectDir: string
+  artifactsDir: string
+  taskId?: string
+  wroteBaseline: boolean
+  baselinePath: string
+  baselineEntries: EngineeringStandardsBaselineEntry[]
+  debt: EngineeringStandardsDebtSummary
+  findings: EngineeringStandardFinding[]
+  maxFindingsInReport: number
+}): string {
+  const dir = isAbsolute(options.artifactsDir)
+    ? options.artifactsDir
+    : resolve(options.projectDir, options.artifactsDir)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const path = join(dir, 'standards-legacy-debt.md')
+  writeFileSync(path, legacyDebtMarkdown(options), 'utf-8')
+  return path
+}
+
+function legacyDebtMarkdown(options: {
+  taskId?: string
+  wroteBaseline: boolean
+  baselinePath: string
+  baselineEntries: EngineeringStandardsBaselineEntry[]
+  debt: EngineeringStandardsDebtSummary
+  findings: EngineeringStandardFinding[]
+  maxFindingsInReport: number
+}): string {
+  const categories = Object.entries(options.debt.byCategory)
+    .filter(([, group]) => group.total > 0)
+    .map(([category, group]) => `| ${category} | ${group.total} | ${group.blocking} | ${group.warn} | ${group.info} |`)
+    .join('\n') || '| none | 0 | 0 | 0 | 0 |'
+  const scopes = Object.entries(options.debt.byScope)
+    .filter(([, group]) => group.total > 0)
+    .map(([scope, group]) => `| ${scope} | ${group.total} | ${group.blocking} | ${group.warn} | ${group.info} |`)
+    .join('\n') || '| none | 0 | 0 | 0 | 0 |'
+  const rules = Object.entries(options.debt.byRule)
+    .sort(([, a], [, b]) => b.total - a.total)
+    .map(([ruleId, group]) => `| ${ruleId} | ${group.category} | ${group.total} | ${group.blocking} | ${group.warn} | ${group.info} |`)
+    .join('\n') || '| none | none | 0 | 0 | 0 | 0 |'
+  const files = options.debt.topFiles
+    .map(group => `| ${escapeCell(group.path)} | ${group.total} | ${group.blocking} | ${group.warn} | ${group.info} |`)
+    .join('\n') || '| none | 0 | 0 | 0 | 0 |'
+  const detailLimit = Math.max(0, options.maxFindingsInReport)
+  const details = options.findings
+    .slice(0, detailLimit)
+    .map(finding => `| ${finding.severity.toUpperCase()} | ${finding.category} | ${finding.ruleId} | ${escapeCell(finding.path)} | ${finding.line ?? ''} | ${escapeCell(finding.message)} |`)
+    .join('\n') || '| OK | none | no-findings |  |  | No engineering standards findings. |'
+  const truncated = options.findings.length > detailLimit
+    ? `\n\nDetail rows truncated to ${detailLimit} of ${options.findings.length}. The baseline file contains the complete machine-readable list.\n`
+    : ''
+  return `# SCALE Engineering Standards Legacy Debt Classification
+
+Generated: ${new Date().toISOString()}
+Task: ${options.taskId ?? 'unspecified'}
+Baseline written: ${options.wroteBaseline ? 'yes' : 'no'}
+Baseline path: ${options.baselinePath}
+Baseline entries: ${options.baselineEntries.length}
+
+## Summary
+
+| Metric | Value |
+| --- | ---: |
+| Files scanned | ${options.debt.filesScanned} |
+| Total findings | ${options.debt.totalFindings} |
+| Blocking findings | ${options.debt.blockingFindings} |
+| Warnings | ${options.debt.bySeverity.warn} |
+| Info | ${options.debt.bySeverity.info} |
+
+## By Category
+
+| Category | Total | Blocking | Warn | Info |
+| --- | ---: | ---: | ---: | ---: |
+${categories}
+
+## By Scope
+
+| Scope | Total | Blocking | Warn | Info |
+| --- | ---: | ---: | ---: | ---: |
+${scopes}
+
+## By Rule
+
+| Rule | Category | Total | Blocking | Warn | Info |
+| --- | --- | ---: | ---: | ---: | ---: |
+${rules}
+
+## Top Files
+
+| Path | Total | Blocking | Warn | Info |
+| --- | ---: | ---: | ---: | ---: |
+${files}
+
+## Finding Details
+
+| Severity | Category | Rule | Path | Line | Message |
+| --- | --- | --- | --- | ---: | --- |
+${details}${truncated}
+`
+}
+
 function summarizeStandards(filesScanned: number, findings: EngineeringStandardFinding[]): EngineeringStandardsSummary {
   const bySeverity = { info: 0, warn: 0, fail: 0 }
   const byCategory = emptyCategorySummary()
@@ -748,6 +1128,76 @@ function emptyCategorySummary(): Record<EngineeringStandardCategory, number> {
     testing: 0,
     uiux: 0,
   }
+}
+
+function emptyDebtCategorySummary(): Record<EngineeringStandardCategory, EngineeringStandardsDebtGroup> {
+  return {
+    logging: emptyDebtGroup(),
+    security: emptyDebtGroup(),
+    database: emptyDebtGroup(),
+    architecture: emptyDebtGroup(),
+    'code-quality': emptyDebtGroup(),
+    framework: emptyDebtGroup(),
+    testing: emptyDebtGroup(),
+    uiux: emptyDebtGroup(),
+  }
+}
+
+function emptyDebtScopeSummary(): Record<EngineeringStandardsDebtScope, EngineeringStandardsDebtGroup> {
+  return {
+    production: emptyDebtGroup(),
+    test: emptyDebtGroup(),
+    generated: emptyDebtGroup(),
+  }
+}
+
+function emptyDebtGroup(): EngineeringStandardsDebtGroup {
+  return {
+    total: 0,
+    blocking: 0,
+    warn: 0,
+    info: 0,
+  }
+}
+
+function classifyDebtScope(path: string): EngineeringStandardsDebtScope {
+  const normalized = normalizePath(path).toLowerCase()
+  if (
+    normalized.includes('/dist/') ||
+    normalized.includes('/build/') ||
+    normalized.includes('/coverage/') ||
+    normalized.includes('/vendor') ||
+    normalized.includes('/generated/') ||
+    normalized.includes('/assets/web-auth/js/vendor-') ||
+    normalized.includes('/auth/js/vendor-') ||
+    normalized.endsWith('.min.js') ||
+    normalized.endsWith('.bundle.js')
+  ) {
+    return 'generated'
+  }
+  if (
+    /(^|\/)(__tests__|tests?|e2e|spec)(\/|$)/.test(normalized) ||
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(normalized) ||
+    normalized.endsWith('test.java') ||
+    normalized.endsWith('tests.java')
+  ) {
+    return 'test'
+  }
+  return 'production'
+}
+
+function incrementDebtGroup(group: EngineeringStandardsDebtGroup, severity: EngineeringStandardSeverity): void {
+  group.total += 1
+  if (severity === 'fail') group.blocking += 1
+  if (severity === 'warn') group.warn += 1
+  if (severity === 'info') group.info += 1
+}
+
+function compareFindings(a: EngineeringStandardFinding, b: EngineeringStandardFinding): number {
+  return a.path.localeCompare(b.path) ||
+    a.ruleId.localeCompare(b.ruleId) ||
+    (a.line ?? 0) - (b.line ?? 0) ||
+    a.message.localeCompare(b.message)
 }
 
 function applyRuleSeverityPolicy(
@@ -865,8 +1315,11 @@ function isAllowedFindingPattern(
   })
 }
 
-function isBaselineFinding(finding: EngineeringStandardFinding, policy: ResolvedEngineeringStandardsPolicy): boolean {
-  return policy.baselineFindings.some(item =>
+function isBaselineFinding(
+  finding: EngineeringStandardFinding,
+  baselineFindings: ResolvedEngineeringStandardsPolicy['baselineFindings'],
+): boolean {
+  return baselineFindings.some(item =>
     item.ruleId === finding.ruleId &&
     normalizePath(item.path) === normalizePath(finding.path) &&
     (item.line === undefined || item.line === finding.line),

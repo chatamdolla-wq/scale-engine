@@ -208,6 +208,79 @@ export function leaky(token: string) {
     expect(existsSync(settleResult.standardsImpactPath)).toBe(true)
   }, 120_000)
 
+  it('can run standards doctor against explicit changed files only', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src', 'legacy'), { recursive: true })
+    mkdirSync(join(projectDir, 'src', 'feature'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'legacy', 'old.ts'), 'try { oldWork() } catch (error) {}\n', 'utf-8')
+    writeFileSync(join(projectDir, 'src', 'feature', 'new.ts'), 'try { newWork() } catch (error) {}\n', 'utf-8')
+
+    const doctor = await runScale([
+      'standards',
+      'doctor',
+      '--dir',
+      projectDir,
+      '--changed-files',
+      'src/feature/new.ts',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(doctor.exitCode).toBe(1)
+    const result = parseJson<{
+      scan: { summary: { filesScanned: number } }
+      findings: Array<{ path: string; ruleId: string }>
+    }>(doctor.stdout)
+    expect(result.scan.summary.filesScanned).toBe(1)
+    expect(result.findings.some(finding => finding.path === 'src/legacy/old.ts')).toBe(false)
+    expect(result.findings.some(finding => finding.path === 'src/feature/new.ts' && finding.ruleId === 'empty-catch')).toBe(true)
+  }, 120_000)
+
+  it('can generate a standards baseline and legacy debt classification report', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src', 'legacy'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'legacy', 'auth.ts'), `
+export function login(token: string) {
+  console.log('token', token)
+}
+`, 'utf-8')
+    writeFileSync(join(projectDir, 'src', 'legacy', 'cleanup.ts'), 'try { cleanup() } catch (error) {}\n', 'utf-8')
+
+    const baseline = await runScale([
+      'standards',
+      'baseline',
+      '--dir',
+      projectDir,
+      '--write',
+      '--artifact-dir',
+      'docs/worklog/tasks/2026-05-15-standards-baseline',
+      '--task-id',
+      'TASK-BASELINE',
+      '--reason',
+      'legacy rollout baseline',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(baseline.exitCode).toBe(0)
+    const result = parseJson<{
+      wroteBaseline: boolean
+      baselinePath: string
+      legacyDebtPath: string
+      debt: { byRule: Record<string, { total: number }> }
+    }>(baseline.stdout)
+    expect(result.wroteBaseline).toBe(true)
+    expect(result.baselinePath).toBe(join(projectDir, '.scale', 'engineering-standards-baseline.json'))
+    expect(result.legacyDebtPath).toBe(join(projectDir, 'docs', 'worklog', 'tasks', '2026-05-15-standards-baseline', 'standards-legacy-debt.md'))
+    expect(result.debt.byRule['sensitive-log'].total).toBeGreaterThanOrEqual(1)
+    expect(existsSync(result.baselinePath)).toBe(true)
+    expect(readFileSync(result.legacyDebtPath, 'utf-8')).toContain('Legacy Debt Classification')
+
+    const doctor = await runScale(['standards', 'doctor', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(doctor.exitCode).toBe(0)
+    expect(parseJson<{ ok: boolean }>(doctor.stdout).ok).toBe(true)
+  }, 120_000)
+
   it('can include required skill installation status in skill checks', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -638,6 +711,93 @@ export function leaky(token: string) {
     expect(verifyResult.skillGate.missing).toEqual(expect.arrayContaining(['ui-spec.md', 'visual-review.md']))
   }, 120_000)
 
+  it('can block verify and ship when required tool execution evidence is missing', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, '.agents', 'skills', 'frontend-design'), { recursive: true })
+    mkdirSync(join(projectDir, '.agents', 'skills', 'ui-ux-pro-max'), { recursive: true })
+    writeFileSync(join(projectDir, '.agents', 'skills', 'frontend-design', 'SKILL.md'), '---\nname: frontend-design\n---\n', 'utf-8')
+    writeFileSync(join(projectDir, '.agents', 'skills', 'ui-ux-pro-max', 'SKILL.md'), '---\nname: ui-ux-pro-max\n---\n', 'utf-8')
+    mkdirSync(join(projectDir, 'src', 'components'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'components', 'Upload.tsx'), 'export const Upload = () => null\n', 'utf-8')
+
+    const define = await runScale([
+      'define',
+      'Tool Evidence Feature',
+      '--description',
+      'Implement a deterministic TypeScript UI workflow that accepts task input arguments, persists verification evidence output, keeps rollback constraints explicit, and requires tool evidence for frontend design work.',
+      '--success-criteria',
+      'verification evidence is persisted,tool evidence blocks missing design tool use',
+      '--goal',
+      'Require tool execution evidence before completing M level UI work.',
+      '--constraint',
+      'The task must not complete when required UI design tools have no passed evidence.',
+      '--acceptance',
+      'Verify reports toolEvidenceGate.blocked=true and ship exits non-zero with a tool evidence gate message.',
+      '--context',
+      'The regression fixture has a changed React component and local placeholder skill files.',
+      '--risk',
+      'Agents may claim UI work is verified without using the configured design skills.',
+      '--priority',
+      'Block premature completion before release handoff.',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Remove UI change and rerun verification', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Tool evidence UI task', '--level', 'M', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const taskId = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout).task.id
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      taskId,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--tool-gate',
+      'evidence-required',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{
+      passed: boolean
+      toolEvidenceGate: {
+        mode: string
+        checked: boolean
+        complete: boolean
+        blocked: boolean
+        missing: Array<{ toolId: string }>
+      }
+      metric: { finalGateStatus: string }
+    }>(verify.stdout)
+    expect(verifyResult.passed).toBe(false)
+    expect(verifyResult.toolEvidenceGate).toMatchObject({
+      mode: 'evidence-required',
+      checked: true,
+      complete: false,
+      blocked: true,
+    })
+    expect(verifyResult.toolEvidenceGate.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(verifyResult.metric.finalGateStatus).toBe('blocked')
+
+    const ship = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir, projectDir)
+    expect(ship.exitCode).not.toBe(0)
+    expect(ship.stderr).toContain('Task tool evidence gate did not pass')
+  }, 120_000)
+
   it('can hard-block verification and ship when required M/L artifacts are placeholders', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -785,6 +945,106 @@ export function leaky(token: string) {
     expect(ship.exitCode).not.toBe(0)
     expect(ship.stderr).toContain('Unreviewed working tree changes detected')
     expect(ship.stderr).toContain(unreviewedRel.replace(/\\/g, '/'))
+    expect(headAfter.stdout).toBe(headBefore.stdout)
+  }, 120_000)
+
+  it('blocks ship when a configured MOE child repository has uncommitted changes', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    await execa('git', ['config', 'user.email', 'scale-test@example.com'], { cwd: projectDir })
+    await execa('git', ['config', 'user.name', 'Scale Test'], { cwd: projectDir })
+
+    const childDir = join(projectDir, 'modules', 'common')
+    mkdirSync(childDir, { recursive: true })
+    await execa('git', ['init'], { cwd: childDir })
+    await execa('git', ['config', 'user.email', 'scale-test@example.com'], { cwd: childDir })
+    await execa('git', ['config', 'user.name', 'Scale Test'], { cwd: childDir })
+    writeFileSync(join(childDir, 'README.md'), 'child\n', 'utf-8')
+    await execa('git', ['add', 'README.md'], { cwd: childDir })
+    await execa('git', ['commit', '-m', 'init child'], { cwd: childDir })
+
+    mkdirSync(join(projectDir, '.scale'), { recursive: true })
+    writeFileSync(join(projectDir, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'common', path: 'modules/common', role: 'nested-repo', required: true },
+      ],
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: false,
+        requireRootPointerUpdate: true,
+      },
+    }, null, 2), 'utf-8')
+    writeFileSync(join(projectDir, '.gitignore'), 'modules/\n', 'utf-8')
+    writeFileSync(join(projectDir, 'README.md'), 'root\n', 'utf-8')
+    await execa('git', ['add', 'README.md', '.gitignore', '.scale/workspace.json'], { cwd: projectDir })
+    await execa('git', ['commit', '-m', 'init root'], { cwd: projectDir })
+
+    const define = await runScale([
+      'define',
+      'MOE Ship Boundary',
+      '--description',
+      'Implement a TypeScript CLI workflow that accepts task input arguments, persists review evidence output, enforces rollback constraints, includes lint and typecheck quality standards, and verifies with test acceptance evidence so unreviewed files are never included in a release commit today.',
+      '--success-criteria',
+      'verification evidence is persisted,review evidence is persisted,dirty child repository blocks ship',
+      '--goal',
+      'Prevent release commits from ignoring child repository state in a MOE workspace.',
+      '--constraint',
+      'Child repository changes must be committed and reviewed in their own repository before the root repository ships.',
+      '--acceptance',
+      'Ship exits non-zero when a configured child repository has uncommitted changes.',
+      '--context',
+      'The regression fixture has a clean root repository, a configured MOE workspace file, and one nested child Git repository.',
+      '--risk',
+      'Without this check an agent can create a root commit while unrelated child repository work remains dirty or gets integrated implicitly.',
+      '--priority',
+      'Protect commit scope and child repository ownership before creating the release commit.',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Discard temporary root and child repository changes', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'MOE child repository boundary check', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      taskId,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+
+    mkdirSync(join(projectDir, 'docs'), { recursive: true })
+    writeFileSync(join(projectDir, 'docs', 'root-change.md'), 'reviewed root change\n', 'utf-8')
+    const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
+    expect(review.exitCode).toBe(0)
+    expect(parseJson<{ passed: boolean }>(review.stdout).passed).toBe(true)
+
+    writeFileSync(join(childDir, 'dirty.txt'), 'dirty child change\n', 'utf-8')
+    const headBefore = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
+    const ship = await runScale(['ship', taskId, '--message', 'test: moe ship boundary', '--json'], scaleDir, projectDir)
+    const headAfter = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
+
+    expect(ship.exitCode).not.toBe(0)
+    expect(ship.stderr).toContain('Workspace boundary check failed')
+    expect(ship.stderr).toContain('Child repository modules/common has uncommitted changes')
     expect(headAfter.stdout).toBe(headBefore.stdout)
   }, 120_000)
 })

@@ -24,6 +24,11 @@ import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsS
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
 import { doctorEngineeringStandards, settleEngineeringStandards, type EngineeringStandardFinding, type EngineeringStandardsSummary } from '../workflow/EngineeringStandards.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
+import { inspectWorkspaceLifecycle, type WorkspaceLifecycleReport } from '../workflow/WorkspaceLifecycle.js'
+import { evaluateToolEvidenceGate, type ToolEvidenceGateResult } from '../tools/ToolEvidenceGate.js'
+import { ToolEvidenceStore } from '../tools/ToolEvidenceStore.js'
+import { ToolOrchestrator } from '../tools/ToolOrchestrator.js'
+import { loadToolPolicy, type ResolvedToolPolicy, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
 import type { KarpathyCheck } from '../workflow/types.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -290,6 +295,56 @@ function evaluateEngineeringStandardsGate(options: {
 
 function normalizeEngineeringStandardsGateMode(value: unknown): VerificationEngineeringStandardsGateMode {
   return value === 'off' || value === 'block' ? value : 'warn'
+}
+
+function normalizeToolGateMode(value: unknown): ToolOrchestrationMode | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'warn') return 'advisory'
+  if (normalized === 'off' || normalized === 'advisory' || normalized === 'evidence-required' || normalized === 'block') return normalized
+  throw new Error(`Invalid tool gate mode "${String(value)}"; expected off, advisory, evidence-required, or block.`)
+}
+
+function resolvePhaseToolGateMode(options: {
+  cliMode?: unknown
+  requireEvidence?: unknown
+  policy: ResolvedToolPolicy
+}): ToolOrchestrationMode {
+  if (isTruthyFlag(options.requireEvidence)) return 'evidence-required'
+  const cliMode = normalizeToolGateMode(options.cliMode)
+  if (cliMode) return cliMode
+  return options.policy.mode === 'block' ? 'block' : 'off'
+}
+
+function evaluateTaskToolEvidenceGate(options: {
+  skillPlan?: SkillPlan
+  level: MetricTaskLevel | null
+  cliMode?: unknown
+  requireEvidence?: unknown
+  allowSkipped?: unknown
+}): ToolEvidenceGateResult | undefined {
+  if (!options.level || !options.skillPlan) return undefined
+  const policy = loadToolPolicy(PROJECT_DIR, SCALE_DIR)
+  const mode = resolvePhaseToolGateMode({
+    cliMode: options.cliMode,
+    requireEvidence: options.requireEvidence,
+    policy,
+  })
+  const effectivePolicy: ResolvedToolPolicy = { ...policy, mode }
+  const evidenceStore = new ToolEvidenceStore({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+  const plan = new ToolOrchestrator({
+    projectDir: PROJECT_DIR,
+    policy: effectivePolicy,
+    evidenceStore,
+  }).plan({ skillPlan: options.skillPlan })
+  return evaluateToolEvidenceGate({
+    projectDir: PROJECT_DIR,
+    level: options.level,
+    plan,
+    evidenceStore,
+    mode,
+    allowSkipped: isTruthyFlag(options.allowSkipped),
+  })
 }
 
 async function countChangedFiles(taskPayload: TaskPayload): Promise<number> {
@@ -914,6 +969,9 @@ export const phaseVerify = defineCommand({
     'artifact-gate': { type: 'string', description: 'Task artifact policy override: off, warn, or block' },
     'require-artifacts': { type: 'boolean', default: false, description: 'Fail verification when required M/L/CRITICAL artifacts are incomplete' },
     'require-installed-skills': { type: 'boolean', default: false, description: 'Fail verification when required workflow skills are not installed locally' },
+    'tool-gate': { type: 'string', description: 'Tool evidence policy override: off, advisory, evidence-required, or block' },
+    'require-tool-evidence': { type: 'boolean', default: false, description: 'Fail verification when required tool execution evidence is missing or skipped' },
+    'allow-skipped-tool-evidence': { type: 'boolean', default: false, description: 'Allow skipped/manual fallback tool evidence to satisfy the tool gate' },
     'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
     'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
     'residual-risk': { type: 'string', description: 'Residual risk statement to record in task metrics' },
@@ -1096,6 +1154,13 @@ export const phaseVerify = defineCommand({
     const requireInstalledSkills = isTruthyFlag(args['require-installed-skills'])
     const skillInstallation = inspectRequiredWorkflowSkills(updatedPayload.requiredSkills ?? [], { projectDir: PROJECT_DIR })
     const skillInstallationBlocked = requireInstalledSkills && !skillInstallation.ok
+    const toolEvidenceGate = evaluateTaskToolEvidenceGate({
+      skillPlan: verificationSkillPlan,
+      level: metricLevel,
+      cliMode: args['tool-gate'],
+      requireEvidence: args['require-tool-evidence'],
+      allowSkipped: args['allow-skipped-tool-evidence'],
+    })
 
     // Attempt FSM transition to COMPLETED
     // Guards: build_passed, lint_passed, tests_passed, and optional artifact policy.
@@ -1109,7 +1174,8 @@ export const phaseVerify = defineCommand({
       !artifactGate.blocked &&
       !(skillGate?.blocked ?? false) &&
       !skillInstallationBlocked &&
-      !engineeringStandards.blocked
+      !engineeringStandards.blocked &&
+      !(toolEvidenceGate?.blocked ?? false)
 
     let transitionResult = null
     if (completionEligible) {
@@ -1137,6 +1203,8 @@ export const phaseVerify = defineCommand({
       console.log('\n   Skill installation gate blocked completion - required workflow skills are missing')
     } else if (!args.json && engineeringStandards.blocked) {
       console.log('\n   Engineering standards gate blocked completion - fix blocking standards findings')
+    } else if (!args.json && toolEvidenceGate?.blocked) {
+      console.log('\n   Tool evidence gate blocked completion - required tools need passed execution evidence')
     }
 
     const passed = completionEligible && (transitionResult?.success ?? false)
@@ -1168,16 +1236,27 @@ export const phaseVerify = defineCommand({
           enforceLevels: skillPolicy.policy.enforceLevels,
         })
       : skillGate
+    const finalToolEvidenceGate = evaluateTaskToolEvidenceGate({
+      skillPlan: verificationSkillPlan,
+      level: metricLevel,
+      cliMode: args['tool-gate'],
+      requireEvidence: args['require-tool-evidence'],
+      allowSkipped: args['allow-skipped-tool-evidence'],
+    }) ?? toolEvidenceGate
     const finalPayload: TaskPayload = {
       ...updatedPayload,
       artifactGateMode: finalArtifactGate.mode,
       artifactGatePassed: !finalArtifactGate.blocked,
       artifactComplete: artifactCheck?.complete,
       skillGatePassed: finalSkillGate ? !finalSkillGate.blocked && !skillInstallationBlocked : !skillInstallationBlocked,
+      toolOrchestrationMode: finalToolEvidenceGate?.mode,
+      requiredTools: finalToolEvidenceGate?.requiredTools,
+      toolEvidenceIds: finalToolEvidenceGate?.passed.map(item => item.evidenceId).filter((id): id is string => Boolean(id)),
+      toolEvidenceGatePassed: finalToolEvidenceGate ? !finalToolEvidenceGate.blocked : true,
     }
     await store.update(args['task-id'], { payload: finalPayload })
     const metricGateStatus = codePassed &&
-      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked)
+      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked)
       ? 'blocked'
       : undefined
     const metricRecord = await recordVerificationMetric({
@@ -1202,6 +1281,7 @@ export const phaseVerify = defineCommand({
       artifactGate: finalArtifactGate,
       engineeringStandards,
       skillGate: finalSkillGate,
+      toolEvidenceGate: finalToolEvidenceGate,
       skillInstallation: {
         ...skillInstallation,
         checked: requireInstalledSkills,
@@ -1225,6 +1305,9 @@ export const phaseVerify = defineCommand({
       }
       if (engineeringStandards.blocked) {
         console.log(`   Engineering standards blockers: ${engineeringStandards.findings.filter(finding => finding.severity === 'fail').length}`)
+      }
+      if (finalToolEvidenceGate?.blocked) {
+        console.log(`   Tool evidence gaps: ${finalToolEvidenceGate.missing.length} missing, ${finalToolEvidenceGate.failed.length} failed, ${finalToolEvidenceGate.skipped.length} skipped`)
       }
       if (passed) console.log(`\n   Next: scale review\n`)
       else console.log(`\n   Fix issues and re-run: scale verify ${args['task-id']}\n`)
@@ -1361,6 +1444,69 @@ async function stageReviewedFiles(reviewRecords: ReviewRecord[]): Promise<{ stag
   }
 
   return { stagedFiles, unreviewedFiles: [] }
+}
+
+interface WorkspaceShipBoundaryResult {
+  report: WorkspaceLifecycleReport | null
+  blockers: string[]
+  warnings: string[]
+}
+
+function isMultiRepositoryTopology(topology: string): boolean {
+  return topology === 'moe' || topology === 'submodule-workspace' || topology === 'polyrepo'
+}
+
+function hasChildRepositoryChange(path: string, childPath: string): boolean {
+  const normalized = normalizeGitPath(path)
+  const child = normalizeGitPath(childPath).replace(/\/+$/, '')
+  return normalized === child || normalized.startsWith(`${child}/`)
+}
+
+async function validateWorkspaceShipBoundary(): Promise<WorkspaceShipBoundaryResult> {
+  try {
+    const report = await inspectWorkspaceLifecycle({ projectDir: PROJECT_DIR })
+    const blockers: string[] = []
+    const warnings = [...report.topology.warnings]
+    const policy = report.topology.finishPolicy
+    const rootChanges = await getReviewableGitChanges()
+
+    if (!report.topology.configured && report.childRepositories.length > 0) {
+      const changedChildRepositories = report.childRepositories
+        .filter(child => rootChanges.some(file => hasChildRepositoryChange(file.path, child.relativePath)))
+        .map(child => child.relativePath)
+      const dirtyChildRepositories = report.childRepositories
+        .filter(child => !child.clean || child.ahead > 0)
+        .map(child => child.relativePath)
+      const affected = Array.from(new Set([...changedChildRepositories, ...dirtyChildRepositories]))
+
+      if (affected.length > 0) {
+        blockers.push(`Workspace topology is not configured; child repository state is present at ${affected.join(', ')}. Create .scale/workspace.json with scale workspace map --write --topology moe before shipping.`)
+      }
+    }
+
+    if (report.topology.configured && isMultiRepositoryTopology(report.topology.topology)) {
+      for (const child of report.childRepositories) {
+        if (policy.requireCleanRepositories && !child.clean) {
+          blockers.push(`Child repository ${child.relativePath} has uncommitted changes`)
+        }
+        if (policy.requirePushedBranches && child.upstream && child.ahead > 0) {
+          blockers.push(`Child repository ${child.relativePath} has unpushed commits`)
+        }
+        if (policy.requirePushedBranches && report.topology.topology === 'moe' && !child.upstream && child.branch) {
+          blockers.push(`Child repository ${child.relativePath} has no upstream; push or explicitly disable requirePushedBranches before shipping`)
+        }
+      }
+    }
+
+    return { report, blockers, warnings }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      report: null,
+      blockers: [`Workspace boundary check could not inspect Git repositories: ${message}`],
+      warnings: [],
+    }
+  }
 }
 
 interface ReviewKarpathyContext {
@@ -1651,6 +1797,7 @@ export const phaseShip = defineCommand({
     const reviewPassed = payload.reviewPassed === true && reviewValidation.ok
     const artifactGatePassed = payload.artifactGateMode !== 'block' || payload.artifactGatePassed !== false
     const skillGatePassed = payload.skillGatePassed !== false
+    const toolEvidenceGatePassed = payload.toolEvidenceGatePassed !== false
 
     if (!artifactGatePassed) {
       console.error('\nTask artifact gate did not pass. Complete required task artifacts and re-run: scale verify ' + args['task-id'] + ' --artifact-gate block\n')
@@ -1662,6 +1809,14 @@ export const phaseShip = defineCommand({
 
     if (!skillGatePassed) {
       console.error('\nTask skill gate did not pass. Complete required skill evidence artifacts and re-run: scale verify ' + args['task-id'] + '\n')
+      process.exit(1)
+    }
+
+    if (!toolEvidenceGatePassed) {
+      console.error('\nTask tool evidence gate did not pass. Run required tools and re-run: scale verify ' + args['task-id'] + ' --tool-gate ' + (payload.toolOrchestrationMode ?? 'evidence-required') + '\n')
+      if (payload.requiredTools?.length) {
+        console.error('Required tools: ' + payload.requiredTools.join(', '))
+      }
       process.exit(1)
     }
 
@@ -1703,10 +1858,19 @@ export const phaseShip = defineCommand({
     // Git operations
     let commitHash = null
     let stagedFiles: string[] = []
+    let workspaceBoundary: WorkspaceShipBoundaryResult | null = null
     if (!shouldSkipCommit(args['skip-commit'])) {
       const commitMessage = args.message ?? `feat: ${task.title ?? args['task-id']}`
 
       try {
+        workspaceBoundary = await validateWorkspaceShipBoundary()
+        if (workspaceBoundary.blockers.length > 0) {
+          console.error('\nWorkspace boundary check failed. Resolve child repositories before shipping the root commit.')
+          workspaceBoundary.blockers.forEach(blocker => console.error('  - ' + blocker))
+          console.error('\nRun scale workspace finish --summary for the shortest fix list, or --json for the full workspace state.\n')
+          process.exit(1)
+        }
+
         const reviewRecords = getValidatedReviewRecords(payload.reviewEvidenceIds)
         const stageResult = await stageReviewedFiles(reviewRecords)
         if (stageResult.unreviewedFiles.length > 0) {
@@ -1788,6 +1952,13 @@ export const phaseShip = defineCommand({
       reviewValidation,
       commitHash,
       stagedFiles,
+      workspaceBoundary: workspaceBoundary ? {
+        topology: workspaceBoundary.report?.topology.topology ?? null,
+        configured: workspaceBoundary.report?.topology.configured ?? false,
+        childRepositories: workspaceBoundary.report?.childRepositories.length ?? 0,
+        blockers: workspaceBoundary.blockers,
+        warnings: workspaceBoundary.warnings,
+      } : null,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))

@@ -7,7 +7,11 @@ import {
   type GovernanceGeneratedFile,
   type GovernancePackId,
 } from './GovernanceTemplatePacks.js'
-import { engineeringStandardsPolicyTemplate, frameworksCatalogTemplate } from './EngineeringStandards.js'
+import {
+  engineeringStandardsBaselineTemplate,
+  engineeringStandardsPolicyTemplate,
+  frameworksCatalogTemplate,
+} from './EngineeringStandards.js'
 import { resourceManifestTemplate, resourcePolicyTemplate } from './ResourceGovernance.js'
 import type { VerificationService } from './VerificationProfile.js'
 
@@ -92,6 +96,7 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards-baseline.json', engineeringStandardsBaselineTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate())
 
   for (const file of pack.generatedFiles) {
@@ -228,6 +233,7 @@ Keep \`.scale/verification.json\` as the source of truth for profiles and servic
 Keep \`.scale/skills.json\` as the source of truth for active skill routing policy.
 Keep \`.scale/resource-policy.json\` and \`.scale/assets.json\` as the source of truth for generated reports, temporary files, module documentation, media, reusable scripts, and Git retention policy.
 Keep \`.scale/engineering-standards.json\` and \`.scale/frameworks.json\` as the source of truth for logging, security, ORM, architecture, framework, UI/UX, testing, and coding standard checks.
+Keep \`.scale/engineering-standards-baseline.json\` as the temporary exception list for known legacy standards findings; it must not be used to hide new or changed-file problems.
 Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITICAL work to \`"block"\` once templates and local gates are stable.
 
 ## Active Skill Routing
@@ -257,12 +263,15 @@ Before finishing an agent-created branch or deleting a temporary worktree, inspe
 
 \`\`\`bash
 scale workspace status --json
+scale workspace finish --summary
 scale workspace finish --json
 scale workspace cleanup --dir <temporary-worktree> --dry-run --json
 scale workspace cleanup --dir <temporary-worktree> --apply --confirm <branch-or-head> --json
 \`\`\`
 
 Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates. Cleanup defaults to dry-run. Applying cleanup requires the reported confirmation token, normally the temporary branch name.
+
+Use \`scale ship <task-id>\` for governed commits. It checks MOE/submodule child repository state before staging reviewed root files, so dirty or unpushed child work cannot be hidden inside a root commit. Raw \`git add .\` is outside the governed path and must not be used for MOE releases.
 
 ## Resource Governance
 
@@ -288,6 +297,9 @@ Use standards scanning before reviewing or shipping M/L/CRITICAL work:
 \`\`\`bash
 scale standards scan --json
 scale standards doctor --json
+scale standards doctor --changed --json
+scale standards doctor --changed-files src/example.ts,src/example.test.ts --json
+scale standards baseline --write --artifact-dir docs/worklog/tasks/<task-dir> --task-id <task-id> --json
 scale standards settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-dir>
 scale preflight --preflight-profile full --json
 scale verify <task-id> --json
@@ -305,7 +317,10 @@ Default policy:
 - \`.scale/frameworks.json > lastReviewedAt/reviewIntervalDays\` warns when module framework decisions need review.
 - \`.scale/engineering-standards.json > blockingRules\` promotes selected warning rule IDs to release-blocking findings.
 - \`.scale/engineering-standards.json > allowedFindingPatterns\` allows narrow rule/path/evidence exceptions without hiding unrelated findings in the same file.
+- \`.scale/engineering-standards-baseline.json\` may hold known legacy findings during rollout, but normal task gates should prefer \`--changed\` or \`--changed-files\` so new work is blocked without forcing a whole-repo cleanup.
 - \`.scale/verification.json > policy.engineeringStandardsGate\` controls whether preflight and task verification treat standards as \`off\`, \`warn\`, or \`block\`.
+- Full standards scans are for release readiness, scheduled remediation, and architecture cleanup. Changed-file scans are the default for day-to-day feature and bug branches.
+- Use \`scale standards baseline --write\` only during an explicit rollout or remediation planning task. It writes the machine-readable baseline and a \`standards-legacy-debt.md\` classification report for staged cleanup.
 
 ## Automation Templates
 

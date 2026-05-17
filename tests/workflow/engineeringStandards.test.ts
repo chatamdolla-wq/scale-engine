@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  baselineEngineeringStandards,
   doctorEngineeringStandards,
   engineeringStandardsPolicyTemplate,
   scanEngineeringStandards,
@@ -186,6 +187,91 @@ export function matchesOutputCall(line: string): boolean {
     expect(report.ok).toBe(false)
     expect(report.findings.some(finding => finding.path === 'src/legacy/old.ts' && finding.ruleId === 'empty-catch' && finding.line === 1)).toBe(false)
     expect(report.findings.some(finding => finding.path === 'src/legacy/old.ts' && finding.ruleId === 'empty-catch' && finding.line === 2)).toBe(true)
+  })
+
+  it('loads external baseline findings from .scale/engineering-standards-baseline.json', () => {
+    const projectDir = makeProject()
+    write(projectDir, '.scale/engineering-standards.json', JSON.stringify({ version: 1 }, null, 2))
+    write(projectDir, '.scale/engineering-standards-baseline.json', JSON.stringify({
+      version: 1,
+      findings: [
+        { ruleId: 'empty-catch', path: 'src/legacy/old.ts', reason: 'legacy debt tracked separately' },
+      ],
+    }, null, 2))
+    write(projectDir, 'src/legacy/old.ts', 'try { oldWork() } catch (error) {}\n')
+    write(projectDir, 'src/legacy/new.ts', 'try { newWork() } catch (error) {}\n')
+
+    const report = doctorEngineeringStandards({ projectDir })
+
+    expect(report.ok).toBe(false)
+    expect(report.findings.some(finding => finding.path === 'src/legacy/old.ts' && finding.ruleId === 'empty-catch')).toBe(false)
+    expect(report.findings.some(finding => finding.path === 'src/legacy/new.ts' && finding.ruleId === 'empty-catch')).toBe(true)
+  })
+
+  it('can scan only changed files so legacy untouched findings do not block a focused task', () => {
+    const projectDir = makeProject()
+    write(projectDir, '.scale/engineering-standards.json', JSON.stringify({ version: 1 }, null, 2))
+    write(projectDir, 'src/legacy/old.ts', 'try { oldWork() } catch (error) {}\n')
+    write(projectDir, 'src/feature/new.ts', 'try { newWork() } catch (error) {}\n')
+
+    const report = doctorEngineeringStandards({
+      projectDir,
+      changedFiles: ['src/feature/new.ts'],
+    })
+
+    expect(report.ok).toBe(false)
+    expect(report.scan.summary.filesScanned).toBe(1)
+    expect(report.findings.some(finding => finding.path === 'src/legacy/old.ts')).toBe(false)
+    expect(report.findings.some(finding => finding.path === 'src/feature/new.ts' && finding.ruleId === 'empty-catch')).toBe(true)
+  })
+
+  it('generates a baseline file and legacy debt classification report from current full-scan findings', () => {
+    const projectDir = makeProject()
+    const artifactDir = 'docs/worklog/tasks/2026-05-15-standards-baseline'
+    write(projectDir, '.scale/engineering-standards.json', JSON.stringify({ version: 1 }, null, 2))
+    write(projectDir, 'src/legacy/auth.ts', `
+export function login(token: string, db: { query: (sql: string) => Promise<void> }) {
+  console.log('token', token)
+  return db.query('SELECT * FROM users WHERE token = ' + token)
+}
+`)
+    write(projectDir, 'src/legacy/cleanup.ts', 'try { cleanup() } catch (error) {}\n')
+    write(projectDir, 'src/legacy/auth.test.ts', `
+export function testLogin(token: string) {
+  console.log('token', token)
+}
+`)
+
+    const report = baselineEngineeringStandards({
+      projectDir,
+      writeBaseline: true,
+      artifactsDir: artifactDir,
+      taskId: 'TASK-BASELINE',
+      reason: 'legacy rollout baseline',
+    })
+
+    expect(report.wroteBaseline).toBe(true)
+    expect(report.baselineEntries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'sensitive-log', path: 'src/legacy/auth.ts', line: 3 }),
+      expect.objectContaining({ ruleId: 'raw-sql-construction', path: 'src/legacy/auth.ts', line: 4 }),
+      expect.objectContaining({ ruleId: 'empty-catch', path: 'src/legacy/cleanup.ts', line: 1 }),
+    ]))
+    expect(report.debt.byCategory.logging.total).toBeGreaterThanOrEqual(1)
+    expect(report.debt.byScope.production.total).toBeGreaterThanOrEqual(1)
+    expect(report.debt.byScope.test.total).toBeGreaterThanOrEqual(1)
+    expect(report.debt.byRule['sensitive-log'].total).toBeGreaterThanOrEqual(1)
+    expect(report.legacyDebtPath).toBe(join(projectDir, 'docs', 'worklog', 'tasks', '2026-05-15-standards-baseline', 'standards-legacy-debt.md'))
+    expect(readFileSync(report.legacyDebtPath!, 'utf-8')).toContain('SCALE Engineering Standards Legacy Debt Classification')
+    const baseline = JSON.parse(readFileSync(join(projectDir, '.scale', 'engineering-standards-baseline.json'), 'utf-8')) as {
+      version: number
+      findings: Array<{ ruleId: string; path: string; line?: number; reason: string }>
+    }
+    expect(baseline.version).toBe(1)
+    expect(baseline.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'sensitive-log', path: 'src/legacy/auth.ts', line: 3, reason: 'legacy rollout baseline' }),
+    ]))
+
+    expect(doctorEngineeringStandards({ projectDir }).ok).toBe(true)
   })
 
   it('supports evidence-pattern exceptions without hiding other findings in the same file', () => {

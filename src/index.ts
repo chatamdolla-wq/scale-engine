@@ -51,6 +51,9 @@ export { TriggerEngine } from './skills/TriggerEngine.js'
 export { SkillExecutor } from './skills/SkillExecutor.js'
 export type { ISkillExecutor } from './skills/SkillExecutor.js'
 export { SkillDiscovery } from './skills/SkillDiscovery.js'
+export * from './skills/SkillRepository.js'
+export * from './prompts/VibeTemplateGallery.js'
+export * from './agents/LeadershipPresets.js'
 
 // Hooks System (v0.7.0)
 export { HookGeneratorEnhanced, HookDeployer } from './hooks/index.js'
@@ -96,6 +99,9 @@ export { ContextBuilder } from './context/ContextBuilder.js'
 
 // Orchestration
 export { wireEffects } from './orchestration/EffectsWiring.js'
+
+// Tool Orchestration Governance
+export * from './tools/index.js'
 
 // Routing
 export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'

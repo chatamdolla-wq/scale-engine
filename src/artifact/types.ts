@@ -244,6 +244,10 @@ export interface TaskPayload {
   requiredSkillArtifacts?: string[]
   requiredSkillVerification?: string[]
   skillGatePassed?: boolean
+  toolOrchestrationMode?: 'off' | 'advisory' | 'evidence-required' | 'block'
+  requiredTools?: string[]
+  toolEvidenceIds?: string[]
+  toolEvidenceGatePassed?: boolean
   reviewEvidenceIds?: string[]
   reviewedAt?: Timestamp
   /** Agent Brief — 标准化的 Agent 可执行工单（借鉴 mattpocock/skills） */

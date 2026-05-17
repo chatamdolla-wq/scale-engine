@@ -1,204 +1,143 @@
-// SCALE Engine — Vibe Commands
-// 一键启动高质量提示词工作流
-// 参考: easy-vibe + vibe-coding-prompt-template
-
 import { defineCommand } from 'citty'
-import { PhasePromptRegistry, type VibePhase, type PromptPack } from '../prompts/PhasePromptRegistry.js'
-import { join } from 'node:path'
+import { dirname } from 'node:path'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { logger } from '../core/logger.js'
+import {
+  getVisualVibeTemplate,
+  renderCopyablePromptCard,
+  renderVisualVibeTemplateIndex,
+} from '../prompts/VibeTemplateGallery.js'
 
-const registry = new PhasePromptRegistry()
+type LegacyVibePhase = 'idea' | 'research' | 'prd' | 'design' | 'agents' | 'build'
 
-// ============================================================================
-// scale vibe — 显示可用提示词模板
-// ============================================================================
+const LEGACY_PHASE_TEMPLATE_MAP: Record<LegacyVibePhase, string> = {
+  idea: 'product-ceo-discovery',
+  research: 'product-ceo-discovery',
+  prd: 'product-ceo-discovery',
+  design: 'technical-architecture-plan',
+  agents: 'technical-architecture-plan',
+  build: 'implementation-slice',
+}
+
+const PACKS: Record<string, string[]> = {
+  'full-mvp': [
+    'product-ceo-discovery',
+    'ui-ux-design-direction',
+    'technical-architecture-plan',
+    'implementation-slice',
+    'verification-release',
+  ],
+  'quick-prototype': [
+    'product-ceo-discovery',
+    'implementation-slice',
+    'verification-release',
+  ],
+  'developer-path': [
+    'technical-architecture-plan',
+    'implementation-slice',
+    'verification-release',
+  ],
+  'vibe-coder-path': [
+    'product-ceo-discovery',
+    'ui-ux-design-direction',
+    'implementation-slice',
+  ],
+}
 
 export const vibeCommand = defineCommand({
   meta: {
     name: 'vibe',
-    description: '一键启动高质量提示词工作流',
+    description: '生成可复制的 SCALE Vibe Coding 中文提示词模板',
   },
   args: {
+    template: {
+      type: 'string',
+      alias: 't',
+      description: '模板 ID，例如 product-ceo-discovery / technical-architecture-plan',
+    },
     phase: {
       type: 'string',
       alias: 'p',
-      description: '指定阶段 (idea/research/prd/design/agents/build)',
+      description: '兼容旧阶段: idea/research/prd/design/agents/build',
     },
     pack: {
       type: 'string',
       alias: 'k',
-      description: '使用预定义组合包 (full-mvp/quick-prototype/developer-path/vibe-coder-path)',
+      description: '组合包: full-mvp/quick-prototype/developer-path/vibe-coder-path',
     },
     app: {
       type: 'string',
       alias: 'a',
-      description: '应用名称（用于填充模板变量）',
+      description: '项目或应用名称',
+    },
+    scenario: {
+      type: 'string',
+      alias: 's',
+      description: '本次任务场景',
+    },
+    user: {
+      type: 'string',
+      alias: 'u',
+      description: '用户身份或角色',
     },
     output: {
       type: 'string',
       alias: 'o',
-      description: '输出文件路径（默认 stdout）',
+      description: '输出文件路径；不填则输出到终端',
     },
     interactive: {
       type: 'boolean',
       alias: 'i',
-      description: '交互式模式（逐步引导）',
+      description: '显示交互式使用引导',
       default: false,
     },
   },
-  run: async ({ args }) => {
-    const phase = args.phase as VibePhase | undefined
-    const packId = args.pack as string | undefined
-    const appName = args.app as string | undefined
-    const outputPath = args.output as string | undefined
-    const interactive = args.interactive as boolean
+  run({ args }) {
+    const context = {
+      appName: args.app,
+      scenario: args.scenario,
+      userRole: args.user,
+    }
 
-    // ========== 显示所有可用模板 ==========
-    if (!phase && !packId) {
-      console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║            SCALE Engine — Vibe Coding Templates              ║
-╚══════════════════════════════════════════════════════════════╝
-
-内置高质量提示词模板，一键启动专业工作流。
-
-## 提示词组合包
-
-| ID | 名称 | 阶段 | 适用人群 |
-|----|------|------|----------|
-| full-mvp | 完整 MVP 工作流 | idea → research → prd → design → agents → build | 所有用户 |
-| quick-prototype | 快速原型 | prd → agents → build | 快速验证 |
-| developer-path | 开发者路径 | research → prd → design → agents → build | 有经验开发者 |
-| vibe-coder-path | Vibe Coder 路径 | idea → prd → agents → build | 初学者 |
-
-## 单阶段提示词
-
-| 阶段 | 命令 | 预估时间 | 输出文件 |
-|------|------|----------|----------|
-| idea | scale vibe --phase idea | 15-20 min | docs/idea-validation.md |
-| research | scale vibe --phase research | 20-30 min | docs/research-{App}.md |
-| prd | scale vibe --phase prd | 15-20 min | docs/PRD-{App}-MVP.md |
-| design | scale vibe --phase design | 15-20 min | docs/TechDesign-{App}-MVP.md |
-| agents | scale vibe --phase agents | 1-2 min | AGENTS.md |
-| build | scale vibe --phase build | 1-3 hrs | — |
-
-## 快速开始示例
-
-# 完整 MVP 流程
-scale vibe --pack full-mvp --app "MyExpenseTracker"
-
-# 跳过研究，快速原型
-scale vibe --pack quick-prototype --app "MyApp"
-
-# 单阶段启动（生成 PRD）
-scale vibe --phase prd --app "MyApp" --output docs/PRD-MyApp.md
-
-# 交互式引导
-scale vibe --interactive
-`)
+    if (args.interactive) {
+      writeOutput(renderInteractiveGuide(args.app), args.output)
       return
     }
 
-    // ========== 使用组合包 ==========
-    if (packId) {
-      const pack = registry.getPack(packId)
+    const templateId = resolveTemplateId(args.template, args.phase)
+    if (templateId) {
+      const markdown = renderCopyablePromptCard(templateId, context)
+      if (!markdown) {
+        console.error(`Unknown vibe template: ${templateId}`)
+        process.exit(1)
+      }
+      writeOutput(markdown, args.output)
+      return
+    }
+
+    if (args.pack) {
+      const pack = PACKS[args.pack]
       if (!pack) {
-        console.error(`❌ 未找到组合包: ${packId}`)
-        console.error('可用组合包: full-mvp, quick-prototype, developer-path, vibe-coder-path')
+        console.error(`Unknown vibe pack: ${args.pack}`)
+        console.error(`Available packs: ${Object.keys(PACKS).join(', ')}`)
         process.exit(1)
       }
-
-      console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║  启动工作流: ${pack.name}
-╚══════════════════════════════════════════════════════════════╝
-
-阶段: ${pack.phases.join(' → ')}
-
-将生成以下提示词，请在 AI Chat 或 IDE 中依次使用：
-`)
-      for (const phase of pack.phases) {
-        const prompts = registry.getPromptByPhase(phase)
-        for (const prompt of prompts) {
-          console.log(`\n## ${prompt.name} (${prompt.estimatedTime})`)
-          console.log(`输出文件: ${prompt.outputFile || '—'}`)
-          console.log(`\n使用方式:\nscale vibe --phase ${phase} --app "${appName || 'YourApp'}"\n`)
-        }
-      }
+      const markdown = [
+        `# SCALE Vibe Pack: ${args.pack}`,
+        '',
+        ...pack.map(id => renderCopyablePromptCard(id, context)),
+      ].join('\n')
+      writeOutput(markdown, args.output)
       return
     }
 
-    // ========== 单阶段提示词 ==========
-    if (phase) {
-      const prompts = registry.getPromptByPhase(phase)
-      if (prompts.length === 0) {
-        console.error(`❌ 未找到阶段: ${phase}`)
-        console.error('可用阶段: idea, research, prd, design, agents, build')
-        process.exit(1)
-      }
-
-      const prompt = prompts[0]
-      const generatedPrompt = registry.generatePrompt(prompt.id, {
-        appName: appName,
-        userLevel: 'intermediate',
-      })
-
-      if (outputPath) {
-        // 确保目录存在
-        const dir = join(outputPath, '..')
-        if (!existsSync(dir)) {
-          mkdirSync(dir, { recursive: true })
-        }
-        writeFileSync(outputPath, generatedPrompt, 'utf-8')
-        console.log(`✅ 提示词已生成: ${outputPath}`)
-        console.log(`\n阶段: ${prompt.name}`)
-        console.log(`预估时间: ${prompt.estimatedTime}`)
-        console.log(`\n下一步: 将此提示词复制到 AI Chat 或 IDE 中执行`)
-      } else {
-        // 输出到 stdout
-        console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║  ${prompt.name} (${prompt.phase})
-║  预估时间: ${prompt.estimatedTime}
-╚══════════════════════════════════════════════════════════════╝
-
-${generatedPrompt}
-`)
-      }
-      return
-    }
-
-    // ========== 交互式模式 ==========
-    if (interactive) {
-      console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║           SCALE Engine — Vibe Coding 交互引导               ║
-╚══════════════════════════════════════════════════════════════╝
-
-欢迎使用 SCALE Engine Vibe Coding 工作流！
-
-请选择你的技术背景：
-  A) Vibe-coder — 有想法但编程经验有限
-  B) Developer — 有编程经验
-  C) 中间 — 知道一些基础但还在学习
-
-请输入 A、B 或 C：
-`)
-      // TODO: 实现完整交互流程
-      return
-    }
+    writeOutput(renderVisualVibeTemplateIndex(context), args.output)
   },
 })
-
-// ============================================================================
-// scale vibe-next — 推荐下一阶段提示词
-// ============================================================================
 
 export const vibeNextCommand = defineCommand({
   meta: {
     name: 'vibe-next',
-    description: '基于当前阶段推荐下一阶段提示词',
+    description: '基于旧阶段推荐下一步 Vibe 模板',
   },
   args: {
     current: {
@@ -208,55 +147,90 @@ export const vibeNextCommand = defineCommand({
       required: true,
     },
   },
-  run: async ({ args }) => {
-    const currentPhase = args.current as VibePhase
-    const nextPrompt = registry.getNextPrompt(currentPhase)
-
-    if (!nextPrompt) {
-      console.log('✅ 所有阶段已完成！可以开始构建 MVP。')
-      console.log('\n使用: scale vibe --phase build')
+  run({ args }) {
+    const order: LegacyVibePhase[] = ['idea', 'research', 'prd', 'design', 'agents', 'build']
+    const index = order.indexOf(args.current as LegacyVibePhase)
+    const next = index >= 0 ? order[index + 1] : undefined
+    if (!next) {
+      console.log('所有主要阶段已完成。建议运行: scale vibe --template verification-release')
       return
     }
-
-    console.log(`
-## 推荐下一阶段: ${nextPrompt.name}
-
-预估时间: ${nextPrompt.estimatedTime}
-输出文件: ${nextPrompt.outputFile || '—'}
-
-生成提示词:
-scale vibe --phase ${nextPrompt.phase}
-`)
+    const templateId = LEGACY_PHASE_TEMPLATE_MAP[next]
+    const template = getVisualVibeTemplate(templateId)
+    console.log([
+      `下一阶段: ${next}`,
+      `推荐模板: ${templateId}${template ? ` - ${template.title}` : ''}`,
+      `命令: scale vibe --template ${templateId}`,
+    ].join('\n'))
   },
 })
-
-// ============================================================================
-// scale vibe-index — 生成提示词索引文档
-// ============================================================================
 
 export const vibeIndexCommand = defineCommand({
   meta: {
     name: 'vibe-index',
-    description: '生成提示词模板索引文档',
+    description: '生成 SCALE Vibe Coding 可视化提示词索引',
   },
   args: {
     output: {
       type: 'string',
       alias: 'o',
-      description: '输出文件路径（默认 docs/VIBE-TEMPLATES.md）',
+      description: '输出文件路径',
       default: 'docs/VIBE-TEMPLATES.md',
     },
+    app: {
+      type: 'string',
+      alias: 'a',
+      description: '项目或应用名称',
+    },
   },
-  run: async ({ args }) => {
-    const outputPath = args.output as string
-    const indexMd = registry.generateIndexMd()
-
-    const dir = join(outputPath, '..')
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-    writeFileSync(outputPath, indexMd, 'utf-8')
-
-    console.log(`✅ 提示词索引已生成: ${outputPath}`)
+  run({ args }) {
+    writeOutput(renderVisualVibeTemplateIndex({ appName: args.app }), args.output)
   },
 })
+
+function resolveTemplateId(template: unknown, phase: unknown): string | undefined {
+  if (typeof template === 'string' && template.trim()) return template.trim()
+  if (typeof phase === 'string' && phase.trim()) {
+    return LEGACY_PHASE_TEMPLATE_MAP[phase.trim() as LegacyVibePhase]
+  }
+  return undefined
+}
+
+function writeOutput(content: string, outputPath?: unknown): void {
+  if (typeof outputPath === 'string' && outputPath.trim()) {
+    const path = outputPath.trim()
+    const dir = dirname(path)
+    if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(path, content, 'utf-8')
+    console.log(`[OK] 已生成: ${path}`)
+    return
+  }
+  console.log(content)
+}
+
+function renderInteractiveGuide(appName?: unknown): string {
+  const app = typeof appName === 'string' && appName.trim() ? appName.trim() : '你的项目'
+  return [
+    '# SCALE Vibe Coding 交互式引导',
+    '',
+    `项目: ${app}`,
+    '',
+    '先选择你当前最需要的入口：',
+    '',
+    '| 场景 | 推荐命令 | 说明 |',
+    '| --- | --- | --- |',
+    '| 想法还模糊 | `scale vibe --template product-ceo-discovery` | CEO 先把产品目标和闭环问清楚 |',
+    '| 要做 UI/UX | `scale vibe --template ui-ux-design-direction` | UX Director 定义体验、状态和浏览器验证 |',
+    '| 要做技术方案 | `scale vibe --template technical-architecture-plan` | CTO 定义架构、模块边界和验证策略 |',
+    '| 已经可以开发 | `scale vibe --template implementation-slice` | Engineering Lead 拆最小切片并推动验证 |',
+    '| 准备发版 | `scale vibe --template verification-release` | QA/Release Lead 收敛证据和风险 |',
+    '',
+    '建议用法：',
+    '',
+    '1. 先复制一个模板给 Agent。',
+    '2. Agent 必须主动选择相关 skills/MCP/CLI，并先做安全检查。',
+    '3. M/L 级任务必须沉淀 Mini-PRD、方案、验证和资源治理证据。',
+    '4. 完成后把最终事实写入长期文档，把临时报告归档或删除。',
+    '',
+  ].join('\n')
+}

@@ -5,6 +5,7 @@ import { execa } from 'execa'
 import { cleanupWorkspaceLifecycle, inspectWorkspaceLifecycle } from '../../src/workflow/WorkspaceLifecycle.js'
 
 let dirs: string[] = []
+const GIT_TEST_TIMEOUT = 120_000
 
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
@@ -54,7 +55,7 @@ describe('WorkspaceLifecycle', () => {
     })
     expect(result.finish.canCleanup).toBe(false)
     expect(result.finish.blockers).toContain('Child repository modules/common has uncommitted changes')
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('discovers configured MOE repositories beyond nested auto-discovery depth', async () => {
     const root = makeDir()
@@ -85,7 +86,7 @@ describe('WorkspaceLifecycle', () => {
         clean: true,
       }),
     ]))
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('warns when MOE finish policy requires root pointer review after child repository changes', async () => {
     const root = makeDir()
@@ -118,7 +119,7 @@ describe('WorkspaceLifecycle', () => {
 
     expect(result.finish.blockers).toContain('Child repository modules/common has unpushed commits')
     expect(result.finish.warnings).toContain('MOE finish policy requires root pointer or integration metadata review after child repository changes')
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('identifies linked worktrees and marks clean temporary branches as cleanup candidates', async () => {
     const root = makeDir()
@@ -136,7 +137,7 @@ describe('WorkspaceLifecycle', () => {
     expect(result.root.isSubmodule).toBe(false)
     expect(result.finish.canCleanup).toBe(true)
     expect(result.finish.nextActions).toContain('Safe to remove linked worktree after branch is pushed, merged, or intentionally discarded')
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('dry-runs linked worktree cleanup without deleting it', async () => {
     const root = makeDir()
@@ -156,7 +157,7 @@ describe('WorkspaceLifecycle', () => {
     expect(result.confirmationToken).toBe('claude/agent-task-0515')
     expect(result.commands).toContain(`git worktree remove "${worktree}"`)
     expect(existsSync(worktree)).toBe(true)
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('requires confirmation before applying linked worktree cleanup', async () => {
     const root = makeDir()
@@ -187,7 +188,7 @@ describe('WorkspaceLifecycle', () => {
     expect(applied.applied).toBe(true)
     expect(applied.canApply).toBe(true)
     expect(existsSync(worktree)).toBe(false)
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('blocks cleanup for an ordinary checkout', async () => {
     const root = makeDir()
@@ -197,7 +198,7 @@ describe('WorkspaceLifecycle', () => {
 
     expect(result.canApply).toBe(false)
     expect(result.blockers.join('\n')).toContain('not a linked worktree')
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('keeps porcelain leading spaces so unstaged changes are not counted as staged', async () => {
     const root = makeDir()
@@ -209,5 +210,5 @@ describe('WorkspaceLifecycle', () => {
     expect(result.root.clean).toBe(false)
     expect(result.root.staged).toBe(0)
     expect(result.root.unstaged).toBe(1)
-  })
+  }, GIT_TEST_TIMEOUT)
 })

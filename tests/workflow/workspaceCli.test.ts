@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { execa } from 'execa'
 
 let dirs: string[] = []
+const GIT_TEST_TIMEOUT = 120_000
 
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
@@ -65,7 +66,47 @@ describe('workspace CLI', () => {
     ]))
     expect(json.finish.canCleanup).toBe(false)
     expect(json.finish.blockers).toContain('Child repository services/resource has uncommitted changes')
-  })
+  }, GIT_TEST_TIMEOUT)
+
+  it('prints a concise workspace finish summary without listing every clean child repository', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    mkdirSync(join(root, '.scale'), { recursive: true })
+    const cleanChild = join(root, 'services', 'clean')
+    const dirtyChild = join(root, 'services', 'dirty')
+    mkdirSync(cleanChild, { recursive: true })
+    mkdirSync(dirtyChild, { recursive: true })
+    await initRepo(cleanChild)
+    await initRepo(dirtyChild)
+    writeFileSync(join(root, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'clean', path: 'services/clean', role: 'nested-repo', required: false },
+        { name: 'dirty', path: 'services/dirty', role: 'nested-repo', required: true },
+      ],
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: false,
+        requireRootPointerUpdate: true,
+      },
+    }, null, 2), 'utf-8')
+    writeFileSync(join(root, '.gitignore'), 'services/\n', 'utf-8')
+    await git(root, ['add', '.scale/workspace.json', '.gitignore'])
+    await git(root, ['commit', '-m', 'add workspace topology'])
+    writeFileSync(join(dirtyChild, 'dirty.txt'), 'dirty\n', 'utf-8')
+
+    const summary = await runScale(['workspace', 'finish', '--dir', root, '--summary'], root)
+
+    expect(summary.exitCode).toBe(1)
+    expect(summary.stdout).toContain('SCALE Workspace Summary')
+    expect(summary.stdout).toContain('Status: BLOCKED')
+    expect(summary.stdout).toContain('Children: 2 total, 1 dirty')
+    expect(summary.stdout).toContain('Dirty child repositories: services/dirty')
+    expect(summary.stdout).not.toContain('services/clean')
+    expect(summary.stdout).toContain('Run scale workspace finish --json for full details')
+  }, GIT_TEST_TIMEOUT)
 
   it('prints resolved workspace topology as JSON', async () => {
     const root = makeDir()
@@ -91,7 +132,7 @@ describe('workspace CLI', () => {
     expect(json.configured).toBe(true)
     expect(json.topology).toBe('moe')
     expect(json.repositories.map(repo => repo.name)).toEqual(['root', 'common'])
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('writes a starter MOE workspace topology from the CLI', async () => {
     const root = makeDir()
@@ -111,7 +152,7 @@ describe('workspace CLI', () => {
         requireRootPointerUpdate: true,
       },
     })
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('dry-runs linked worktree cleanup as JSON', async () => {
     const root = makeDir()
@@ -136,7 +177,7 @@ describe('workspace CLI', () => {
     expect(json.applied).toBe(false)
     expect(json.confirmationToken).toBe('claude/workspace-cli-cleanup-0515')
     expect(existsSync(worktree)).toBe(true)
-  })
+  }, GIT_TEST_TIMEOUT)
 
   it('applies linked worktree cleanup only with the reported confirmation token', async () => {
     const root = makeDir()
@@ -168,5 +209,5 @@ describe('workspace CLI', () => {
     expect(appliedJson.applied).toBe(true)
     expect(appliedJson.canApply).toBe(true)
     expect(existsSync(worktree)).toBe(false)
-  })
+  }, GIT_TEST_TIMEOUT)
 })

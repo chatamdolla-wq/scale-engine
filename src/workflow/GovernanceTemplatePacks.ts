@@ -157,10 +157,12 @@ MOE workspaces are multi-repository engineering environments where the root chec
 Before deleting an agent worktree or reporting a task complete:
 
 1. Run \`scale workspace map --json\` to confirm the expected repositories are known.
-2. Run \`scale workspace finish --json\` to check root and child repository state.
+2. Run \`scale workspace finish --summary\` for the short blocker list; use \`--json\` only when full audit detail is needed.
 3. Commit and push child repository work in each repository's own remote.
 4. Review whether the root repository needs a submodule pointer, lock file, integration metadata, or documentation update.
 5. Run service-aware verification for every touched service.
+
+\`scale ship <task-id>\` performs the same child-repository boundary check before creating a root commit. Dirty or unpushed child repositories block shipping; raw \`git add .\` bypasses this protection and is not allowed for governed MOE workspaces.
 
 ## Branch Naming
 

@@ -1,0 +1,45 @@
+# SCALE Skill 仓库
+
+这个仓库视图用于让 Agent 按任务渐进式发现、激活和编排 skills/MCP/CLI，而不是一次性把所有能力塞进上下文。
+
+## 渐进式披露
+
+1. 启动时只读取 Skill 元数据和一句话描述。
+2. 任务命中时才读取完整 SKILL.md。
+3. scripts、references、assets 只在明确需要时懒加载。
+
+## 安全安装
+
+- 安装前必须执行安全扫描，阻断 `curl | bash`、`Invoke-Expression`、危险删除和非 HTTPS 来源。
+- npm/npx 来源必须补充 `npm audit signatures`、来源仓库、许可证和版本/commit 固定检查。
+- 任何第三方 Skill 都先进入隔离审查，再写入项目或全局 skills 目录。
+
+## 供应链防护清单
+
+- review-skill-frontmatter
+- inspect-scripts-directory
+- verify-license-and-source
+- pin-source-revision
+- npm-audit-signatures
+
+## Skill 目录
+
+| ID | 类别 | 信任 | 主要用途 | 组合建议 |
+| --- | --- | --- | --- | --- |
+| `frontend-design` | ui | official | UI 视觉方向、布局、组件状态和前端实现约束。 | awesome-design-md, ui-ux-pro-max, webapp-testing |
+| `awesome-design-md` | ui | ecosystem | 建立产品级设计规范和视觉语言。 | ui-ux-pro-max, frontend-design |
+| `ui-ux-pro-max` | ui | ecosystem | 补齐体验策略、交互状态和 UI 验收维度。 | awesome-design-md, webapp-testing |
+| `webapp-testing` | testing | official | 验证页面点击、表单、控制台、截图和端到端行为。 | agent-browser, mcp-chrome-devtools |
+| `web-access` | browser | ecosystem | 获取一手资料、动态页面内容、网页证据和来源引用。 | agent-browser, mcp-chrome-devtools |
+| `agent-browser` | browser | ecosystem | 与 Web 页面真实交互，补齐手工验收证据。 | web-access, webapp-testing, mcp-chrome-devtools |
+| `mcp-chrome-devtools` | browser | ecosystem | 调试控制台错误、网络请求、页面状态和性能问题。 | agent-browser, webapp-testing |
+| `cua` | desktop | ecosystem | 操作桌面应用并收集端侧截图、状态和副作用边界证据。 | web-access, agent-browser |
+| `code-reviewer` | review | official | 合并前分级审查缺陷、安全、可维护性和测试风险。 | security-and-hardening, update-docs |
+| `fix` | review | official | 提交前清理格式和 lint 问题。 | code-reviewer |
+| `pr-creator` | review | official | 生成标准 PR 描述和合并前说明。 | code-reviewer, update-docs |
+| `update-docs` | docs | official | 发现并更新受代码变更影响的长期文档。 | documentation-and-adrs |
+| `find-skills` | discovery | ecosystem | 按任务意图搜索合适 Skill，再进入安全扫描。 | web-access |
+| `codex-cli` | agent-cli | official | 外部 CLI 审查和命令级证据。 | gemini-cli, opencode-cli |
+| `gemini-cli` | agent-cli | official | 外部 CLI 审查和命令级证据。 | codex-cli, opencode-cli |
+| `opencode-cli` | agent-cli | ecosystem | 外部 CLI 审查和命令级证据。 | codex-cli, gemini-cli |
+| `agency-agents-zh` | role-library | community | 提供 CEO、CTO、工程、设计、产品等角色预设参考。 | skill-safety-scan |

@@ -42,6 +42,7 @@ describe('writeGovernanceTemplates', () => {
       join(dir, '.scale', 'resource-policy.json'),
       join(dir, '.scale', 'assets.json'),
       join(dir, '.scale', 'engineering-standards.json'),
+      join(dir, '.scale', 'engineering-standards-baseline.json'),
       join(dir, '.scale', 'frameworks.json'),
       join(dir, '.scale', 'governance.lock.json'),
     ]))
@@ -76,6 +77,10 @@ describe('writeGovernanceTemplates', () => {
     const engineeringStandards = JSON.parse(readFileSync(join(dir, '.scale', 'engineering-standards.json'), 'utf-8'))
     expect(engineeringStandards.logging.sensitiveFields).toContain('token')
     expect(engineeringStandards.blockingRules).toEqual([])
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'engineering-standards-baseline.json'), 'utf-8'))).toMatchObject({
+      version: 1,
+      findings: [],
+    })
     const frameworks = JSON.parse(readFileSync(join(dir, '.scale', 'frameworks.json'), 'utf-8'))
     expect(frameworks.bannedImports).toEqual([])
     expect(frameworks.reviewIntervalDays).toBe(90)
