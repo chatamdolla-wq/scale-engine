@@ -86,6 +86,12 @@ import { ToolEvidenceStore } from '../tools/ToolEvidenceStore.js'
 import { ToolOrchestrator } from '../tools/ToolOrchestrator.js'
 import { loadToolPolicy, toolPolicyTemplate, type ResolvedToolPolicy, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
 import {
+  doctorHtmlArtifacts,
+  renderHtmlArtifact,
+  resolveHtmlArtifactForOpen,
+  settleHtmlArtifacts,
+} from '../output/HTMLArtifactLayer.js'
+import {
   cleanupWorkspaceLifecycle,
   inspectWorkspaceLifecycle,
   type WorkspaceCleanupResult,
@@ -101,6 +107,7 @@ import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 
 // ============================================================================
@@ -2211,6 +2218,179 @@ const standards = defineCommand({
 })
 
 // ============================================================================
+// artifact command - Derived HTML artifacts for human review
+// ============================================================================
+
+const artifactRender = defineCommand({
+  meta: { name: 'render', description: 'Render a task Markdown source set into a governed HTML artifact' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id under docs/worklog/tasks' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory override' },
+    type: { type: 'string', default: 'release-report', description: 'HTML artifact type' },
+    source: { type: 'string', description: 'Comma or newline separated source Markdown files relative to the task directory' },
+    theme: { type: 'string', default: 'auto', description: 'Theme mode: dark/light/auto' },
+    lang: { type: 'string', default: 'zh', description: 'HTML language: zh/en' },
+    title: { type: 'string', description: 'HTML document title override' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const result = renderHtmlArtifact({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactDir: args['artifact-dir'],
+      type: String(args.type ?? 'release-report'),
+      sourcePaths: splitChangedFiles(typeof args.source === 'string' ? args.source : undefined),
+      theme: normalizeThemeArg(args.theme),
+      lang: normalizeLangArg(args.lang),
+      title: typeof args.title === 'string' ? args.title : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log('SCALE HTML Artifact Render')
+    console.log(`  Type: ${result.type}`)
+    console.log(`  HTML: ${result.outputPath}`)
+    console.log(`  Index: ${result.indexPath}`)
+    console.log(`  Manifest: ${result.manifestPath}`)
+    if (result.missingSources.length > 0) {
+      console.log(`  Missing sources: ${result.missingSources.join(', ')}`)
+    }
+  },
+})
+
+const artifactDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Check HTML artifacts for traceability, stale sources, remote assets, and secret-like content' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id under docs/worklog/tasks' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory override' },
+    type: { type: 'string', description: 'Optional HTML artifact type to check' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = doctorHtmlArtifacts({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactDir: args['artifact-dir'],
+      type: typeof args.type === 'string' ? args.type : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE HTML Artifact Doctor: ${report.ok ? 'OK' : 'FAILED'}`)
+    console.log(`  Manifest: ${report.manifestPath}`)
+    console.log(`  Artifacts: ${report.artifacts.length}`)
+    if (report.findings.length === 0) {
+      console.log('  No HTML artifact findings.')
+    } else {
+      for (const finding of report.findings) {
+        const path = finding.path ? ` ${finding.path}` : ''
+        console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}${path}: ${finding.message}`)
+        if (finding.fix) console.log(`    fix: ${finding.fix}`)
+      }
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const artifactSettle = defineCommand({
+  meta: { name: 'settle', description: 'Record HTML artifact settlement evidence for a task' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id under docs/worklog/tasks' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory override' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = settleHtmlArtifacts({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactDir: args['artifact-dir'],
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE HTML Artifact Settlement: ${report.ok ? 'OK' : 'FAILED'}`)
+    console.log(`  HTML impact: ${report.htmlImpactPath}`)
+    for (const finding of report.doctor.findings) {
+      const path = finding.path ? ` ${finding.path}` : ''
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}${path}: ${finding.message}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const artifactOpen = defineCommand({
+  meta: { name: 'open', description: 'Open or print the local file URL for a rendered HTML artifact' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id under docs/worklog/tasks' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory override' },
+    type: { type: 'string', description: 'Optional HTML artifact type to open' },
+    'print-only': { type: 'boolean', default: false, description: 'Only print the file URL without launching a browser' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const path = resolveHtmlArtifactForOpen({
+      projectDir: args.dir,
+      taskId: args['task-id'],
+      artifactDir: args['artifact-dir'],
+      type: typeof args.type === 'string' ? args.type : undefined,
+    })
+    const url = pathToFileURL(path).toString()
+    const exists = existsSync(path)
+    if (!args['print-only'] && exists) launchLocalFile(path)
+    const output = { ok: exists, path, url, launched: Boolean(!args['print-only'] && exists) }
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2))
+      if (!exists) process.exitCode = 1
+      return
+    }
+    if (!exists) {
+      console.log(`HTML artifact not found: ${path}`)
+      process.exitCode = 1
+      return
+    }
+    console.log(url)
+  },
+})
+
+const artifact = defineCommand({
+  meta: { name: 'artifact', description: 'Derived HTML artifact rendering and safety checks' },
+  subCommands: { render: artifactRender, doctor: artifactDoctor, settle: artifactSettle, open: artifactOpen },
+})
+
+function normalizeThemeArg(value: unknown): 'dark' | 'light' | 'auto' {
+  const normalized = String(value ?? 'auto').trim().toLowerCase()
+  if (normalized === 'dark' || normalized === 'light' || normalized === 'auto') return normalized
+  return 'auto'
+}
+
+function normalizeLangArg(value: unknown): 'zh' | 'en' {
+  return String(value ?? 'zh').trim().toLowerCase() === 'en' ? 'en' : 'zh'
+}
+
+function launchLocalFile(path: string): void {
+  try {
+    if (process.platform === 'win32') {
+      execFileSync('cmd', ['/c', 'start', '', path], { stdio: 'ignore' })
+    } else if (process.platform === 'darwin') {
+      execFileSync('open', [path], { stdio: 'ignore' })
+    } else {
+      execFileSync('xdg-open', [path], { stdio: 'ignore' })
+    }
+  } catch {
+    // Opening is convenience-only; artifact doctor/render remains the source of truth.
+  }
+}
+
+// ============================================================================
 // evolve command
 // ============================================================================
 
@@ -3197,6 +3377,7 @@ const main = defineCommand({
     stats,
     preflight,
     governance,
+    artifact,
     assets,
     standards,
     metrics,

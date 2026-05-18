@@ -42,6 +42,7 @@ describe('writeGovernanceTemplates', () => {
       join(dir, '.scale', 'tools.json'),
       join(dir, '.scale', 'resource-policy.json'),
       join(dir, '.scale', 'assets.json'),
+      join(dir, '.scale', 'output-policy.json'),
       join(dir, '.scale', 'engineering-standards.json'),
       join(dir, '.scale', 'engineering-standards-baseline.json'),
       join(dir, '.scale', 'frameworks.json'),
@@ -49,6 +50,7 @@ describe('writeGovernanceTemplates', () => {
     ]))
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance mode: critical')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Tool orchestration is part of the workflow contract')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('## HTML Artifacts')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'), 'utf-8')).toContain('## Tool Orchestration')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'), 'utf-8')).toContain('## Browser Or Web Evidence')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), 'utf-8')).toContain('scale-engine@latest preflight --service all --preflight-profile ci')
@@ -75,6 +77,9 @@ describe('writeGovernanceTemplates', () => {
     expect(skills.domains.resourceGovernance.requiredArtifacts).toContain('resource-impact.md')
     expect(skills.domains.engineeringStandards.requiredArtifacts).toContain('standards-impact.md')
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'resource-policy.json'), 'utf-8')).retainedRuntimeDirectories).toContain('test-results')
+    const outputPolicy = JSON.parse(readFileSync(join(dir, '.scale', 'output-policy.json'), 'utf-8'))
+    expect(outputPolicy.templates).toHaveProperty('release-report')
+    expect(outputPolicy.safety.allowRemoteScripts).toBe(false)
     const tools = JSON.parse(readFileSync(join(dir, '.scale', 'tools.json'), 'utf-8'))
     expect(tools.mode).toBe('block')
     expect(tools.tools).toHaveProperty('agent-browser')

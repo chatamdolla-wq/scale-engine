@@ -529,7 +529,10 @@ function classifyPath(path: string, policy: ResolvedResourcePolicy): Classificat
   if (path.startsWith('docs/decisions/') || /(^|\/)ADR-\d+/i.test(path)) {
     return { type: 'decision-record', lifecycle: 'immutable', gitPolicy: 'commit', reason: 'architecture decision record', sourceOfTruth: true }
   }
-  if (path.startsWith('docs/worklog/tasks/') && path.endsWith('.md')) {
+  if (
+    path.startsWith('docs/worklog/tasks/') &&
+    (path.endsWith('.md') || path.endsWith('.html') || path.endsWith('/artifact-manifest.json'))
+  ) {
     return { type: 'task-artifact', lifecycle: 'task-scoped', gitPolicy: 'review', reason: 'task evidence artifact', retentionDays: 180 }
   }
   if (path.startsWith('docs/modules/') || path.startsWith('docs/standards/') || path.startsWith('docs/architecture/') || path.startsWith('docs/workflow/') || /^docs\/[^/]+\.md$/i.test(path) || path === 'README.md' || path === 'CHANGELOG.md') {

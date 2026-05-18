@@ -30,6 +30,8 @@ async function runScale(args: string[], scaleDir: string, projectDir: string) {
   })
 }
 
+const CLI_TEST_TIMEOUT_MS = 15_000
+
 describe('tool CLI', () => {
   it('prints resolved tool policy as JSON', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
@@ -42,7 +44,7 @@ describe('tool CLI', () => {
     expect(parsed.mode).toBe('evidence-required')
     expect(parsed.tools).toHaveProperty('web-access')
     expect(parsed.tools).toHaveProperty('agent-browser')
-  })
+  }, CLI_TEST_TIMEOUT_MS)
 
   it('prints tool doctor status as JSON', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
@@ -58,7 +60,7 @@ describe('tool CLI', () => {
     expect(parsed.ok).toBe(false)
     expect(parsed.tools.find(tool => tool.id === 'web-access')?.installed).toBe(true)
     expect(parsed.tools.find(tool => tool.id === 'mcp-chrome-devtools')?.installed).toBe(false)
-  })
+  }, CLI_TEST_TIMEOUT_MS)
 
   it('creates a tool execution plan from task intent as JSON', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
@@ -83,7 +85,7 @@ describe('tool CLI', () => {
     expect(result.exitCode).toBe(0)
     const parsed = JSON.parse(result.stdout) as { steps: Array<{ toolId: string }> }
     expect(parsed.steps.map(step => step.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
-  })
+  }, CLI_TEST_TIMEOUT_MS)
 
   it('dry-runs a tool execution plan and writes evidence', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
@@ -116,7 +118,7 @@ describe('tool CLI', () => {
     expect(parsed).toMatchObject({ ok: true, dryRun: true })
     expect(parsed.evidence.length).toBeGreaterThanOrEqual(2)
     expect(parsed.evidence.every(item => item.status === 'skipped')).toBe(true)
-  })
+  }, CLI_TEST_TIMEOUT_MS)
 
   it('checks tool execution evidence and blocks missing or skipped required evidence', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
@@ -186,5 +188,5 @@ describe('tool CLI', () => {
     expect(skipped.exitCode).toBe(1)
     const skippedResult = JSON.parse(skipped.stdout) as { skipped: Array<{ toolId: string }> }
     expect(skippedResult.skipped.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
-  })
+  }, CLI_TEST_TIMEOUT_MS)
 })

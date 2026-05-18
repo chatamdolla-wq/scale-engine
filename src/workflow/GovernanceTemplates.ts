@@ -15,6 +15,7 @@ import {
 import { resourceManifestTemplate, resourcePolicyTemplate } from './ResourceGovernance.js'
 import type { VerificationService } from './VerificationProfile.js'
 import { toolPolicyTemplate, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
+import { outputPolicyTemplate } from '../output/HTMLArtifactLayer.js'
 
 export type GovernanceMode = 'minimal' | 'standard' | 'critical'
 export type GovernanceArtifactTemplateName =
@@ -97,6 +98,7 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, '.scale/tools.json', toolPolicyTemplate(toolModeFromGovernanceMode(mode)))
   writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/output-policy.json', outputPolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards-baseline.json', engineeringStandardsBaselineTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate())
@@ -213,7 +215,11 @@ docs/worklog/tasks/<yyyy-mm-dd>-<task-slug>/
 ├── plan.md
 ├── verification.md
 ├── review.md
-└── summary.md
+├── summary.md
+├── artifact-manifest.json
+└── artifacts/
+    ├── index.html
+    └── release-report.html
 \`\`\`
 
 ## Verification
@@ -229,14 +235,23 @@ scale verify <task-id> --artifact-gate warn
 scale verify <task-id> --artifact-gate block
 scale verify <task-id> --require-installed-skills
 scale task-artifacts check --dir docs/worklog/tasks/<task-dir> --level L
+scale artifact render --task-id <task-dir> --type release-report
+scale artifact doctor --task-id <task-dir>
 \`\`\`
 
 Keep \`.scale/verification.json\` as the source of truth for profiles and service commands.
 Keep \`.scale/skills.json\` as the source of truth for active skill routing policy.
+Keep \`.scale/output-policy.json\` as the source of truth for derived HTML artifact types, source Markdown mapping, security policy, and Git retention behavior.
 Keep \`.scale/resource-policy.json\` and \`.scale/assets.json\` as the source of truth for generated reports, temporary files, module documentation, media, reusable scripts, and Git retention policy.
 Keep \`.scale/engineering-standards.json\` and \`.scale/frameworks.json\` as the source of truth for logging, security, ORM, architecture, framework, UI/UX, testing, and coding standard checks.
 Keep \`.scale/engineering-standards-baseline.json\` as the temporary exception list for known legacy standards findings; it must not be used to hide new or changed-file problems.
 Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITICAL work to \`"block"\` once templates and local gates are stable.
+
+## HTML Artifacts
+
+Markdown remains the editable source of truth for task artifacts. HTML artifacts are derived human-review surfaces for plan comparison, implementation plans, code reviews, status reports, incident reports, and release reports.
+
+Use HTML when a human needs to compare, review, or sign off. Keep source Markdown, manifest metadata, and safety checks in place so the derived HTML stays traceable and does not leak secrets or remote scripts.
 
 ## Active Skill Routing
 

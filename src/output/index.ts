@@ -31,3 +31,30 @@ export type {
   DashboardWidget,
   UIPrototypeOptions,
 } from './UIPrototypeRenderer.js'
+
+export {
+  HTML_ARTIFACT_TYPES,
+  defaultHtmlArtifactPolicy,
+  doctorHtmlArtifacts,
+  listExistingHtmlArtifacts,
+  loadHtmlArtifactPolicy,
+  normalizeHtmlArtifactType,
+  outputPolicyPath,
+  outputPolicyTemplate,
+  renderHtmlArtifact,
+  resolveHtmlArtifactForOpen,
+  settleHtmlArtifacts,
+} from './HTMLArtifactLayer.js'
+export type {
+  HtmlArtifactDoctorReport,
+  HtmlArtifactFinding,
+  HtmlArtifactManifest,
+  HtmlArtifactManifestEntry,
+  HtmlArtifactPolicy,
+  HtmlArtifactPolicyTemplate,
+  HtmlArtifactType,
+  RenderHtmlArtifactOptions,
+  RenderHtmlArtifactResult,
+  SettleHtmlArtifactsOptions,
+  SettleHtmlArtifactsReport,
+} from './HTMLArtifactLayer.js'

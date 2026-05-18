@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.17.0",
-  "description": "SCALE Engine v0.17.0 - cognitive workflow command gates, context grilling, diagnostic loops, TDD slices, and governed verification queues",
+  "version": "0.18.0",
+  "description": "SCALE Engine v0.18.0 - governed HTML artifacts, visual review reports, and traceable Markdown-to-HTML task outputs",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"

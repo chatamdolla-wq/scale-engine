@@ -1,3 +1,23 @@
+## 0.18.0 - 2026-05-18
+
+### Governed HTML artifacts
+
+- Added `scale artifact render`, `scale artifact doctor`, `scale artifact settle`, and `scale artifact open` for traceable HTML task outputs.
+- Added a Markdown-source-to-HTML artifact layer for plan comparison, implementation plans, code reviews, status reports, incident reports, and release reports.
+- Added `.scale/output-policy.json` to generated governance templates so projects can control HTML artifact sources, safety policy, theme, and Git retention behavior.
+- Added HTML artifact manifests and index pages under task worklogs so generated reports stay tied to source Markdown, missing-source evidence, and generation metadata.
+
+### Resource governance integration
+
+- Classified task-scoped HTML artifacts and `artifact-manifest.json` as review-required task evidence instead of unmanaged generated files.
+- Documented HTML artifacts in generated workflow guidance while keeping Markdown as the editable source of truth.
+
+### Verification
+
+- Added unit and CLI tests for HTML artifact rendering, safety checks, settlement evidence, governance template generation, and resource classification.
+
+---
+
 ## 0.17.0 - 2026-05-18
 
 ### Cognitive workflow command gates
