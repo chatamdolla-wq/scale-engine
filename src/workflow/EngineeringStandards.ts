@@ -280,15 +280,15 @@ const SOURCE_EXTENSIONS = new Set([
 ])
 
 export function engineeringStandardsPolicyPath(projectDir = process.cwd(), scaleDir = '.scale'): string {
-  return join(projectDir, scaleDir, 'engineering-standards.json')
+  return join(resolveScaleRoot(projectDir, scaleDir), 'engineering-standards.json')
 }
 
 export function frameworksCatalogPath(projectDir = process.cwd(), scaleDir = '.scale'): string {
-  return join(projectDir, scaleDir, 'frameworks.json')
+  return join(resolveScaleRoot(projectDir, scaleDir), 'frameworks.json')
 }
 
 export function engineeringStandardsBaselinePath(projectDir = process.cwd(), scaleDir = '.scale'): string {
-  return join(projectDir, scaleDir, 'engineering-standards-baseline.json')
+  return join(resolveScaleRoot(projectDir, scaleDir), 'engineering-standards-baseline.json')
 }
 
 export function engineeringStandardsPolicyTemplate(): string {
@@ -953,7 +953,7 @@ function writeStandardsBaselineFile(options: {
   reason: string
   entries: EngineeringStandardsBaselineEntry[]
 }): void {
-  mkdirSync(join(options.projectDir, options.scaleDir), { recursive: true })
+  mkdirSync(resolveScaleRoot(options.projectDir, options.scaleDir), { recursive: true })
   writeFileSync(options.baselinePath, JSON.stringify({
     version: 1,
     generatedAt: new Date().toISOString(),
@@ -967,6 +967,10 @@ function writeStandardsBaselineFile(options: {
       reason: entry.reason,
     })),
   }, null, 2) + '\n', 'utf-8')
+}
+
+function resolveScaleRoot(projectDir: string, scaleDir: string): string {
+  return isAbsolute(scaleDir) ? scaleDir : join(projectDir, scaleDir)
 }
 
 function classifyStandardsDebt(filesScanned: number, findings: EngineeringStandardFinding[]): EngineeringStandardsDebtSummary {

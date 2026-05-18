@@ -223,11 +223,11 @@ const RESOURCE_LIFECYCLES: ResourceLifecycle[] = [
 const RESOURCE_GIT_POLICIES: ResourceGitPolicy[] = ['commit', 'ignore', 'lfs', 'external', 'review']
 
 export function resourcePolicyPath(projectDir = process.cwd(), scaleDir = '.scale'): string {
-  return join(projectDir, scaleDir, 'resource-policy.json')
+  return join(resolveScaleRoot(projectDir, scaleDir), 'resource-policy.json')
 }
 
 export function resourceManifestPath(projectDir = process.cwd(), scaleDir = '.scale'): string {
-  return join(projectDir, scaleDir, 'assets.json')
+  return join(resolveScaleRoot(projectDir, scaleDir), 'assets.json')
 }
 
 export function resourcePolicyTemplate(): string {
@@ -690,6 +690,10 @@ function emptyGitPolicySummary(): Record<ResourceGitPolicy, number> {
 
 function normalizePath(path: string): string {
   return path.split(sep).join('/').replace(/^\.\//, '')
+}
+
+function resolveScaleRoot(projectDir: string, scaleDir: string): string {
+  return isAbsolute(scaleDir) ? scaleDir : join(projectDir, scaleDir)
 }
 
 function escapeCell(value: string): string {

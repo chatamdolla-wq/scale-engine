@@ -17,9 +17,14 @@ npm test
 scale init --governance-pack node-library
 scale preflight --preflight-profile quick
 scale context init --name "Agent Governance Demo"
+scale runtime start --session-id 2026-05-18-oauth-state --task-id 2026-05-18-oauth-state --level M --agent codex
 scale context grill --task-id 2026-05-18-oauth-state --task "加固 OAuth state 校验"
 scale diagnose plan --task-id 2026-05-18-oauth-state --symptom "OAuth callback 在 state 过期或不匹配时行为不明确"
 scale tdd slice --task-id 2026-05-18-oauth-state --behavior "拒绝过期、已消费或不匹配的 OAuth state" --public-interface "verifyOAuthState(record, providedState, now)" --failing-test "expired, consumed, mismatched state should return ok=false" --test-file tests/oauth-state.test.ts --impl-files src/oauth-state.ts
+scale runtime record --title "demo business tests" --kind command --status passed --command "npm test" --exit-code 0 --summary "official demo OAuth state tests passed"
+scale runtime final-check --task-id 2026-05-18-oauth-state --session-id 2026-05-18-oauth-state --level M
+scale memory pack --task-id 2026-05-18-oauth-state --session-id 2026-05-18-oauth-state --task "加固 OAuth state 校验" --level M --budget 4000
+scale memory settle --task-id 2026-05-18-oauth-state --session-id 2026-05-18-oauth-state --task "加固 OAuth state 校验" --level M
 scale artifact render --task-id 2026-05-18-oauth-state --artifact-dir docs/worklog/tasks/2026-05-18-oauth-state
 scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-state
 ```
@@ -28,5 +33,5 @@ scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-state
 
 - 业务逻辑很小，但风险边界明确。
 - 测试覆盖成功、过期、已消费、不匹配和缺失记录。
-- SCALE 命令会生成任务证据，避免 Agent 只口头说“已完成”。
+- SCALE 命令会生成任务证据、运行证据、记忆候选和 HTML 交付视图，避免 Agent 只口头说“已完成”。
 

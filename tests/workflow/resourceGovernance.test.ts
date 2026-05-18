@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { doctorResourceAssets, resourcePolicyTemplate, scanResourceAssets, settleResourceAssets } from '../../src/workflow/ResourceGovernance.js'
+import {
+  doctorResourceAssets,
+  resourceManifestPath,
+  resourcePolicyPath,
+  resourcePolicyTemplate,
+  scanResourceAssets,
+  settleResourceAssets,
+} from '../../src/workflow/ResourceGovernance.js'
 
 let dirs: string[] = []
 
@@ -24,6 +31,14 @@ function write(projectDir: string, relativePath: string, content = 'x'): void {
 }
 
 describe('ResourceGovernance', () => {
+  it('resolves absolute scale directories without nesting them under the project path', () => {
+    const projectDir = makeProject()
+    const scaleDir = makeProject()
+
+    expect(resourcePolicyPath(projectDir, scaleDir)).toBe(join(scaleDir, 'resource-policy.json'))
+    expect(resourceManifestPath(projectDir, scaleDir)).toBe(join(scaleDir, 'assets.json'))
+  })
+
   it('classifies maintained docs, task artifacts, runtime evidence, scripts, and media', () => {
     const projectDir = makeProject()
     write(projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())

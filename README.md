@@ -297,6 +297,14 @@ npx vitest run tests/workflow/phaseCli.test.ts
 npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.test.ts tests/workflow/gateSystem.test.ts
 ```
 
+## Unreleased
+
+- 新增 Runtime Evidence + Memory Fabric：`scale runtime start/end/record/doctor/final-check` 和 `scale memory pack/doctor/settle`。
+- `memory settle` 会把真实运行证据沉淀为本地学习候选，默认需要人审后才能进入长期知识库或工程规范。
+- 官方 demo 已加入 runtime evidence、memory settle 和 HTML artifact 的完整闭环 smoke 测试。
+- 修复绝对 `SCALE_DIR` 在 resource governance 和 engineering standards 中被错误拼到项目目录下的问题。
+- 发版前质量门槛见 [Release Readiness](docs/RELEASE_READINESS.md)，官方 demo 必须跑通完整闭环后再发版。
+
 ## v0.18.0 更新
 
 - 新增受治理 HTML artifact：`scale artifact render/doctor/settle/open`。

@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os'
 import {
   baselineEngineeringStandards,
   doctorEngineeringStandards,
+  engineeringStandardsBaselinePath,
+  engineeringStandardsPolicyPath,
   engineeringStandardsPolicyTemplate,
+  frameworksCatalogPath,
   scanEngineeringStandards,
   settleEngineeringStandards,
 } from '../../src/workflow/EngineeringStandards.js'
@@ -30,6 +33,15 @@ function write(projectDir: string, relativePath: string, content: string): void 
 }
 
 describe('EngineeringStandards', () => {
+  it('resolves absolute scale directories without nesting them under the project path', () => {
+    const projectDir = makeProject()
+    const scaleDir = makeProject()
+
+    expect(engineeringStandardsPolicyPath(projectDir, scaleDir)).toBe(join(scaleDir, 'engineering-standards.json'))
+    expect(engineeringStandardsBaselinePath(projectDir, scaleDir)).toBe(join(scaleDir, 'engineering-standards-baseline.json'))
+    expect(frameworksCatalogPath(projectDir, scaleDir)).toBe(join(scaleDir, 'frameworks.json'))
+  })
+
   it('flags sensitive logs, raw SQL construction, unsafe UI sinks, and empty catch blocks', () => {
     const projectDir = makeProject()
     write(projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())

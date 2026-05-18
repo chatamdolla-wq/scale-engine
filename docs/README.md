@@ -20,6 +20,7 @@
 | [TOOL_ORCHESTRATION.md](TOOL_ORCHESTRATION.md) | skills、MCP、CLI、浏览器、桌面自动化的编排策略 |
 | [RUNTIME_EVIDENCE.md](RUNTIME_EVIDENCE.md) | 会话 ledger、运行时证据和最终交付检查 |
 | [MEMORY_FABRIC.md](MEMORY_FABRIC.md) | Runtime evidence、session events、knowledge recall 和 graph status 的预算化上下文包 |
+| [RELEASE_READINESS.md](RELEASE_READINESS.md) | 发版前质量门槛、官方 demo 和真实项目落地验收 |
 | [SKILL-REPOSITORY.md](SKILL-REPOSITORY.md) | 受治理 skill repository 和安装安全策略 |
 | [VIBE-TEMPLATES.md](VIBE-TEMPLATES.md) | 可复制的 Vibe Coding 提示词模板 |
 | [LEADERSHIP-PRESETS.md](LEADERSHIP-PRESETS.md) | CEO/CTO/PM/Architect 等内置领导者角色预设 |

@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 src/oauth-state.ts tests/oauth-state.test.ts",
+    "lint": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 src/oauth-state.ts tests/oauth-state.test.ts",
     "test": "vitest run"
   },
   "devDependencies": {
