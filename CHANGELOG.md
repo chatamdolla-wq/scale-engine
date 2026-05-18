@@ -1,3 +1,24 @@
+## 0.17.0 - 2026-05-18
+
+### Cognitive workflow command gates
+
+- Added `scale context init` and `scale context grill` to create project context templates, inspect current context docs, generate task-specific grill questions, and append evidence into task `explore.md`.
+- Added `scale diagnose plan` to require reproducible failure evidence, hypotheses, verification commands, and blockers before bug-fix work proceeds.
+- Added `scale tdd slice` to record RED/GREEN/REFACTOR command evidence and persist TDD state for behavior-changing work.
+
+### Active workflow guidance
+
+- Added workflow guidance generation during `scale build`, including required next commands for M/L/CRITICAL tasks.
+- Persisted required command queues in `.scale/state/current.json.openTasks` so `scale status` can guide the next concrete action instead of returning generic advice.
+- Blocked `scale verify` while required workflow open tasks remain, and cleared the verification open task after successful completion so status advances to review.
+
+### Tool execution evidence
+
+- Added safe default CLI version checks in the tool orchestrator so CLI capabilities can produce passed/failed evidence instead of only skipped placeholders.
+- Added tests for CLI evidence execution, context governance, diagnostic loops, TDD slices, workflow guidance, open-task queue behavior, and the full CLI workflow path.
+
+---
+
 ## 0.16.0 - 2026-05-17
 
 ### Governed skill orchestration

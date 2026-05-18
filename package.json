@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.16.0",
-  "description": "SCALE Engine v0.16.0 - governed skill orchestration, visual vibe prompts, resource governance, and service-aware workflow gates",
+  "version": "0.17.0",
+  "description": "SCALE Engine v0.17.0 - cognitive workflow command gates, context grilling, diagnostic loops, TDD slices, and governed verification queues",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"
