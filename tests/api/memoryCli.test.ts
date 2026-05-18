@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -110,5 +110,63 @@ describe('memory CLI', () => {
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Context budget', status: 'fail' }),
     ]))
+  }, 120_000)
+
+  it('settles a memory learning candidate from runtime evidence', async () => {
+    const scaleDir = makeDir('scale-memory-cli-scale-')
+    const projectDir = makeDir('scale-memory-cli-project-')
+
+    await runScale([
+      'runtime',
+      'start',
+      '--session-id',
+      'SESSION-SETTLE',
+      '--task-id',
+      'TASK-SETTLE',
+      '--level',
+      'M',
+      '--summary',
+      'Memory settlement',
+    ], scaleDir, projectDir)
+    await runScale([
+      'runtime',
+      'record',
+      '--title',
+      'unit tests',
+      '--status',
+      'passed',
+      '--exit-code',
+      '0',
+      '--summary',
+      'memory settle tests passed',
+    ], scaleDir, projectDir)
+
+    const result = await runScale([
+      'memory',
+      'settle',
+      '--task-id',
+      'TASK-SETTLE',
+      '--session-id',
+      'SESSION-SETTLE',
+      '--task',
+      'Settle runtime evidence into learning',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const output = parseJson<{
+      candidate: { status: string; recommendedAction: string; promotable: boolean; evidenceIds: string[] }
+      files: { json: string; markdown: string }
+    }>(result.stdout)
+    expect(output.candidate).toMatchObject({
+      status: 'candidate',
+      recommendedAction: 'review-for-knowledge-base',
+      promotable: true,
+    })
+    expect(output.candidate.evidenceIds.length).toBeGreaterThan(0)
+    expect(existsSync(output.files.json)).toBe(true)
+    expect(existsSync(output.files.markdown)).toBe(true)
   }, 120_000)
 })

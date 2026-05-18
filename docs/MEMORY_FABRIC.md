@@ -42,6 +42,26 @@ scale memory doctor \
   --budget 3000
 ```
 
+把完成任务后的运行证据沉淀成学习候选：
+
+```bash
+scale memory settle \
+  --task-id 2026-05-18-runtime-evidence \
+  --session-id 2026-05-18-runtime-evidence \
+  --task "继续实现 runtime evidence 与最终交付检查" \
+  --level M \
+  --budget 4000
+```
+
+`settle` 会写入：
+
+```text
+.scale/memory/learning-candidates/<candidate-id>.json
+.scale/memory/learning-candidates/<candidate-id>.md
+```
+
+这些文件是本地运行时学习候选，默认不应该直接提交到 Git。它们的作用是让人类或评审 Agent 判断“这条经验是否值得进入长期知识库、工程规范或模块文档”。
+
 ## 预算策略
 
 Memory Fabric 使用估算 token 预算控制上下文规模。优先级从高到低：
@@ -64,11 +84,20 @@ Memory Fabric 不替代知识库。它是知识库、运行证据和图谱之间
 
 任务完成后，应该把真正稳定的经验沉淀到知识库或长期维护文档中；`.scale/events/` 和 `.scale/evidence/` 仍然是本地运行时产物，不应默认提交到 Git。
 
+新的推荐闭环是：
+
+```text
+runtime evidence -> memory pack -> memory settle -> 人审 -> knowledge/docs/rules
+```
+
+也就是说，Memory Fabric 先把证据和上下文压缩成候选，不会自动把一次会话里的判断升级成长期规则。存在失败证据时，候选会标记为 `resolve-failures-first`，避免把未闭环问题沉淀成“经验”。
+
 ## 推荐使用场景
 
 - 长会话恢复前：先生成 context pack，避免重复读大量文档。
 - 多 Agent 协作前：把 context pack 交给审查 Agent 或测试 Agent。
 - 发版前：用 runtime evidence 和 session events 检查是否存在未闭环失败。
+- 任务结束后：用 `memory settle` 生成学习候选，再决定是否进入知识库、模块文档或工程规范。
 - 大型项目治理：结合 service matrix、resource governance 和 engineering standards，生成任务相关而不是全仓库噪声上下文。
 
 ## 当前边界

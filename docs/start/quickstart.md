@@ -90,7 +90,10 @@ scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "拒绝过期 OA
 scale runtime record --title "quick preflight" --kind command --status passed --command "scale preflight --preflight-profile quick" --exit-code 0 --summary "quick preflight passed"
 scale runtime final-check --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --level M
 scale memory pack --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --task "继续加固 OAuth callback" --level M --budget 4000
+scale memory settle --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --task "继续加固 OAuth callback" --level M
 ```
+
+`memory pack` 用来恢复上下文，`memory settle` 用来在任务结束后生成学习候选。候选位于 `.scale/memory/learning-candidates/`，默认本地保留，确认稳定后再人工提升到知识库、规范或模块文档。
 
 ## 5. 生成 HTML 交付视图
 

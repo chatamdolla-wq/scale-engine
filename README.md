@@ -183,7 +183,10 @@ Memory Fabric 会在长会话中把 runtime evidence、session events、knowledg
 ```bash
 scale memory pack --task "Fix OAuth callback state lookup" --task-id <task-id> --session-id <session-id> --level M --budget 4000
 scale memory doctor --task "Review cross-module permission change" --level L --budget 3000
+scale memory settle --task "Fix OAuth callback state lookup" --task-id <task-id> --session-id <session-id> --level M
 ```
+
+`memory settle` 会把已记录的运行证据沉淀为 `.scale/memory/learning-candidates/` 下的学习候选。候选默认需要人审，避免把一次会话里的临时判断直接污染长期知识库。
 
 详见 [Memory Fabric](docs/MEMORY_FABRIC.md)。
 

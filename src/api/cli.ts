@@ -110,6 +110,8 @@ import {
   MemoryFabric,
   doctorMemoryFabric,
   renderContextPackMarkdown,
+  renderMemoryLearningCandidateMarkdown,
+  settleMemoryLearning,
 } from '../memory/index.js'
 import {
   resolveWorkspaceTopology,
@@ -2898,9 +2900,55 @@ const memoryDoctor = defineCommand({
   },
 })
 
+const memorySettle = defineCommand({
+  meta: { name: 'settle', description: 'Settle runtime evidence into a reviewable memory learning candidate' },
+  args: {
+    task: { type: 'string', required: true, description: 'Current task or question' },
+    'task-id': { type: 'string', description: 'Task id to scope evidence and session data' },
+    'session-id': { type: 'string', description: 'Session id to scope session events' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated files or modules in scope' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context pack' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    let budgetTokens: number | undefined
+    try {
+      budgetTokens = parseMemoryBudget(args.budget)
+    } catch (e) {
+      console.error((e as Error).message)
+      process.exit(1)
+    }
+    const { kb } = getEngine()
+    const pack = await new MemoryFabric({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      knowledgeBase: kb,
+    }).createContextPack({
+      task: args.task,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      budgetTokens,
+    })
+    const settlement = settleMemoryLearning({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      pack,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(settlement, null, 2))
+      return
+    }
+    console.log(renderMemoryLearningCandidateMarkdown(settlement.candidate))
+    console.log(`\nWrote: ${settlement.files.markdown}`)
+  },
+})
+
 const memory = defineCommand({
   meta: { name: 'memory', description: 'Memory Fabric context packs and budget diagnostics' },
-  subCommands: { pack: memoryPack, doctor: memoryDoctor },
+  subCommands: { pack: memoryPack, doctor: memoryDoctor, settle: memorySettle },
 })
 
 // ============================================================================
