@@ -261,7 +261,8 @@ export class WorkflowArtifactWriter {
 
   /** Read authoritative workflow state from .scale/state/current.json */
   readCurrentState(): WorkflowState | null {
-    return this.readJson<WorkflowState>(join(this.stateDir, 'current.json'))
+    const state = this.readJson<WorkflowState>(join(this.stateDir, 'current.json'))
+    return state ? this.normalizeState(state) : null
   }
 
   /** Merge a patch into .scale/state/current.json. */

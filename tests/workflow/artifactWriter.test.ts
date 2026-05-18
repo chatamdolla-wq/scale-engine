@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -26,6 +26,29 @@ describe('WorkflowArtifactWriter', () => {
   // ─────────────────────────────────────────────────────────────
   // Explore Artifact
   // ─────────────────────────────────────────────────────────────
+
+  describe('current workflow state', () => {
+    it('normalizes legacy or partial state when reading current.json', () => {
+      mkdirSync(join(dir, 'state'), { recursive: true })
+      writeFileSync(join(dir, 'state', 'current.json'), JSON.stringify({
+        taskId: 'legacy-task',
+        level: 'M',
+        phase: 'plan',
+        exploredFiles: null,
+        openTasks: null,
+        filesModified: null
+      }), 'utf-8')
+
+      const state = writer.readCurrentState()
+
+      expect(state).toMatchObject({
+        taskId: 'legacy-task',
+        exploredFiles: [],
+        openTasks: [],
+        filesModified: []
+      })
+    })
+  })
 
   describe('explore artifact', () => {
     it('writes and reads explore result', () => {

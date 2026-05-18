@@ -1,7 +1,7 @@
 {
   "name": "@hongmaple0820/scale-engine",
   "version": "0.18.0",
-  "description": "SCALE Engine v0.18.0 - governed HTML artifacts, visual review reports, and traceable Markdown-to-HTML task outputs",
+  "description": "Executable AI agent governance with workflow gates, evidence, skill/tool orchestration, and traceable HTML artifacts",
   "type": "module",
   "bin": {
     "scale": "dist/api/cli.js"
@@ -15,7 +15,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "docs/README.md",
+    "docs/start",
+    "examples/demo-projects/agent-governance-demo"
   ],
   "publishConfig": {
     "access": "public"

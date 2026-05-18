@@ -1629,7 +1629,7 @@ const status = defineCommand({
     const latestTask = tasks[0]
     const taskPayload = latestTask?.payload as { verificationEvidenceIds?: string[]; reviewEvidenceIds?: string[]; reviewPassed?: boolean; reviewedAt?: number; verifiedAt?: number; testPassed?: boolean; lintStatus?: string; testCoverage?: number } | undefined
     const workflowState = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
-    const currentOpenTasks = workflowState?.taskId === latestTask?.id ? workflowState.openTasks ?? [] : []
+    const currentOpenTasks = workflowState?.openTasks ?? []
     const nextOpenTask = nextWorkflowOpenTask(currentOpenTasks)
 
     const blockers: string[] = []
@@ -1645,11 +1645,11 @@ const status = defineCommand({
     }
 
     const nextCommand = (() => {
+      if (nextOpenTask?.kind === 'command') return nextOpenTask.value
+      if (nextOpenTask?.kind === 'blocker') return `Resolve workflow blocker: ${nextOpenTask.value}`
       if (!specs[0]) return 'scale define "<feature>" --description "<what to build>"'
       if (!plans[0]) return `scale plan ${specs[0].id}`
       if (!latestTask) return `scale build ${plans[0].id}`
-      if (nextOpenTask?.kind === 'command') return nextOpenTask.value
-      if (nextOpenTask?.kind === 'blocker') return `Resolve workflow blocker: ${nextOpenTask.value}`
       if (!taskPayload?.verificationEvidenceIds?.length) return `scale verify ${latestTask.id}`
       if (latestTask.status !== 'COMPLETED') return `scale verify ${latestTask.id}`
       if (!taskPayload.reviewEvidenceIds?.length || taskPayload.reviewPassed !== true) return `scale review ${latestTask.id}`
@@ -1693,7 +1693,7 @@ const status = defineCommand({
         level: workflowState.level,
         phase: workflowState.phase,
         artifactsDir: workflowState.artifactsDir,
-        openTasks: workflowState.openTasks,
+        openTasks: workflowState.openTasks ?? [],
         skillIntents: workflowState.skillIntents,
       } : null,
       blockers,
@@ -1729,9 +1729,9 @@ const status = defineCommand({
       for (const blocker of blockers) console.log(`  - ${blocker}`)
     }
 
-    if (result.workflowState?.openTasks.length) {
+    if ((result.workflowState?.openTasks.length ?? 0) > 0) {
       console.log('\nOpen Tasks:')
-      for (const task of result.workflowState.openTasks) console.log(`  - ${task}`)
+      for (const task of result.workflowState!.openTasks) console.log(`  - ${task}`)
     }
 
     console.log(`\nNext: ${nextCommand}`)
