@@ -74,7 +74,7 @@ export function evaluateSkillGate(options: EvaluateSkillGateOptions): SkillGateR
 }
 
 function incompleteReason(file: string, content: string, requiredSkills: string[] = []): string | null {
-  if (file === 'skill-plan.md' && /## Detected Intents[\s\S]+## Required Skills/i.test(content)) return null
+  if (file === 'skill-plan.md') return skillPlanIncompleteReason(content, requiredSkills)
   if (file === 'skill-evidence.md') return skillEvidenceIncompleteReason(content, requiredSkills)
   const substantive = content
     .split(/\r?\n/)
@@ -92,6 +92,25 @@ function incompleteReason(file: string, content: string, requiredSkills: string[
   return substantive.length >= 2 ? null : `contains only template placeholders (${substantive.length}/2 substantive lines)`
 }
 
+function skillPlanIncompleteReason(content: string, requiredSkills: string[]): string | null {
+  if (/\bTBD\b/i.test(content)) return 'contains template placeholders'
+  if (!/## Detected Intents/i.test(content) || !/## Required Skills/i.test(content)) {
+    return 'missing skill plan sections'
+  }
+  const requiredSection = sectionContent(content, 'Required Skills')
+  const requiredLines = requiredSection
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .filter(line => !/^\|?[\s:-]+\|[\s|:-]*$/.test(line))
+    .filter(line => !/^\|\s*\|/.test(line))
+  if (requiredLines.length === 0) return 'missing required skill decision'
+
+  const missingSkills = requiredSkills.filter(skill => !content.includes(skill))
+  if (missingSkills.length > 0) return `missing required skills in plan: ${missingSkills.join(', ')}`
+  return null
+}
+
 function skillEvidenceIncompleteReason(content: string, requiredSkills: string[]): string | null {
   if (/\bTBD\b|skill-id/i.test(content)) return 'contains template placeholders'
   const missingSkills = requiredSkills.filter(skill => !content.includes(skill))
@@ -100,6 +119,11 @@ function skillEvidenceIncompleteReason(content: string, requiredSkills: string[]
     return 'does not state executed/skipped/fallback evidence status'
   }
   return null
+}
+
+function sectionContent(content: string, heading: string): string {
+  const pattern = new RegExp(`##\\s+${heading}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, 'i')
+  return content.match(pattern)?.[1] ?? ''
 }
 
 function unique<T>(items: T[]): T[] {

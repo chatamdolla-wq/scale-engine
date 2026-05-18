@@ -219,7 +219,7 @@ export class ToolOrchestrator {
 
   private async executeStep(step: ToolExecutionStep, input: Record<string, unknown>): Promise<ToolStepExecutionResult> {
     if (this.executeStepImpl) return this.executeStepImpl(step, input)
-    if (step.adapter === 'cli') return executeCliCapabilityCheck(step)
+    if (step.adapter === 'cli' || step.adapter === 'browser' || step.adapter === 'desktop') return executeCliCapabilityCheck(step)
     return {
       status: 'skipped',
       outputSummary: `No executor configured for ${step.toolId}; evidence recorded as skipped.`,
@@ -299,6 +299,8 @@ function tail(value: string): string {
 }
 
 function adapterForCategory(category: ToolCapabilityCategory | undefined): ToolEvidenceAdapter {
+  if (category === 'browser') return 'browser'
+  if (category === 'desktop') return 'desktop'
   if (category === 'cli') return 'cli'
   if (category === 'mcp') return 'mcp'
   return 'skill'

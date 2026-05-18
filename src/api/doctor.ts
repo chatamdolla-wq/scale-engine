@@ -52,24 +52,28 @@ export class Doctor {
     const governanceTemplatesCheck = this.checkGovernanceTemplates()
     const verificationMatrixCheck = this.checkVerificationMatrix()
     const skillRoutingPolicyCheck = this.checkSkillRoutingPolicy()
+    const toolPolicyCheck = this.checkToolPolicy()
     const resourcePolicyCheck = this.checkResourcePolicy()
     const engineeringStandardsCheck = this.checkEngineeringStandards()
     const governanceDriftCheck = this.checkGovernanceDrift()
     governanceTemplatesCheck.optional = true
     verificationMatrixCheck.optional = true
     skillRoutingPolicyCheck.optional = true
+    toolPolicyCheck.optional = true
     resourcePolicyCheck.optional = true
     engineeringStandardsCheck.optional = true
     governanceDriftCheck.optional = true
     governanceTemplatesCheck.category = 'governance'
     verificationMatrixCheck.category = 'governance'
     skillRoutingPolicyCheck.category = 'governance'
+    toolPolicyCheck.category = 'governance'
     resourcePolicyCheck.category = 'governance'
     engineeringStandardsCheck.category = 'governance'
     governanceDriftCheck.category = 'governance'
     checks.push(governanceTemplatesCheck)
     checks.push(verificationMatrixCheck)
     checks.push(skillRoutingPolicyCheck)
+    checks.push(toolPolicyCheck)
     checks.push(resourcePolicyCheck)
     checks.push(engineeringStandardsCheck)
     checks.push(governanceDriftCheck)
@@ -366,6 +370,50 @@ export class Doctor {
         name: 'Skill routing policy',
         status: 'fail',
         message: '.scale/skills.json is invalid JSON',
+        fix: 'Fix JSON syntax or regenerate with scale init',
+      }
+    }
+  }
+
+  private checkToolPolicy(): DiagnosticResult {
+    const path = join(this.projectDir, this.scaleDir, 'tools.json')
+    if (!existsSync(path)) {
+      return {
+        name: 'Tool policy',
+        status: 'warn',
+        message: 'Missing .scale/tools.json',
+        fix: 'Run: scale init to generate active tool orchestration policy',
+      }
+    }
+    try {
+      const config = JSON.parse(readFileSync(path, 'utf-8')) as {
+        mode?: unknown
+        tools?: unknown
+      }
+      const mode = config.mode
+      if (mode && mode !== 'off' && mode !== 'advisory' && mode !== 'evidence-required' && mode !== 'block') {
+        return {
+          name: 'Tool policy',
+          status: 'warn',
+          message: 'Invalid mode; expected off, advisory, evidence-required, or block',
+          fix: 'Update .scale/tools.json mode',
+        }
+      }
+      const toolCount = config.tools && typeof config.tools === 'object' ? Object.keys(config.tools).length : 0
+      if (toolCount === 0) {
+        return {
+          name: 'Tool policy',
+          status: 'warn',
+          message: 'No tool orchestration entries configured',
+          fix: 'Regenerate with scale init or add tools to .scale/tools.json',
+        }
+      }
+      return { name: 'Tool policy', status: 'ok', message: `${toolCount} tools, mode ${String(mode ?? 'evidence-required')}` }
+    } catch {
+      return {
+        name: 'Tool policy',
+        status: 'fail',
+        message: '.scale/tools.json is invalid JSON',
         fix: 'Fix JSON syntax or regenerate with scale init',
       }
     }

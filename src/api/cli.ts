@@ -37,7 +37,12 @@ import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { OutOfScopeStore } from '../workflow/OutOfScopeStore.js'
 import { ReviewStore } from '../workflow/ReviewStore.js'
 import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
-import { resolveVerificationTargets, type VerificationEngineeringStandardsGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
+import {
+  resolveVerificationTargets,
+  type ResolvedVerificationTargets,
+  type VerificationEngineeringStandardsGateMode,
+  type VerificationPolicy,
+} from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import {
@@ -142,6 +147,29 @@ function normalizePreflightProfile(value: unknown): PreflightProfile {
 function gatesForPreflightProfile(profile: PreflightProfile): GateStage[] {
   if (profile === 'quick') return ['G3', 'G0', 'G4', 'G5']
   return ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
+}
+
+function shouldSkipPreflightCommandTargets(
+  resolved: ResolvedVerificationTargets,
+  args: Record<string, unknown>,
+): boolean {
+  if (!resolved.matrix) return false
+  const requestedService = String(args.service ?? '').trim()
+  if (requestedService && requestedService !== 'all') return false
+
+  const hasCommandOverrides = [
+    args['build-cmd'],
+    args['lint-cmd'],
+    args['test-cmd'],
+    args['coverage-cmd'],
+  ].some(value => typeof value === 'string' && value.trim().length > 0)
+  if (hasCommandOverrides) return false
+
+  const profile = resolved.matrix.profiles?.[resolved.profileName]
+  const hasProfileCommands = Object.values(profile?.commands ?? {})
+    .some(value => typeof value === 'string' && value.trim().length > 0)
+  const hasServices = (resolved.matrix.services ?? []).length > 0
+  return !hasServices && !hasProfileCommands
 }
 
 interface EngineeringStandardsGateStatus {
@@ -1490,6 +1518,10 @@ const preflight = defineCommand({
       profile: args.profile,
       service: args.service,
     })
+    const commandTargetsSkipped = shouldSkipPreflightCommandTargets(resolved, args)
+    if (commandTargetsSkipped) {
+      resolved.warnings.push('No verification services or profile commands configured; command gates skipped for this governance-only project.')
+    }
     const engineeringStandards = evaluateEngineeringStandardsGate({
       policy: resolved.policy,
     })
@@ -1515,7 +1547,7 @@ const preflight = defineCommand({
       }
     }
 
-    for (const target of resolved.targets) {
+    for (const target of commandTargetsSkipped ? [] : resolved.targets) {
       if (!args.json) {
         const label = target.service ? `${target.service.name} (${target.service.path})` : 'root'
         console.log(`\n  Target: ${label}`)
@@ -1546,8 +1578,7 @@ const preflight = defineCommand({
       }
     }
 
-    const passed = targetResults.length > 0 &&
-      targetResults.every(target => target.passed) &&
+    const passed = (targetResults.length === 0 || targetResults.every(target => target.passed)) &&
       !engineeringStandards.blocked
     const result = {
       phase: 'PREFLIGHT',
@@ -1558,6 +1589,7 @@ const preflight = defineCommand({
       policy: resolved.policy,
       engineeringStandards,
       targets: targetResults,
+      commandTargetsSkipped,
       passed,
     }
 
@@ -1817,7 +1849,7 @@ const init = defineCommand({
         const detection = qsResult.success ? undefined : detectPlatform(args.dir)
         console.log(JSON.stringify({
           ok: qsResult.success,
-          mode: 'quick',
+          mode: qsResult.success && !qsResult.platform ? 'governance-only' : 'quick',
           platform: qsResult.platform,
           created: qsResult.created,
           skipped: qsResult.skipped,
@@ -1829,7 +1861,9 @@ const init = defineCommand({
         }, null, 2))
         return
       }
-      if (qsResult.success && qsResult.platform) {
+      if (qsResult.success) {
+        if (!qsResult.platform) console.log(`\nSCALE governance templates initialized`)
+        else
         console.log(`\n✅ SCALE Engine Quick Start completed for ${qsResult.platform}`)
         console.log(`\n📁 Created (${qsResult.created.length}):`)
         for (const f of qsResult.created) console.log(`   + ${f}`)
@@ -2600,8 +2634,9 @@ const skillCheckCommand = defineCommand({
       artifactsDir: args.dir ?? state?.artifactsDir,
       level,
       requiredArtifacts: state?.requiredSkillArtifacts,
+      requiredSkills: state?.requiredSkills,
       mode: state?.skillRoutingMode ?? policy.policy.mode,
-        enforceLevels: policy.policy.enforceLevels,
+      enforceLevels: policy.policy.enforceLevels,
     })
     const skillInstallation = inspectRequiredWorkflowSkills(state?.requiredSkills ?? [], { projectDir: PROJECT_DIR })
     const requireInstalled = isTruthyFlag(args['require-installed'])

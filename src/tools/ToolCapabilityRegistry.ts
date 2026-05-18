@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-export type ToolCapabilityCategory = 'skill' | 'cli' | 'mcp'
+export type ToolCapabilityCategory = 'skill' | 'cli' | 'mcp' | 'browser' | 'desktop'
 export type ToolCapabilityStatus = 'installed' | 'missing'
 
 export interface ToolCatalogEntry {
@@ -87,7 +87,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
   {
     id: 'agent-browser',
     name: 'Agent Browser',
-    category: 'cli',
+    category: 'browser',
     command: 'agent-browser',
     versionArgs: ['--version'],
     requiredFor: ['browserAutomation'],
@@ -97,7 +97,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
   {
     id: 'playwright',
     name: 'Playwright',
-    category: 'cli',
+    category: 'browser',
     command: 'npx',
     versionArgs: ['playwright', '--version'],
     requiredFor: ['e2e'],
@@ -116,7 +116,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
   {
     id: 'desktop-cua',
     name: 'CUA',
-    category: 'cli',
+    category: 'desktop',
     command: 'cua',
     versionArgs: ['--version'],
     requiredFor: ['desktopAutomation'],
@@ -191,7 +191,7 @@ interface InspectToolCapabilityDeps {
 
 function inspectToolCapability(tool: ToolCatalogEntry, deps: InspectToolCapabilityDeps): ToolCapabilityEntry {
   if (tool.category === 'skill') return inspectSkillTool(tool, deps)
-  if (tool.category === 'cli') return inspectCliTool(tool, deps)
+  if (tool.category === 'cli' || tool.category === 'browser' || tool.category === 'desktop') return inspectCliTool(tool, deps)
   return inspectMcpTool(tool, deps)
 }
 

@@ -63,7 +63,8 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
   }
   const detection = detectPlatform(projectDir)
   result.platform = detection.platform
-  if (!detection.platform) {
+  const governanceOnly = !detection.platform && Boolean(options?.governancePack)
+  if (!detection.platform && !governanceOnly) {
     result.nextSteps.push('scale init --agent <platform>')
     return result
   }
@@ -78,7 +79,7 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
     writeFileSync(gitignorePath, '*.db\n*.db-journal\nevents/\ncheckpoints/\nevidence/\nstate/\nhooks/*.sh\n')
     result.created.push(gitignorePath)
   }
-  result.constraintsApplied = PHYSICAL_CONSTRAINTS.length
+  result.constraintsApplied = detection.platform ? PHYSICAL_CONSTRAINTS.length : 0
   const projectName = projectDir.split(/[/\\]/).pop() || 'Project'
   const governance = writeGovernanceTemplates(projectDir, { mode: 'standard', projectName, pack: options?.governancePack })
   result.created.push(...governance.created)
@@ -95,6 +96,7 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
   }
 
   result.success = true
+  if (!detection.platform) result.nextSteps.push('scale init --agent <platform>  # optional: add agent-specific hooks later')
   result.nextSteps.push('scale doctor')
   result.nextSteps.push('scale create Spec "<feature>"')
   return result

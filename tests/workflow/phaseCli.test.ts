@@ -104,6 +104,27 @@ describe('phase CLI workflow', () => {
     expect(existsSync(join(projectDir, '.scale', 'governance.lock.json'))).toBe(true)
   }, 120_000)
 
+  it('can initialize governance templates without an agent platform when a governance pack is explicit', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const init = await runScale([
+      'init',
+      '--dir',
+      projectDir,
+      '--governance-pack',
+      'standard',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(init.exitCode).toBe(0)
+    const result = parseJson<{ ok: boolean; mode: string; platform: string | null; created: string[] }>(init.stdout)
+    expect(result).toMatchObject({ ok: true, mode: 'governance-only', platform: null })
+    expect(existsSync(join(projectDir, '.scale', 'governance.lock.json'))).toBe(true)
+    expect(existsSync(join(projectDir, '.scale', 'tools.json'))).toBe(true)
+    expect(existsSync(join(projectDir, 'docs', 'workflow', 'README.md'))).toBe(true)
+  }, 120_000)
+
   it('prints workflow list as machine-readable JSON', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -358,6 +379,31 @@ export function login(token: string) {
     expect(result.passed).toBe(true)
     expect(result.services).toEqual(['api', 'gateway'])
     expect(result.targets.every(target => target.passed)).toBe(true)
+  }, 120_000)
+
+  it('passes governance-only preflight when no services or root commands are configured', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {}, services: [] } },
+      services: [],
+    }, null, 2), 'utf-8')
+
+    const preflight = await runScale([
+      'preflight',
+      '--service',
+      'all',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(preflight.exitCode).toBe(0)
+    const result = parseJson<{ passed: boolean; commandTargetsSkipped: boolean; targets: unknown[]; services: string[] }>(preflight.stdout)
+    expect(result.passed).toBe(true)
+    expect(result.commandTargetsSkipped).toBe(true)
+    expect(result.targets).toEqual([])
+    expect(result.services).toEqual([])
   }, 120_000)
 
   it('uses a quick preflight profile by default without requiring coverage', async () => {

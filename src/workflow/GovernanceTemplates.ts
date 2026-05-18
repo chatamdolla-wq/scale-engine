@@ -14,6 +14,7 @@ import {
 } from './EngineeringStandards.js'
 import { resourceManifestTemplate, resourcePolicyTemplate } from './ResourceGovernance.js'
 import type { VerificationService } from './VerificationProfile.js'
+import { toolPolicyTemplate, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
 
 export type GovernanceMode = 'minimal' | 'standard' | 'critical'
 export type GovernanceArtifactTemplateName =
@@ -93,6 +94,7 @@ export function writeGovernanceTemplates(
     artifactGate: packMode.artifactGate,
   }))
   writeTracked(result, lockFiles, projectDir, '.scale/skills.json', skillRoutingPolicyTemplate(mode))
+  writeTracked(result, lockFiles, projectDir, '.scale/tools.json', toolPolicyTemplate(toolModeFromGovernanceMode(mode)))
   writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
@@ -592,6 +594,12 @@ TBD
 
 - TBD
 `
+}
+
+function toolModeFromGovernanceMode(mode: GovernanceMode): ToolOrchestrationMode {
+  if (mode === 'critical') return 'block'
+  if (mode === 'minimal') return 'advisory'
+  return 'evidence-required'
 }
 
 function resourceImpactTemplate(): string {

@@ -39,6 +39,7 @@ describe('writeGovernanceTemplates', () => {
       join(dir, 'docs', 'worklog', 'metrics.md'),
       join(dir, '.scale', 'verification.json'),
       join(dir, '.scale', 'skills.json'),
+      join(dir, '.scale', 'tools.json'),
       join(dir, '.scale', 'resource-policy.json'),
       join(dir, '.scale', 'assets.json'),
       join(dir, '.scale', 'engineering-standards.json'),
@@ -67,13 +68,17 @@ describe('writeGovernanceTemplates', () => {
     expect(skills.domains.ui.recommendedSkills).toContain('webapp-testing')
     expect(skills.domains.webResearch.requiredSkills).toContain('web-access')
     expect(skills.domains.browserAutomation.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))
-    expect(skills.domains.desktopAutomation.requiredSkills).toContain('cua')
+    expect(skills.domains.desktopAutomation.requiredSkills).toContain('turix-cua')
     expect(skills.domains.externalCli.recommendedSkills).toEqual(expect.arrayContaining(['codex-cli', 'gemini-cli', 'opencode-cli']))
     expect(skills.domains.review.requiredSkills).toContain('code-reviewer')
     expect(skills.domains.docs.recommendedSkills).toContain('update-docs')
     expect(skills.domains.resourceGovernance.requiredArtifacts).toContain('resource-impact.md')
     expect(skills.domains.engineeringStandards.requiredArtifacts).toContain('standards-impact.md')
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'resource-policy.json'), 'utf-8')).retainedRuntimeDirectories).toContain('test-results')
+    const tools = JSON.parse(readFileSync(join(dir, '.scale', 'tools.json'), 'utf-8'))
+    expect(tools.mode).toBe('block')
+    expect(tools.tools).toHaveProperty('agent-browser')
+    expect(tools.tools).toHaveProperty('desktop-cua')
     const engineeringStandards = JSON.parse(readFileSync(join(dir, '.scale', 'engineering-standards.json'), 'utf-8'))
     expect(engineeringStandards.logging.sensitiveFields).toContain('token')
     expect(engineeringStandards.blockingRules).toEqual([])
@@ -97,13 +102,18 @@ describe('writeGovernanceTemplates', () => {
 
     expect(result.created).toEqual(expect.arrayContaining([
       join(dir, 'scripts', 'workflow', 'new-task.sh'),
+      join(dir, 'scripts', 'workflow', 'new-task.ps1'),
       join(dir, 'scripts', 'gates', 'all.sh'),
+      join(dir, 'scripts', 'gates', 'all.ps1'),
       join(dir, '.scale', 'governance.lock.json'),
     ]))
     expect(readFileSync(join(dir, 'scripts', 'workflow', 'new-task.sh'), 'utf-8')).toContain('@hongmaple0820/scale-engine@latest')
+    expect(readFileSync(join(dir, 'scripts', 'workflow', 'new-task.sh'), 'utf-8')).toContain('Windows npm scale was detected inside WSL')
+    expect(readFileSync(join(dir, 'scripts', 'workflow', 'new-task.ps1'), 'utf-8')).toContain('Invoke-Scale')
+    expect(readFileSync(join(dir, 'scripts', 'workflow', 'new-task.ps1'), 'utf-8')).toContain('exit $LASTEXITCODE')
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'governance.lock.json'), 'utf-8'))).toMatchObject({
       pack: 'project-scaffold',
-      packVersion: 1,
+      packVersion: 2,
     })
   })
 

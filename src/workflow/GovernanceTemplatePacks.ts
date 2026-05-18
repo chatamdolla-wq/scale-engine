@@ -37,14 +37,22 @@ export function listGovernanceTemplatePacks(): GovernanceTemplatePack[] {
   return PACKS
 }
 
-export function resolveGovernanceTemplatePack(id: string | undefined): GovernanceTemplatePack {
-  const normalized = (id || 'standard') as GovernancePackId
+export function resolveGovernanceTemplatePack(id: string | string[] | undefined): GovernanceTemplatePack {
+  const normalized = normalizeGovernancePackId(id)
   const pack = PACKS.find(candidate => candidate.id === normalized)
   if (!pack) {
     const supported = PACKS.map(candidate => candidate.id).join(', ')
     throw new Error(`Unknown governance pack "${id}". Supported packs: ${supported}`)
   }
   return pack
+}
+
+function normalizeGovernancePackId(id: string | string[] | undefined): GovernancePackId {
+  if (Array.isArray(id)) {
+    const lastValid = [...id].reverse().find(value => PACKS.some(candidate => candidate.id === value))
+    return (lastValid ?? id[id.length - 1] ?? 'standard') as GovernancePackId
+  }
+  return (id || 'standard') as GovernancePackId
 }
 
 const modeDefaults: GovernanceTemplatePack['modeDefaults'] = {
@@ -63,15 +71,20 @@ const PACKS: GovernanceTemplatePack[] = [
   },
   {
     id: 'project-scaffold',
-    version: 1,
+    version: 2,
     description: 'Reference project governance scaffold with workflow wrappers.',
     modeDefaults,
     generatedFiles: [
-      { path: 'scripts/workflow/new-task.sh', kind: 'script', owned: true, content: workflowWrapper('new-task', 'create-prd') },
-      { path: 'scripts/workflow/explore.sh', kind: 'script', owned: true, content: workflowWrapper('explore', 'skill scan') },
-      { path: 'scripts/workflow/resume.sh', kind: 'script', owned: true, content: workflowWrapper('resume', 'status') },
-      { path: 'scripts/workflow/verify.sh', kind: 'script', owned: true, content: workflowWrapper('verify', 'preflight') },
+      { path: 'scripts/workflow/new-task.sh', kind: 'script', owned: true, content: workflowWrapper('workflow/new-task', 'create-prd') },
+      { path: 'scripts/workflow/explore.sh', kind: 'script', owned: true, content: workflowWrapper('workflow/explore', 'skill scan') },
+      { path: 'scripts/workflow/resume.sh', kind: 'script', owned: true, content: workflowWrapper('workflow/resume', 'status') },
+      { path: 'scripts/workflow/verify.sh', kind: 'script', owned: true, content: workflowWrapper('workflow/verify', 'preflight') },
       { path: 'scripts/gates/all.sh', kind: 'script', owned: true, content: workflowWrapper('gates/all', 'preflight --service all') },
+      { path: 'scripts/workflow/new-task.ps1', kind: 'script', owned: true, content: powershellWorkflowWrapper('workflow/new-task', 'create-prd') },
+      { path: 'scripts/workflow/explore.ps1', kind: 'script', owned: true, content: powershellWorkflowWrapper('workflow/explore', 'skill scan') },
+      { path: 'scripts/workflow/resume.ps1', kind: 'script', owned: true, content: powershellWorkflowWrapper('workflow/resume', 'status') },
+      { path: 'scripts/workflow/verify.ps1', kind: 'script', owned: true, content: powershellWorkflowWrapper('workflow/verify', 'preflight') },
+      { path: 'scripts/gates/all.ps1', kind: 'script', owned: true, content: powershellWorkflowWrapper('gates/all', 'preflight --service all') },
     ],
   },
   {
@@ -128,16 +141,63 @@ function workflowWrapper(label: string, scaleCommand: string): string {
   return `#!/usr/bin/env bash
 set -euo pipefail
 
+is_wsl() {
+  grep -qiE "(microsoft|wsl)" /proc/version /proc/sys/kernel/osrelease 2>/dev/null
+}
+
+is_windows_npm_shim() {
+  local command_path="$1"
+  printf '%s' "$command_path" | grep -qiE '^/mnt/[a-z]/.*nodejs/[^/]+$'
+}
+
 run_scale() {
-  if command -v scale >/dev/null 2>&1; then
+  local scale_path=""
+  scale_path="$(command -v scale 2>/dev/null || true)"
+  if [ -n "$scale_path" ]; then
+    if is_wsl && is_windows_npm_shim "$scale_path"; then
+      echo "[scale-engine] Windows npm scale was detected inside WSL: $scale_path" >&2
+      echo "[scale-engine] Use the matching PowerShell wrapper (*.ps1), or install scale-engine inside WSL with a Linux Node.js toolchain." >&2
+      return 2
+    fi
     scale "$@"
   else
+    local npx_path=""
+    npx_path="$(command -v npx 2>/dev/null || true)"
+    if [ -n "$npx_path" ] && is_wsl && is_windows_npm_shim "$npx_path"; then
+      echo "[scale-engine] Windows npm npx was detected inside WSL: $npx_path" >&2
+      echo "[scale-engine] Use the matching PowerShell wrapper (*.ps1), or install Node.js/npm inside WSL." >&2
+      return 2
+    fi
     npx @hongmaple0820/scale-engine@latest "$@"
   fi
 }
 
 echo "[scale-engine] compatibility wrapper: scripts/${label}.sh -> scale ${scaleCommand}" >&2
 run_scale ${scaleCommand} "$@"
+`
+}
+
+function powershellWorkflowWrapper(label: string, scaleCommand: string): string {
+  const commandParts = scaleCommand.split(/\s+/).filter(Boolean)
+  const psArgs = commandParts.map(part => `'${part.replace(/'/g, "''")}'`).join(', ')
+  return `$ErrorActionPreference = 'Stop'
+
+function Invoke-Scale {
+  param([string[]]$ScaleArgs)
+
+  if (Get-Command scale -ErrorAction SilentlyContinue) {
+    & scale @ScaleArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    return
+  }
+
+  & npx @hongmaple0820/scale-engine@latest @ScaleArgs
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+[Console]::Error.WriteLine("[scale-engine] compatibility wrapper: scripts/${label}.ps1 -> scale ${scaleCommand}")
+$scaleArgs = @(${psArgs}) + $args
+Invoke-Scale -ScaleArgs $scaleArgs
 `
 }
 

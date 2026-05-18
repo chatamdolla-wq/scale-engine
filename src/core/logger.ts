@@ -32,7 +32,7 @@ export function resolveLogLevel(): string {
   if (process.env.SCALE_LOG_LEVEL) return process.env.SCALE_LOG_LEVEL
   if (process.env.NODE_ENV === 'test' || process.env.VITEST) return 'silent'
   if (process.argv.includes('--json')) return 'silent'
-  return 'info'
+  return 'warn'
 }
 
 export const logger = pino({

@@ -113,7 +113,7 @@ describe('skill routing', () => {
     })
 
     expect(plan.intents.map(intent => intent.domain)).toContain('desktopAutomation')
-    expect(plan.requiredSkills).toContain('cua')
+    expect(plan.requiredSkills).toContain('turix-cua')
     expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'web-access']))
     expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-plan.md', 'skill-evidence.md', 'verification.md']))
     expect(plan.requiredVerification).toEqual(expect.arrayContaining(['desktop-screenshot', 'operator-safety', 'side-effect-boundary']))
@@ -229,7 +229,7 @@ describe('skill routing', () => {
     try {
       const artifactsDir = join(dir, 'task')
       mkdirSync(artifactsDir)
-      writeFileSync(join(artifactsDir, 'skill-plan.md'), '# Skill Plan\n\n## Detected Intents\n\n## Required Skills\n', 'utf-8')
+      writeFileSync(join(artifactsDir, 'skill-plan.md'), '# Skill Plan\n\n## Detected Intents\n\n| Domain | Score | Evidence |\n| --- | ---: | --- |\n| ui | 8 | frontend file |\n\n## Required Skills\n\n- frontend-design\n', 'utf-8')
       writeFileSync(join(artifactsDir, 'skill-evidence.md'), '# Skill Evidence\n\n| Skill | Status |\n| --- | --- |\n| TBD | TBD |\n', 'utf-8')
 
       const placeholder = evaluateSkillGate({
@@ -254,6 +254,32 @@ describe('skill routing', () => {
       })
       expect(complete.complete).toBe(true)
       expect(complete.blocked).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not accept an unfilled skill plan template as evidence', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-skill-plan-placeholder-'))
+    try {
+      const artifactsDir = join(dir, 'task')
+      mkdirSync(artifactsDir)
+      writeFileSync(join(artifactsDir, 'skill-plan.md'), '# Skill Plan\n\n## Detected Intents\n\n| Domain | Score | Evidence |\n| --- | ---: | --- |\n|  |  |  |\n\n## Required Skills\n\n- TBD\n', 'utf-8')
+
+      const result = evaluateSkillGate({
+        projectDir: dir,
+        artifactsDir,
+        level: 'M',
+        requiredArtifacts: ['skill-plan.md'],
+        requiredSkills: ['frontend-design'],
+        mode: 'block',
+      })
+
+      expect(result.complete).toBe(false)
+      expect(result.blocked).toBe(true)
+      expect(result.incomplete).toEqual(expect.arrayContaining([
+        expect.objectContaining({ file: 'skill-plan.md', reason: 'contains template placeholders' }),
+      ]))
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

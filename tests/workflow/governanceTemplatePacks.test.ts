@@ -18,8 +18,11 @@ describe('governance template packs', () => {
     const pack = resolveGovernanceTemplatePack('project-scaffold')
 
     expect(pack.id).toBe('project-scaffold')
+    expect(pack.version).toBe(2)
     expect(pack.generatedFiles.map(file => file.path)).toContain('scripts/workflow/new-task.sh')
+    expect(pack.generatedFiles.map(file => file.path)).toContain('scripts/workflow/new-task.ps1')
     expect(pack.generatedFiles.map(file => file.path)).toContain('scripts/gates/all.sh')
+    expect(pack.generatedFiles.map(file => file.path)).toContain('scripts/gates/all.ps1')
   })
 
   it('resolves Go service matrix with language-aware required services and exclusions', () => {
@@ -42,5 +45,11 @@ describe('governance template packs', () => {
 
   it('rejects unknown packs with supported ids', () => {
     expect(() => resolveGovernanceTemplatePack('missing')).toThrow('Supported packs')
+  })
+
+  it('uses the last valid pack when a CLI parser provides repeated pack values', () => {
+    const pack = resolveGovernanceTemplatePack(['standardscale', 'standard'] as unknown as string)
+
+    expect(pack.id).toBe('standard')
   })
 })

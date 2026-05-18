@@ -31,6 +31,14 @@ describe('logger', () => {
     expect(resolveLogLevel()).toBe('silent')
   })
 
+  it('keeps normal CLI output quiet unless verbose logging is requested', () => {
+    delete process.env.SCALE_LOG_LEVEL
+    delete process.env.NODE_ENV
+    delete process.env.VITEST
+
+    expect(resolveLogLevel()).toBe('warn')
+  })
+
   it('redacts common secret-bearing fields', () => {
     expect(SENSITIVE_LOG_PATHS).toEqual(expect.arrayContaining([
       'password',

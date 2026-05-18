@@ -198,4 +198,47 @@ describe('ToolOrchestrator', () => {
       ok: true,
     })
   })
+
+  it('classifies browser and desktop automation tools with side-effect aware adapters', () => {
+    const projectDir = makeProject()
+    writeSkill(projectDir, 'turix-cua')
+    const capabilityReport = inspectToolCapabilities({
+      projectDir,
+      toolIds: ['agent-browser', 'desktop-cua', 'turix-cua'],
+      commandExists: () => true,
+      runVersion: () => ({ ok: true, stdout: '1.0.0' }),
+    })
+    const policy = resolveToolPolicy({
+      mode: 'evidence-required',
+      tools: {
+        'desktop-cua': {
+          enabled: true,
+          requiredFor: ['desktopAutomation'],
+        },
+      },
+    })
+    const orchestrator = new ToolOrchestrator({
+      projectDir,
+      policy,
+      capabilityReport,
+    })
+    const skillPlan = createSkillPlan({
+      taskId: 'TASK-DESKTOP',
+      taskName: 'Desktop automation smoke',
+      description: 'Run browser automation and desktop automation for a Windows desktop app',
+      level: 'M',
+      files: ['tests/desktop/smoke.test.ts'],
+      policy: resolveSkillRoutingPolicy(null),
+    })
+
+    const plan = orchestrator.plan({ skillPlan })
+
+    expect(plan.steps.find(step => step.toolId === 'agent-browser')).toMatchObject({
+      adapter: 'browser',
+    })
+    expect(plan.steps.find(step => step.toolId === 'desktop-cua')).toMatchObject({
+      adapter: 'desktop',
+      required: true,
+    })
+  })
 })
