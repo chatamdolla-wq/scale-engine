@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.15.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.18.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-822-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.15.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/npm-0.18.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.15.1
+# SCALE Engine v0.18.0
 
 SCALE Engine 是一个面向 AI 编码 Agent 的工程化工作流运行时。它把提示词里的工程纪律，下沉为状态机、质量门禁、持久化证据、确定性 review 记录和发布检查。
 
@@ -28,13 +28,15 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 
 ## 当前版本
 
-v0.15.1 聚焦生产级工程治理模板：
+v0.18.0 聚焦可以生成到真实项目、可以本地验证的生产级工程治理工作流：
 
-- 支持 MOE / 非 MOE 工作区拓扑、子仓库变更阻断、临时 worktree 清理候选识别。
-- 增加资源资产治理，区分长期维护文档、版本化产物、任务证据、临时文件和禁止提交资产。
-- 增加工程规范扫描，覆盖日志噪音、敏感信息脱敏、安全输入、ORM/数据库、框架组件和测试验证。
-- 增强技能与工具编排，UI/UX、联网研究、浏览器 E2E、桌面自动化、外部 Agent CLI 都有路由和证据契约。
-- `scale init` / governance pack 会生成 service matrix、verification profile、artifact 模板、metrics、resource policy、engineering standards 和 tool orchestration 规则。
+- governance pack 会生成 service matrix、verification profile、任务 artifact 模板、Mini-PRD/UI/spec 证据模板、metrics、resource policy、engineering standards 和 tool orchestration 规则。
+- MOE 和非 MOE 项目都通过 `.scale/workspace.json`、子仓库生命周期检查、工作区感知验证来管理。
+- 资源治理会区分长期维护文档、持久规格、任务证据、生成报告、临时文件、本地专属资产和禁止提交资产。
+- 工程规范扫描覆盖日志噪音、敏感信息脱敏、安全输入、ORM/数据库、框架边界、架构一致性、UI/UX 期望、测试严谨性、部署就绪和安全控制。
+- 工具与 skill 编排可以把 UI/UX、联网研究、浏览器 E2E、Chrome DevTools MCP、桌面自动化、外部 Agent CLI、skill 安全检查纳入有证据的流程。
+- HTML artifact 已成为受治理的输出：Markdown 仍是可维护源文件，`scale artifact` 负责渲染、检查、打开和沉淀可追溯 HTML 报告。
+- 主动命令门控（`scale context`、`scale diagnose`、`scale tdd`、`scale status`）用于引导 Agent 做上下文对齐、证据优先调试、TDD 切片和下一步动作。
 
 历史 v0.11.1 新增四大优先级改进：
 
@@ -72,7 +74,7 @@ v0.15.1 聚焦生产级工程治理模板：
 - 16 个平台适配器，12 个专业 Agent Profile
 - Browser QA Capability (Playwright MCP)
 - Evolution 自改进闭环
-- 本轮加固后，499 个 Vitest 测试通过
+- Vitest 测试套件纳入发布验证
 
 ## 安装
 
@@ -82,6 +84,56 @@ scale --version
 ```
 
 需要 Node.js 20 或更高版本。
+
+## Governance Pack 快速落地
+
+在已有项目中安装治理工作流：
+
+```bash
+scale init --governance-pack standard
+scale init --governance-pack project-scaffold
+scale init --governance-pack moe-workspace
+scale init --governance-pack resource-governance
+scale init --governance-pack go-service-matrix
+scale init --governance-pack node-library
+scale init --governance-pack frontend-app
+```
+
+当前支持的治理包：
+
+| Pack | 适用场景 |
+| --- | --- |
+| `standard` | 通用项目治理，包含任务 artifact、验证、指标、资源、规范和 skills policy |
+| `project-scaffold` | 可复现的工程化工作流脚手架和治理 demo 项目 |
+| `moe-workspace` | 父工作区 + 独立子仓库，适合 MOE/多仓协作 |
+| `resource-governance` | 文档、报告、截图、脚本、媒体、生成产物等资源生命周期治理 |
+| `go-service-matrix` | Go 后端服务矩阵，支持按服务 build/lint/test/security 验证 |
+| `node-library` | Node/TypeScript 包的开发、发布和验证治理 |
+| `frontend-app` | UI/UX、浏览器证据、响应式检查、E2E 和视觉评审治理 |
+
+初始化后，日常本地闭环建议使用：
+
+```bash
+scale preflight --preflight-profile quick
+scale status
+scale context init --name "MyProject"
+scale context grill --task-id <task-id> --task "实现 OAuth callback 加固"
+scale diagnose plan --task-id <task-id> --symptom "OAuth callback 返回 500"
+scale tdd slice --task-id <task-id> --behavior "拒绝过期 OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
+scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact doctor --artifact-dir docs/worklog/tasks/<task-id>
+scale assets scan --dir .
+scale standards scan --dir .
+scale metrics list
+```
+
+HTML 适合作为最终对比、评审、状态报告、事故报告和发版交接产物；Markdown 仍保留为长期维护源文件：
+
+```bash
+scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact open --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+```
 
 ## Vibe Templates（一键启动）
 
@@ -214,7 +266,7 @@ src/guardrails/                detector 与 gateway
 src/guardrails/OWASPDetector.ts OWASP Top 10 安全检测
 src/capabilities/BrowserQACapability.ts Playwright MCP 包装器
 src/evolution/                 Defect/Lesson/Rule/Hook 自进化层
-tests/                         Vitest 测试 (499 tests)
+tests/                         Vitest 测试套件
 ```
 
 ## 开发与验证
@@ -233,6 +285,28 @@ npx vitest run tests/workflow/phaseCli.test.ts
 npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.test.ts tests/workflow/gateSystem.test.ts
 ```
 
+## v0.18.0 更新
+
+- 新增受治理 HTML artifact：`scale artifact render/doctor/settle/open`。
+- Markdown 保持为可维护源文件；生成 HTML 作为可追溯任务证据。
+- governance pack 增加 output policy 和 HTML artifact 资源分类。
+- 增加 HTML 渲染、安全检查、settlement evidence 和模板生成测试。
+
+## v0.17.0 更新
+
+- 新增主动工作流命令门控：`scale context`、`scale diagnose`、`scale tdd`、`scale status`。
+- 增加 required next-action queue，减少 Agent 静默跳过上下文、调试、TDD 或验证步骤。
+
+## v0.16.0 更新
+
+- 新增受治理 skill repository、skill 推荐、安装安全检查、可视化 Vibe 模板和领导者角色预设。
+- 加强工具编排、资源治理和工程规范治理。
+
+## v0.15.1 更新
+
+- 新增 UI/UX、联网研究、浏览器自动化、桌面自动化和外部 Agent CLI 路由契约。
+- 为生成项目包增加资源治理和工程规范治理。
+
 ## v0.11.1 更新
 
 - Phase Commands FSM 阻断：`canTransition` + `process.exit(1)` 确保 guard 失败时阻塞
@@ -241,7 +315,7 @@ npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.
 - L6 Evolution：`Defect → Lesson → Rule → Hook` 自改进闭环
 - Evolution CLI：`scale evolution extract/improve/report/hooks`
 - ReviewAnalyzer regex 修复：避免模式定义误报
-- 499 测试通过
+- Vitest 测试套件纳入发布验证
 
 ## v0.10.1 更新
 

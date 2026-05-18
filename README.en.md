@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.15.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.18.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
-  <img src="https://img.shields.io/badge/tests-822-passing-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.15.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
+  <img src="https://img.shields.io/badge/npm-0.18.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.15.1
+# SCALE Engine v0.18.0
 
 SCALE Engine is an AI engineering workflow runtime for agentic coding tools. It turns prompt-level engineering rules into stateful workflow gates, persisted evidence, review records, and release checks.
 
@@ -28,13 +28,15 @@ Prompt instructions are advisory. Production engineering needs mechanisms:
 
 ## Current Release
 
-v0.15.1 focuses on production-grade engineering governance templates:
+v0.18.0 focuses on production-grade workflow governance that can be generated into real projects and verified locally:
 
-- Supports MOE and non-MOE workspace topology, child repository blockers, and temporary worktree cleanup candidates.
-- Adds resource asset governance for maintained docs, versioned outputs, task evidence, temporary files, and forbidden commit assets.
-- Adds engineering standards scans for noisy logs, sensitive data redaction, secure input handling, ORM/database usage, framework conventions, and test rigor.
-- Strengthens skill and tool orchestration with routing and evidence contracts for UI/UX, web research, browser E2E, desktop automation, and external Agent CLIs.
-- `scale init` / governance packs now generate service matrix, verification profile, artifact templates, metrics, resource policy, engineering standards, and tool orchestration rules.
+- Governance packs generate service matrix, verification profile, task artifact templates, Mini-PRD/UI/spec evidence templates, metrics, resource policy, engineering standards, and tool orchestration rules.
+- MOE and non-MOE projects are both supported through `.scale/workspace.json`, child repository lifecycle checks, and workspace-aware verification.
+- Resource governance classifies maintained docs, durable specs, task evidence, generated reports, temporary files, local-only assets, and forbidden commit assets.
+- Engineering standards scans cover noisy logs, sensitive data redaction, secure input handling, ORM/database usage, framework boundaries, architecture consistency, UI/UX expectations, testing rigor, deployment readiness, and security controls.
+- Tool and skill orchestration can route UI/UX, web research, browser E2E, Chrome DevTools MCP, desktop automation, external Agent CLIs, and skill safety checks into evidence-backed workflows.
+- HTML artifacts are now governed outputs: Markdown remains the editable source of truth, while `scale artifact` renders, validates, opens, and settles traceable HTML reports for review and handoff.
+- Active command gates (`scale context`, `scale diagnose`, `scale tdd`, `scale status`) guide agents through context alignment, evidence-first debugging, TDD slices, and required next actions.
 
 Historical v0.11.1 introduced four priority improvements:
 
@@ -71,7 +73,7 @@ Historical v0.11.1 introduced four priority improvements:
 - 16 platform adapters, 12 professional agent profiles
 - Browser QA Capability (Playwright MCP)
 - Evolution self-improve loop
-- 499 Vitest tests passing
+- Vitest suite covered in release verification
 
 ## Installation
 
@@ -81,6 +83,56 @@ scale --version
 ```
 
 Node.js 20 or newer is required.
+
+## Governance Pack Quick Start
+
+Use `scale init` to install a governed workflow into an existing project:
+
+```bash
+scale init --governance-pack standard
+scale init --governance-pack project-scaffold
+scale init --governance-pack moe-workspace
+scale init --governance-pack resource-governance
+scale init --governance-pack go-service-matrix
+scale init --governance-pack node-library
+scale init --governance-pack frontend-app
+```
+
+Supported packs:
+
+| Pack | Best fit |
+| --- | --- |
+| `standard` | General project governance with task artifacts, verification, metrics, resources, standards, and skills policy |
+| `project-scaffold` | Reproducible engineering workflow scaffold and demo governance project |
+| `moe-workspace` | Parent workspace with independent child repositories or MOE-style multi-repo development |
+| `resource-governance` | Asset/document lifecycle policy for docs, reports, screenshots, scripts, media, and generated outputs |
+| `go-service-matrix` | Go backend services with service-aware build/lint/test/security verification |
+| `node-library` | Node/TypeScript package workflow, release, and verification governance |
+| `frontend-app` | UI/UX, browser evidence, responsive checks, E2E, and visual review governance |
+
+After initialization, use these commands as the normal local loop:
+
+```bash
+scale preflight --preflight-profile quick
+scale status
+scale context init --name "MyProject"
+scale context grill --task-id <task-id> --task "Implement OAuth callback hardening"
+scale diagnose plan --task-id <task-id> --symptom "OAuth callback returns 500"
+scale tdd slice --task-id <task-id> --behavior "reject expired OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
+scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact doctor --artifact-dir docs/worklog/tasks/<task-id>
+scale assets scan --dir .
+scale standards scan --dir .
+scale metrics list
+```
+
+For HTML deliverables, keep Markdown files as maintained source and use generated HTML for comparison, review, status reporting, incident reports, and release handoff:
+
+```bash
+scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact open --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+scale artifact settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
+```
 
 ## Phase Workflow
 
@@ -183,7 +235,7 @@ src/guardrails/                Detector and gateway logic
 src/guardrails/OWASPDetector.ts OWASP Top 10 security detection
 src/capabilities/BrowserQACapability.ts Playwright MCP wrapper
 src/evolution/                 Defect/Lesson/Rule/Hook evolution layer
-tests/                         Vitest test suites (499 tests)
+tests/                         Vitest test suites
 ```
 
 ## Development
@@ -204,6 +256,28 @@ npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.
 
 ## Release Notes
 
+### v0.18.0
+
+- Governed HTML artifacts: `scale artifact render/doctor/settle/open`.
+- Markdown remains the editable source of truth; generated HTML is traceable task evidence.
+- Governance packs now include output policy and HTML artifact resource classification.
+- Added tests for HTML artifact rendering, safety checks, settlement evidence, and generated template output.
+
+### v0.17.0
+
+- Added active workflow command gates: `scale context`, `scale diagnose`, `scale tdd`, and `scale status`.
+- Added required next-action queues so agents cannot silently skip context, debugging, TDD, or verification work.
+
+### v0.16.0
+
+- Added governed skill repository, skill recommendation, install-safety checks, visual Vibe templates, and leadership presets.
+- Strengthened tool orchestration and resource/engineering standards governance.
+
+### v0.15.1
+
+- Added UI/UX, web research, browser automation, desktop automation, and external Agent CLI routing contracts.
+- Added resource governance and engineering standards governance for generated project packs.
+
 ### v0.11.1
 
 - Phase Commands FSM blocking: `canTransition` + `process.exit(1)` for guard failures
@@ -212,7 +286,7 @@ npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.
 - L6 Evolution: `Defect → Lesson → Rule → Hook` self-improve loop
 - Evolution CLI: `scale evolution extract/improve/report/hooks`
 - ReviewAnalyzer regex fix: avoid false positives on pattern definitions
-- 499 tests passing
+- Vitest suite covered in release verification
 
 ### v0.10.1
 
