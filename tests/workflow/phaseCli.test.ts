@@ -52,6 +52,18 @@ afterEach(() => {
 })
 
 describe('phase CLI workflow', () => {
+  it('prints status on a fresh project without workflow state', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const status = await runScale(['status', '--json'], scaleDir, projectDir)
+
+    expect(status.exitCode).toBe(0)
+    const result = parseJson<{ nextCommand: string; workflowState: null }>(status.stdout)
+    expect(result.workflowState).toBeNull()
+    expect(result.nextCommand).toContain('scale define')
+  })
+
   it('initializes a project-scaffold governance pack and reports clean drift', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()

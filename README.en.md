@@ -10,70 +10,75 @@
 
 # SCALE Engine v0.18.0
 
-SCALE Engine is an AI engineering workflow runtime for agentic coding tools. It turns prompt-level engineering rules into stateful workflow gates, persisted evidence, review records, and release checks.
+SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
 Repository: https://github.com/hongmaple0820/scale-engine
 Mirror: https://gitee.com/hongmaple/scale-engine
 npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
 Language: [English](README.en.md) | [Chinese](README.md)
 
-## Why It Exists
+## What It Solves
 
-Prompt instructions are advisory. Production engineering needs mechanisms:
+AI coding becomes hard when agents must behave consistently across real teams and real repositories:
 
-- A model can claim tests passed; SCALE stores verification evidence.
-- A model can skip review; SCALE blocks `ship` without persisted review records.
-- A model can stage unrelated files; SCALE now stages only reviewed files.
-- A model can lose workflow state; SCALE stores artifacts and FSM transitions under `.scale`.
+| Failure mode | SCALE mechanism |
+| --- | --- |
+| Agent says tests passed without running them | Verification profiles and evidence stores record actual commands and results |
+| Agent skips discovery, design, TDD, or review | `scale context`, `scale diagnose`, `scale tdd`, and `scale status` produce required next actions |
+| Agent stages unrelated files or edits the wrong repository | Review-gated shipping, MOE workspace rules, and child repository blockers control boundaries |
+| Docs, screenshots, reports, scripts, and temporary files become unmaintainable | Resource governance classifies maintained assets, task evidence, temporary outputs, and forbidden commits |
+| Noisy logs, secrets, ORM misuse, framework violations, or security risks slip through | Engineering standards and OWASP scans produce traceable findings |
+| Long Markdown reports are not read | `scale artifact` renders traceable HTML reports from maintained Markdown sources |
 
-## Current Release
+## See It In 3 Minutes
 
-v0.18.0 focuses on production-grade workflow governance that can be generated into real projects and verified locally:
+```bash
+npm install -g @hongmaple0820/scale-engine
+mkdir scale-demo && cd scale-demo
+scale init --governance-pack standard
+scale preflight --preflight-profile quick
+scale status
+```
 
-- Governance packs generate service matrix, verification profile, task artifact templates, Mini-PRD/UI/spec evidence templates, metrics, resource policy, engineering standards, and tool orchestration rules.
-- MOE and non-MOE projects are both supported through `.scale/workspace.json`, child repository lifecycle checks, and workspace-aware verification.
-- Resource governance classifies maintained docs, durable specs, task evidence, generated reports, temporary files, local-only assets, and forbidden commit assets.
-- Engineering standards scans cover noisy logs, sensitive data redaction, secure input handling, ORM/database usage, framework boundaries, architecture consistency, UI/UX expectations, testing rigor, deployment readiness, and security controls.
-- Tool and skill orchestration can route UI/UX, web research, browser E2E, Chrome DevTools MCP, desktop automation, external Agent CLIs, and skill safety checks into evidence-backed workflows.
-- HTML artifacts are now governed outputs: Markdown remains the editable source of truth, while `scale artifact` renders, validates, opens, and settles traceable HTML reports for review and handoff.
-- Active command gates (`scale context`, `scale diagnose`, `scale tdd`, `scale status`) guide agents through context alignment, evidence-first debugging, TDD slices, and required next actions.
+This generates governance files you can commit to a project:
 
-Historical v0.11.1 introduced four priority improvements:
+- `.scale/verification.json`: service matrix and verification profiles
+- `.scale/skills.json`: skill routing and evidence requirements
+- `.scale/tools.json`: CLI/MCP/browser/desktop orchestration policy
+- `docs/workflow/templates/`: Mini-PRD, plan, verification, review, and summary templates
+- `docs/standards/`: engineering, Git collaboration, and resource governance rules
 
-### Phase Commands FSM Blocking
-- `canTransition` + `process.exit(1)` ensures FSM guard failures block execution, not continue
-- define/plan/build/verify phases add clear blocking prompts
+Continue with a full workflow loop:
 
-### OWASP Top 10 Detector
-- New `OWASPDetector` covers SQL injection, XSS, path traversal, SSRF, Auth Bypass, weak crypto, CORS misconfiguration, CSRF, file upload, sensitive data exposure
-- 19 security detection patterns, auto-recognizes regex definitions to avoid false positives
+```bash
+scale context init --name "Scale Demo"
+scale context grill --task-id 2026-05-18-oauth-hardening --task "Harden OAuth callback"
+scale diagnose plan --task-id 2026-05-18-oauth-hardening --symptom "callback returns 500 when state expires"
+scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "reject expired OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
+scale artifact render --task-id 2026-05-18-oauth-hardening --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
+scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
+```
 
-### Browser QA Capability
-- `BrowserQACapability` wraps Playwright MCP tools
-- Supports navigation, click, screenshot, console check, E2E test flows
+Read [Quickstart](docs/start/quickstart.md) and [Agent Governance Demo](docs/start/agent-governance-demo.md) for the complete walkthrough.
 
-### L6 Evolution Self-Improve Loop
-- `LessonExtractor` extracts reusable lessons from session Defect events
-- `SelfImproveEngine` implements `Defect → Lesson → Rule → Hook` promotion pipeline
-- New CLI commands: `scale evolution extract/improve/report/hooks`
+## Who It Is For
 
----
+- Teams using Codex, Claude Code, Cursor, Gemini CLI, OpenCode, Aider, or similar agents on real projects.
+- Teams with multi-service, multi-repository, MOE workspace, frontend/backend, or scaffold governance needs.
+- Teams that want agents to actively use skills, MCPs, CLIs, browser automation, E2E checks, and HTML reports with safety boundaries.
+- Project owners who feel AI code is fast but hard to review, verify, and maintain.
 
-**Complete phase-aligned delivery workflow**:
+It is not optimized for toy projects that only want one minimal prompt file and do not need gates, collaboration rules, or long-term maintainability.
 
-- `define -> plan -> build -> verify -> review -> ship`
-- FSM-backed artifacts with blocking on guard failures
-- Persisted gate evidence and review records
-- Deterministic review scanner blocks empty `catch`, `@ts-ignore`, focused tests, dangerous shell/Git commands, and security-sensitive changes without G7 evidence
-- OWASP Top 10 security detector extends coverage
-- Built-in G7 security scanning records explainable file/line evidence, blocks CRITICAL by default, can block HIGH in strict mode
-- Optional strict TDD evidence gate with `--tdd-evidence` and `--tdd-strict`
-- `ship --no-commit` delivery reports
-- Review-gated release commits
-- 16 platform adapters, 12 professional agent profiles
-- Browser QA Capability (Playwright MCP)
-- Evolution self-improve loop
-- Vitest suite covered in release verification
+## Core Capabilities
+
+- Workflow Engine: `define -> plan -> build -> verify -> review -> ship` with persisted state.
+- GateSystem: build, lint, test, coverage, security, TDD, review, and tool evidence gates.
+- Governance Packs: `standard`, `project-scaffold`, `moe-workspace`, `resource-governance`, `go-service-matrix`, `node-library`, and `frontend-app`.
+- Resource Governance: docs, media, reports, test scripts, temporary scripts, HTML artifacts, and local config lifecycle rules.
+- Skill and Tool Orchestration: UI/UX, web research, browser E2E, Chrome DevTools MCP, desktop automation, and external agent CLIs.
+- Engineering Standards: noisy logs, sensitive data, injection risks, ORM/database usage, framework boundaries, test rigor, and deployment risk.
+- HTML Artifacts: Markdown remains the maintained source; HTML becomes the review, comparison, status, and release handoff layer.
 
 ## Installation
 
@@ -84,7 +89,7 @@ scale --version
 
 Node.js 20 or newer is required.
 
-## Governance Pack Quick Start
+## Governance Packs
 
 Use `scale init` to install a governed workflow into an existing project:
 
@@ -110,29 +115,9 @@ Supported packs:
 | `node-library` | Node/TypeScript package workflow, release, and verification governance |
 | `frontend-app` | UI/UX, browser evidence, responsive checks, E2E, and visual review governance |
 
-After initialization, use these commands as the normal local loop:
+If you are unsure, start with `standard`. Use a specialized pack when the project shape is clear:
 
-```bash
-scale preflight --preflight-profile quick
-scale status
-scale context init --name "MyProject"
-scale context grill --task-id <task-id> --task "Implement OAuth callback hardening"
-scale diagnose plan --task-id <task-id> --symptom "OAuth callback returns 500"
-scale tdd slice --task-id <task-id> --behavior "reject expired OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
-scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact doctor --artifact-dir docs/worklog/tasks/<task-id>
-scale assets scan --dir .
-scale standards scan --dir .
-scale metrics list
-```
-
-For HTML deliverables, keep Markdown files as maintained source and use generated HTML for comparison, review, status reporting, incident reports, and release handoff:
-
-```bash
-scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact open --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-```
+See [Getting Started](docs/start/README.md) for runnable tutorials and demo paths.
 
 ## Phase Workflow
 

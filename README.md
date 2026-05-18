@@ -10,71 +10,75 @@
 
 # SCALE Engine v0.18.0
 
-SCALE Engine 是一个面向 AI 编码 Agent 的工程化工作流运行时。它把提示词里的工程纪律，下沉为状态机、质量门禁、持久化证据、确定性 review 记录和发布检查。
+SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么不能交付。
 
 源码仓库：https://github.com/hongmaple0820/scale-engine
 国内镜像：https://gitee.com/hongmaple/scale-engine
 npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 语言：[中文](README.md) | [English](README.en.md)
 
-## 为什么需要它
+## 它解决什么问题
 
-提示词是建议，工程交付需要机制：
+AI 编码真正难的不是“写代码”，而是持续稳定地遵守工程纪律：
 
-- Agent 可以声称测试通过，SCALE 会保存真实验证证据。
-- Agent 可以跳过 review，SCALE 会在缺少 review 记录时阻断 `ship`。
-- Agent 可以误提交无关文件，SCALE 只暂存已通过 review 覆盖的文件。
-- Agent 可以丢失阶段状态，SCALE 会把 artifact 和 FSM 状态保存在 `.scale`。
+| 常见问题 | SCALE 的处理方式 |
+| --- | --- |
+| Agent 没验证却说“测试通过” | 通过 verification profile 和 evidence store 记录真实命令与结果 |
+| Agent 跳过需求澄清、设计、TDD 或 review | 通过 `scale context`、`scale diagnose`、`scale tdd`、`scale status` 生成下一步动作 |
+| Agent 误提交无关文件或跨仓库改错位置 | 通过 review-gated ship、MOE workspace 和子仓库 blocker 控制边界 |
+| 文档、报告、截图、临时脚本越堆越乱 | 通过 resource governance 区分长期维护、任务证据、临时产物和禁止提交资产 |
+| 日志噪音、敏感信息、ORM/框架乱用、安全风险无人兜底 | 通过 engineering standards 和 OWASP 扫描给出可追溯问题 |
+| Markdown 长报告没人读 | 通过 `scale artifact` 从 Markdown 源文件生成可追溯 HTML 报告 |
 
-## 当前版本
+## 3 分钟看到效果
 
-v0.18.0 聚焦可以生成到真实项目、可以本地验证的生产级工程治理工作流：
+```bash
+npm install -g @hongmaple0820/scale-engine
+mkdir scale-demo && cd scale-demo
+scale init --governance-pack standard
+scale preflight --preflight-profile quick
+scale status
+```
 
-- governance pack 会生成 service matrix、verification profile、任务 artifact 模板、Mini-PRD/UI/spec 证据模板、metrics、resource policy、engineering standards 和 tool orchestration 规则。
-- MOE 和非 MOE 项目都通过 `.scale/workspace.json`、子仓库生命周期检查、工作区感知验证来管理。
-- 资源治理会区分长期维护文档、持久规格、任务证据、生成报告、临时文件、本地专属资产和禁止提交资产。
-- 工程规范扫描覆盖日志噪音、敏感信息脱敏、安全输入、ORM/数据库、框架边界、架构一致性、UI/UX 期望、测试严谨性、部署就绪和安全控制。
-- 工具与 skill 编排可以把 UI/UX、联网研究、浏览器 E2E、Chrome DevTools MCP、桌面自动化、外部 Agent CLI、skill 安全检查纳入有证据的流程。
-- HTML artifact 已成为受治理的输出：Markdown 仍是可维护源文件，`scale artifact` 负责渲染、检查、打开和沉淀可追溯 HTML 报告。
-- 主动命令门控（`scale context`、`scale diagnose`、`scale tdd`、`scale status`）用于引导 Agent 做上下文对齐、证据优先调试、TDD 切片和下一步动作。
+你会得到一套可提交到项目里的治理文件：
 
-历史 v0.11.1 新增四大优先级改进：
+- `.scale/verification.json`：服务矩阵和验证 profile
+- `.scale/skills.json`：skill 路由和证据要求
+- `.scale/tools.json`：CLI/MCP/browser/desktop 工具编排规则
+- `docs/workflow/templates/`：Mini-PRD、plan、verification、review、summary 模板
+- `docs/standards/`：工程规范、Git 协作、资源治理规则
 
-### Phase Commands FSM 阻断
-- `canTransition` + `process.exit(1)` 确保 FSM guard 失败时阻塞流程，而非继续执行
-- define/plan/build/verify 各阶段添加明确的阻断提示
+继续体验完整闭环：
 
-### OWASP Top 10 检测器
-- 新增 `OWASPDetector` 覆盖 SQL 注入、XSS、路径遍历、SSRF、Auth Bypass、弱加密、CORS 错误配置、CSRF、文件上传、敏感数据泄露
-- 19 类安全检测模式，自动识别 regex 定义避免误报
+```bash
+scale context init --name "Scale Demo"
+scale context grill --task-id 2026-05-18-oauth-hardening --task "加固 OAuth callback"
+scale diagnose plan --task-id 2026-05-18-oauth-hardening --symptom "callback 在 state 过期时返回 500"
+scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "拒绝过期 OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
+scale artifact render --task-id 2026-05-18-oauth-hardening --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
+scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
+```
 
-### Browser QA Capability
-- `BrowserQACapability` 封装 Playwright MCP 工具
-- 支持导航、点击、截图、console 检查、E2E 测试流程
+完整教程见 [3 分钟快速开始](docs/start/quickstart.md) 和 [官方 Demo Walkthrough](docs/start/agent-governance-demo.md)。
 
-### L6 Evolution 自改进闭环
-- `LessonExtractor` 从会话 Defect 事件提取可复用教训
-- `SelfImproveEngine` 实现 `Defect → Lesson → Rule → Hook` 晋升流水线
-- 新增 CLI 命令：`scale evolution extract/improve/report/hooks`
+## 适合谁
 
----
+- 正在用 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、Aider 等 Agent 写真实项目的团队。
+- 有多服务、多仓库、MOE workspace、前后端分离、脚手架治理需求的团队。
+- 希望 Agent 主动使用 skills、MCP、CLI、浏览器、E2E、HTML 报告，但又需要安全边界和证据闭环的团队。
+- 经常遇到“AI 改得快，但难审、难验、难维护”的项目负责人。
 
-**完整阶段化交付链路**：
+不适合只想要一个极简 prompt 文件、完全不需要门禁、不关心多人协作和长期维护的玩具项目。
 
-- `define -> plan -> build -> verify -> review -> ship`
-- Spec、Plan、Task artifact 接入 FSM，guard 失败时阻断而非继续
-- 验证门禁证据持久化
-- 代码 review 记录持久化
-- 确定性 review scanner 会阻断空 `catch`、`@ts-ignore`、focused test、危险 shell/git 命令和缺 G7 证据的安全敏感变更
-- OWASP Top 10 安全检测器扩展安全覆盖
-- G7 内置安全扫描会记录可解释的文件/行号证据，默认阻断 CRITICAL，严格模式可阻断 HIGH
-- 可选严格 TDD evidence 门禁：`--tdd-evidence` 和 `--tdd-strict`
-- `ship --no-commit` 交付报告
-- `ship` 发布前强制验证 review evidence
-- 16 个平台适配器，12 个专业 Agent Profile
-- Browser QA Capability (Playwright MCP)
-- Evolution 自改进闭环
-- Vitest 测试套件纳入发布验证
+## 核心能力
+
+- Workflow Engine：`define -> plan -> build -> verify -> review -> ship` 的阶段化交付状态机。
+- GateSystem：build、lint、test、coverage、security、TDD、review、tool evidence 等门禁。
+- Governance Packs：`standard`、`project-scaffold`、`moe-workspace`、`resource-governance`、`go-service-matrix`、`node-library`、`frontend-app`。
+- Resource Governance：治理文档、图片、视频、报告、测试脚本、临时脚本、HTML artifact 和本地配置。
+- Skill and Tool Orchestration：把 UI/UX、联网研究、浏览器 E2E、Chrome DevTools MCP、桌面自动化、外部 Agent CLI 纳入流程。
+- Engineering Standards：扫描日志噪音、敏感信息、注入风险、ORM/数据库、框架边界、测试严谨性和部署风险。
+- HTML Artifacts：Markdown 仍是可维护源文件，HTML 用于评审、对比、状态报告和发版交接。
 
 ## 安装
 
@@ -85,7 +89,7 @@ scale --version
 
 需要 Node.js 20 或更高版本。
 
-## Governance Pack 快速落地
+## Governance Pack
 
 在已有项目中安装治理工作流：
 
@@ -111,29 +115,9 @@ scale init --governance-pack frontend-app
 | `node-library` | Node/TypeScript 包的开发、发布和验证治理 |
 | `frontend-app` | UI/UX、浏览器证据、响应式检查、E2E 和视觉评审治理 |
 
-初始化后，日常本地闭环建议使用：
+如果不确定选哪个，先用 `standard`。场景明确时再使用更具体的 pack：
 
-```bash
-scale preflight --preflight-profile quick
-scale status
-scale context init --name "MyProject"
-scale context grill --task-id <task-id> --task "实现 OAuth callback 加固"
-scale diagnose plan --task-id <task-id> --symptom "OAuth callback 返回 500"
-scale tdd slice --task-id <task-id> --behavior "拒绝过期 OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
-scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact doctor --artifact-dir docs/worklog/tasks/<task-id>
-scale assets scan --dir .
-scale standards scan --dir .
-scale metrics list
-```
-
-HTML 适合作为最终对比、评审、状态报告、事故报告和发版交接产物；Markdown 仍保留为长期维护源文件：
-
-```bash
-scale artifact render --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact open --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-scale artifact settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-id>
-```
+更多命令和使用路径见 [入门文档索引](docs/start/README.md)。
 
 ## Vibe Templates（一键启动）
 
