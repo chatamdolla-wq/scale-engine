@@ -77,6 +77,7 @@ scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardeni
 - Governance Packs：`standard`、`project-scaffold`、`moe-workspace`、`resource-governance`、`go-service-matrix`、`node-library`、`frontend-app`。
 - Resource Governance：治理文档、图片、视频、报告、测试脚本、临时脚本、HTML artifact 和本地配置。
 - Skill and Tool Orchestration：把 UI/UX、联网研究、浏览器 E2E、Chrome DevTools MCP、桌面自动化、外部 Agent CLI 纳入流程。
+- Runtime Evidence：记录会话、命令、工具、浏览器、skill 和最终交付证据，阻断“没有证据却声称完成”。
 - Engineering Standards：扫描日志噪音、敏感信息、注入风险、ORM/数据库、框架边界、测试严谨性和部署风险。
 - HTML Artifacts：Markdown 仍是可维护源文件，HTML 用于评审、对比、状态报告和发版交接。
 
@@ -174,6 +175,30 @@ scale verify <task-id> --tdd-strict --tdd-evidence .scale/tdd/<task-id>.json
 ```
 
 TDD evidence JSON 需要包含 `red`、`green`、`refactor`、`testFirst` 且值都为 `true`。
+
+## Memory Fabric
+
+Memory Fabric 会在长会话中把 runtime evidence、session events、knowledge recall 和 graph status 压缩成可预算的 context pack：
+
+```bash
+scale memory pack --task "Fix OAuth callback state lookup" --task-id <task-id> --session-id <session-id> --level M --budget 4000
+scale memory doctor --task "Review cross-module permission change" --level L --budget 3000
+```
+
+详见 [Memory Fabric](docs/MEMORY_FABRIC.md)。
+
+## Runtime Evidence
+
+M/L/CRITICAL 任务在最终交付前应留下运行时证据，避免 Agent 没有真实验证就声称完成：
+
+```bash
+scale runtime start --session-id <session-id> --task-id <task-id> --level M --agent codex
+scale runtime record --title "build" --kind command --status passed --command "npm run build" --exit-code 0 --summary "build passed"
+scale runtime final-check --task-id <task-id> --session-id <session-id> --level M
+scale runtime doctor --task-id <task-id> --session-id <session-id> --level M
+```
+
+证据写入 `.scale/events/sessions/` 和 `.scale/evidence/runtime/`，默认属于本地运行时产物，不应提交到 Git。详见 [Runtime Evidence](docs/RUNTIME_EVIDENCE.md)。
 
 ## Evolution 自改进闭环
 

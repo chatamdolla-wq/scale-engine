@@ -105,6 +105,12 @@ export * from './tools/index.js'
 export * from './workflow/WorkflowGuidance.js'
 export * from './workflow/WorkflowOpenTasks.js'
 
+// Runtime Evidence Governance
+export * from './runtime/index.js'
+
+// Memory Fabric Context Packs
+export * from './memory/index.js'
+
 // Routing
 export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'
 

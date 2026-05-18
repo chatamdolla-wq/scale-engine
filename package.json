@@ -17,6 +17,8 @@
   "files": [
     "dist",
     "docs/README.md",
+    "docs/MEMORY_FABRIC.md",
+    "docs/RUNTIME_EVIDENCE.md",
     "docs/start",
     "examples/demo-projects/agent-governance-demo"
   ],

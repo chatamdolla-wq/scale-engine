@@ -1,0 +1,79 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { evaluateFinalReportReadiness } from '../../src/runtime/FinalReportGuard.js'
+import { doctorRuntimeEvidence } from '../../src/runtime/RuntimeDoctor.js'
+import { RuntimeEvidenceLedger } from '../../src/runtime/RuntimeEvidenceLedger.js'
+import { SessionLedger } from '../../src/runtime/SessionLedger.js'
+
+let dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  dirs = []
+})
+
+function makeProject(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'scale-runtime-doctor-'))
+  dirs.push(dir)
+  return dir
+}
+
+describe('runtime doctor', () => {
+  it('warns when M level work has no passed completion evidence', () => {
+    const projectDir = makeProject()
+    new SessionLedger({ projectDir }).start({ sessionId: 'SESSION-1', taskId: 'TASK-1', level: 'M' })
+
+    const report = doctorRuntimeEvidence({ projectDir, taskId: 'TASK-1', sessionId: 'SESSION-1', level: 'M' })
+
+    expect(report.blocked).toBe(false)
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'Runtime completion evidence',
+        status: 'warn',
+      }),
+    ]))
+    expect(evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-1', sessionId: 'SESSION-1', level: 'M' })).toMatchObject({
+      ready: false,
+      blocked: true,
+    })
+  })
+
+  it('blocks final readiness when failed evidence exists and passes after scoped success', () => {
+    const projectDir = makeProject()
+    const ledger = new RuntimeEvidenceLedger({ projectDir })
+    ledger.record({
+      taskId: 'TASK-1',
+      sessionId: 'SESSION-1',
+      kind: 'command',
+      title: 'test',
+      status: 'failed',
+      exitCode: 1,
+      summary: 'test failed',
+    })
+
+    expect(evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-1', sessionId: 'SESSION-1', level: 'M' })).toMatchObject({
+      ready: false,
+      blocked: true,
+    })
+
+    const otherProject = makeProject()
+    const cleanLedger = new RuntimeEvidenceLedger({ projectDir: otherProject })
+    new SessionLedger({ projectDir: otherProject }).start({ sessionId: 'SESSION-2', taskId: 'TASK-2', level: 'M' })
+    cleanLedger.record({
+      taskId: 'TASK-2',
+      sessionId: 'SESSION-2',
+      kind: 'command',
+      title: 'test',
+      status: 'passed',
+      exitCode: 0,
+      summary: 'test passed',
+    })
+
+    expect(evaluateFinalReportReadiness({ projectDir: otherProject, taskId: 'TASK-2', sessionId: 'SESSION-2', level: 'M' })).toMatchObject({
+      ready: true,
+      blocked: false,
+    })
+  })
+})

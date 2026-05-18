@@ -98,6 +98,20 @@ import {
   type WorkspaceLifecycleReport,
 } from '../workflow/WorkspaceLifecycle.js'
 import {
+  RuntimeEvidenceLedger,
+  SessionLedger,
+  doctorRuntimeEvidence,
+  evaluateFinalReportReadiness,
+  type RuntimeEvidenceKind,
+  type RuntimeEvidenceStatus,
+  type RuntimeSessionStatus,
+} from '../runtime/index.js'
+import {
+  MemoryFabric,
+  doctorMemoryFabric,
+  renderContextPackMarkdown,
+} from '../memory/index.js'
+import {
   resolveWorkspaceTopology,
   workspaceTopologyPath,
   workspaceTopologyTemplate,
@@ -2572,6 +2586,324 @@ const evidence = defineCommand({
 })
 
 // ============================================================================
+// runtime command - session ledger + completion evidence
+// ============================================================================
+
+function normalizeRuntimeEvidenceKind(value: unknown): RuntimeEvidenceKind {
+  const normalized = String(value ?? 'command').trim()
+  const allowed: RuntimeEvidenceKind[] = ['command', 'gate', 'tool', 'skill', 'mcp', 'browser', 'desktop', 'manual', 'final-report']
+  if (allowed.includes(normalized as RuntimeEvidenceKind)) return normalized as RuntimeEvidenceKind
+  throw new Error(`Invalid runtime evidence kind "${normalized}"; expected ${allowed.join(', ')}.`)
+}
+
+function normalizeRuntimeEvidenceStatus(value: unknown): RuntimeEvidenceStatus {
+  const normalized = String(value ?? '').trim()
+  if (normalized === 'passed' || normalized === 'failed' || normalized === 'skipped') return normalized
+  throw new Error(`Invalid runtime evidence status "${normalized}"; expected passed, failed, or skipped.`)
+}
+
+function normalizeRuntimeSessionStatus(value: unknown): RuntimeSessionStatus {
+  const normalized = String(value ?? 'completed').trim()
+  if (normalized === 'active' || normalized === 'completed' || normalized === 'failed' || normalized === 'abandoned') return normalized
+  throw new Error(`Invalid runtime session status "${normalized}"; expected active, completed, failed, or abandoned.`)
+}
+
+const runtimeStart = defineCommand({
+  meta: { name: 'start', description: 'Start a runtime session ledger' },
+  args: {
+    'session-id': { type: 'string', description: 'Session id; generated when omitted' },
+    'task-id': { type: 'string', description: 'Task id linked to this session' },
+    agent: { type: 'string', description: 'Agent name' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    summary: { type: 'string', description: 'Short session summary' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const ledger = new SessionLedger({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+    const session = ledger.start({
+      sessionId: args['session-id'],
+      taskId: args['task-id'],
+      agent: args.agent,
+      level: normalizeTaskArtifactLevel(args.level),
+      summary: args.summary,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(session, null, 2))
+      return
+    }
+    console.log(`Runtime session started: ${session.sessionId}`)
+    if (session.taskId) console.log(`  Task: ${session.taskId}`)
+    if (session.level) console.log(`  Level: ${session.level}`)
+    console.log(`  Events: ${ledger.sessionFile(session.sessionId)}`)
+  },
+})
+
+const runtimeEnd = defineCommand({
+  meta: { name: 'end', description: 'End the current or named runtime session' },
+  args: {
+    'session-id': { type: 'string', description: 'Session id; current session is used when omitted' },
+    status: { type: 'string', default: 'completed', description: 'completed, failed, or abandoned' },
+    summary: { type: 'string', description: 'Completion summary' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const ledger = new SessionLedger({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+    const sessionId = args['session-id'] ?? ledger.current()?.sessionId
+    if (!sessionId) {
+      console.error('No runtime session id provided and no current runtime session exists.')
+      process.exit(1)
+    }
+    const session = ledger.end(sessionId, normalizeRuntimeSessionStatus(args.status), args.summary)
+    if (args.json) {
+      console.log(JSON.stringify(session, null, 2))
+      return
+    }
+    console.log(`Runtime session ended: ${session.sessionId}`)
+    console.log(`  Status: ${session.status}`)
+  },
+})
+
+const runtimeRecord = defineCommand({
+  meta: { name: 'record', description: 'Record command, gate, tool, browser, skill, or manual runtime evidence' },
+  args: {
+    'task-id': { type: 'string', description: 'Task id linked to this evidence' },
+    'session-id': { type: 'string', description: 'Session id linked to this evidence' },
+    kind: { type: 'string', default: 'command', description: 'command, gate, tool, skill, mcp, browser, desktop, manual, final-report' },
+    title: { type: 'string', required: true, description: 'Evidence title' },
+    status: { type: 'string', required: true, description: 'passed, failed, or skipped' },
+    command: { type: 'string', description: 'Exact command or tool invocation, with secrets redacted by SCALE' },
+    'exit-code': { type: 'string', description: 'Exit code when applicable' },
+    summary: { type: 'string', required: true, description: 'Short output summary' },
+    artifacts: { type: 'string', description: 'Comma-separated artifact paths' },
+    'metadata-json': { type: 'string', default: '{}', description: 'Additional JSON metadata' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const current = new SessionLedger({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR }).current()
+    let metadata: Record<string, unknown> = {}
+    try {
+      metadata = JSON.parse(String(args['metadata-json'] ?? '{}')) as Record<string, unknown>
+    } catch {
+      console.error('--metadata-json must be valid JSON.')
+      process.exit(1)
+    }
+    const exitCode = args['exit-code'] === undefined || args['exit-code'] === ''
+      ? undefined
+      : Number.parseInt(String(args['exit-code']), 10)
+    if (exitCode !== undefined && Number.isNaN(exitCode)) {
+      console.error('--exit-code must be a number.')
+      process.exit(1)
+    }
+    const ledger = new RuntimeEvidenceLedger({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+    const record = ledger.record({
+      taskId: args['task-id'] ?? current?.taskId,
+      sessionId: args['session-id'] ?? current?.sessionId,
+      kind: normalizeRuntimeEvidenceKind(args.kind),
+      title: args.title,
+      status: normalizeRuntimeEvidenceStatus(args.status),
+      command: args.command,
+      exitCode,
+      summary: args.summary,
+      artifacts: parseCommaList(args.artifacts),
+      metadata,
+    })
+    if (record.sessionId) {
+      new SessionLedger({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR }).append(record.sessionId, {
+        type: 'evidence.recorded',
+        message: `${record.status}: ${record.title}`,
+        data: {
+          evidenceId: record.id,
+          kind: record.kind,
+          taskId: record.taskId,
+        },
+      })
+    }
+    if (args.json) {
+      console.log(JSON.stringify(record, null, 2))
+      return
+    }
+    console.log(`Runtime evidence recorded: ${record.id}`)
+    console.log(`  Status: ${record.status}`)
+    console.log(`  Kind: ${record.kind}`)
+    if (record.redactionApplied) console.log('  Redaction: applied')
+  },
+})
+
+const runtimeDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Check runtime session and completion evidence' },
+  args: {
+    'task-id': { type: 'string', description: 'Task id to inspect' },
+    'session-id': { type: 'string', description: 'Session id to inspect' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = doctorRuntimeEvidence({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      level: normalizeTaskArtifactLevel(args.level),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (report.blocked) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Runtime Doctor')
+    console.log(`  Evidence: ${report.evidence.total} total, ${report.evidence.passed} passed, ${report.evidence.failed} failed, ${report.evidence.skipped} skipped`)
+    for (const check of report.checks) {
+      console.log(`  [${check.status.toUpperCase()}] ${check.name}: ${check.message}`)
+      if (check.fix) console.log(`    Fix: ${check.fix}`)
+    }
+    if (report.blocked) process.exitCode = 1
+  },
+})
+
+const runtimeFinalCheck = defineCommand({
+  meta: { name: 'final-check', description: 'Block final delivery claims without passed runtime evidence' },
+  args: {
+    'task-id': { type: 'string', description: 'Task id to inspect' },
+    'session-id': { type: 'string', description: 'Session id to inspect' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const readiness = evaluateFinalReportReadiness({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      level: normalizeTaskArtifactLevel(args.level),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(readiness, null, 2))
+      if (readiness.blocked) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Runtime Final Check')
+    console.log(`  Ready: ${readiness.ready}`)
+    for (const reason of readiness.reasons) console.log(`  [BLOCKER] ${reason}`)
+    if (readiness.blocked) process.exitCode = 1
+  },
+})
+
+const runtime = defineCommand({
+  meta: { name: 'runtime', description: 'Runtime session ledger and completion evidence governance' },
+  subCommands: {
+    start: runtimeStart,
+    end: runtimeEnd,
+    record: runtimeRecord,
+    doctor: runtimeDoctor,
+    'final-check': runtimeFinalCheck,
+  },
+})
+
+// ============================================================================
+// memory command - runtime evidence + knowledge + graph context packs
+// ============================================================================
+
+function parseMemoryBudget(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const parsed = Number.parseInt(String(value), 10)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    throw new Error('--budget must be a positive integer.')
+  }
+  return parsed
+}
+
+const memoryPack = defineCommand({
+  meta: { name: 'pack', description: 'Build a compact context pack from runtime evidence, session events, knowledge, and graph status' },
+  args: {
+    task: { type: 'string', required: true, description: 'Current task or question' },
+    'task-id': { type: 'string', description: 'Task id to scope evidence and session data' },
+    'session-id': { type: 'string', description: 'Session id to scope session events' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated files or modules in scope' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context pack' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    let budgetTokens: number | undefined
+    try {
+      budgetTokens = parseMemoryBudget(args.budget)
+    } catch (e) {
+      console.error((e as Error).message)
+      process.exit(1)
+    }
+    const { kb } = getEngine()
+    const pack = await new MemoryFabric({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      knowledgeBase: kb,
+    }).createContextPack({
+      task: args.task,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      budgetTokens,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(pack, null, 2))
+      return
+    }
+    console.log(renderContextPackMarkdown(pack))
+  },
+})
+
+const memoryDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Check whether a task context pack is available and within token budget' },
+  args: {
+    task: { type: 'string', required: true, description: 'Current task or question' },
+    'task-id': { type: 'string', description: 'Task id to scope evidence and session data' },
+    'session-id': { type: 'string', description: 'Session id to scope session events' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated files or modules in scope' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context pack' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    let budgetTokens: number | undefined
+    try {
+      budgetTokens = parseMemoryBudget(args.budget)
+    } catch (e) {
+      console.error((e as Error).message)
+      process.exit(1)
+    }
+    const { kb } = getEngine()
+    const report = await doctorMemoryFabric({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      knowledgeBase: kb,
+    }, {
+      task: args.task,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      budgetTokens,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Doctor')
+    console.log(`  Budget: ${report.pack.budget.used}/${report.pack.budget.limit} estimated tokens`)
+    for (const check of report.checks) {
+      console.log(`  [${check.status.toUpperCase()}] ${check.name}: ${check.message}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const memory = defineCommand({
+  meta: { name: 'memory', description: 'Memory Fabric context packs and budget diagnostics' },
+  subCommands: { pack: memoryPack, doctor: memoryDoctor },
+})
+
+// ============================================================================
 // out-of-scope command — 借鉴 mattpocock/skills 的 .out-of-scope/ 设计
 // ============================================================================
 
@@ -3386,6 +3718,8 @@ const main = defineCommand({
     status,
     workflow,
     evidence,
+    runtime,
+    memory,
     diagnose,
     tdd,
     tool,

@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import { doctorEngineeringStandards } from '../workflow/EngineeringStandards.js'
 import { doctorResourceAssets } from '../workflow/ResourceGovernance.js'
+import { doctorRuntimeEvidence } from '../runtime/RuntimeDoctor.js'
 
 export interface DiagnosticResult {
   name: string
@@ -15,7 +16,7 @@ export interface DiagnosticResult {
   message: string
   fix?: string
   optional?: boolean // Optional checks don't affect overall health
-  category?: 'governance' | 'knowledge-graph'
+  category?: 'governance' | 'knowledge-graph' | 'runtime'
 }
 
 export interface DoctorReport {
@@ -77,6 +78,11 @@ export class Doctor {
     checks.push(resourcePolicyCheck)
     checks.push(engineeringStandardsCheck)
     checks.push(governanceDriftCheck)
+
+    const runtimeEvidenceCheck = this.checkRuntimeEvidence()
+    runtimeEvidenceCheck.optional = true
+    runtimeEvidenceCheck.category = 'runtime'
+    checks.push(runtimeEvidenceCheck)
 
     // Optional knowledge graph checks (non-blocking)
     const pythonCheck = this.checkPython()
@@ -567,6 +573,38 @@ export class Doctor {
     }
   }
 
+  private checkRuntimeEvidence(): DiagnosticResult {
+    try {
+      const report = doctorRuntimeEvidence({
+        projectDir: this.projectDir,
+        scaleDir: this.scaleDir,
+        level: 'S',
+      })
+      const failCount = report.checks.filter(check => check.status === 'fail').length
+      const warnCount = report.checks.filter(check => check.status === 'warn').length
+      if (failCount > 0) {
+        return {
+          name: 'Runtime evidence',
+          status: 'warn',
+          message: `${failCount} runtime issue(s), ${warnCount} warning(s)`,
+          fix: 'Run: scale runtime doctor --json',
+        }
+      }
+      return {
+        name: 'Runtime evidence',
+        status: warnCount > 0 ? 'warn' : 'ok',
+        message: `${report.evidence.total} evidence record(s), ${warnCount} warning(s)`,
+      }
+    } catch {
+      return {
+        name: 'Runtime evidence',
+        status: 'warn',
+        message: 'Runtime evidence doctor could not inspect local state',
+        fix: 'Run: scale runtime doctor --json',
+      }
+    }
+  }
+
   formatReport(report: DoctorReport): string {
     const icon = { healthy: '✅', degraded: '⚠️', broken: '❌' }
     const statusIcon = { ok: '✅', warn: '⚠️', fail: '❌' }
@@ -615,6 +653,17 @@ export class Doctor {
         lines.push('  → Install: pip install graphifyy && graphify install')
       }
       lines.push(`${'─'.repeat(50)}`)
+    }
+
+    const runtimeChecks = report.checks.filter((c) => c.optional && c.category === 'runtime')
+    if (runtimeChecks.length > 0) {
+      lines.push('')
+      lines.push('Runtime Evidence (Optional):')
+      for (const check of runtimeChecks) {
+        lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+        if (check.fix) lines.push(`     Fix: ${check.fix}`)
+      }
+      lines.push(`${'-'.repeat(50)}`)
     }
 
     const ok = report.checks.filter((c) => c.status === 'ok').length

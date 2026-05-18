@@ -56,6 +56,7 @@ scale preflight --preflight-profile quick
 scale status
 scale assets scan --dir .
 scale standards scan --dir .
+scale runtime doctor --level S
 ```
 
 预期效果：
@@ -64,11 +65,13 @@ scale standards scan --dir .
 - `status` 会告诉 Agent 下一步应该做什么。
 - `assets scan` 会把文档、模板、脚本、报告等资源分类。
 - `standards scan` 会扫描日志噪音、敏感信息、危险输入、测试和架构风险。
+- `runtime doctor` 会检查本地运行时证据目录和最终交付证据状态。
 
 ## 4. 建立第一个任务上下文
 
 ```bash
 scale context init --name "Scale Demo"
+scale runtime start --session-id 2026-05-18-oauth-hardening --task-id 2026-05-18-oauth-hardening --level M --agent codex
 scale context grill --task-id 2026-05-18-oauth-hardening --task "加固 OAuth callback"
 scale diagnose plan --task-id 2026-05-18-oauth-hardening --symptom "callback 在 state 过期时返回 500"
 scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "拒绝过期 OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
@@ -79,6 +82,15 @@ scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "拒绝过期 OA
 - `context grill`：逼 Agent 先澄清上下文、成功标准和风险。
 - `diagnose plan`：遇到问题先诊断，不允许盲修。
 - `tdd slice`：把行为、公共接口、失败测试和实现文件绑定成一个可检查切片。
+- `runtime start`：建立会话 ledger，后续命令、工具和验证证据可以绑定到同一个任务。
+
+完成真实验证后记录运行时证据：
+
+```bash
+scale runtime record --title "quick preflight" --kind command --status passed --command "scale preflight --preflight-profile quick" --exit-code 0 --summary "quick preflight passed"
+scale runtime final-check --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --level M
+scale memory pack --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --task "继续加固 OAuth callback" --level M --budget 4000
+```
 
 ## 5. 生成 HTML 交付视图
 

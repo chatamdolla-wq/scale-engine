@@ -135,6 +135,19 @@ describe('Doctor', () => {
     expect(doc.formatReport(report)).toContain('Project Governance (Optional)')
   })
 
+  it('reports runtime evidence as an optional doctor section', async () => {
+    const adapter = new ClaudeCodeAdapter()
+    await adapter.init({ projectDir: TMP })
+    const doc = new Doctor(TMP)
+    const report = await doc.diagnose()
+
+    expect(report.checks.find((c) => c.name === 'Runtime evidence')).toMatchObject({
+      optional: true,
+      category: 'runtime',
+    })
+    expect(doc.formatReport(report)).toContain('Runtime Evidence (Optional)')
+  })
+
   it('warns when generated governance files drift', async () => {
     const adapter = new ClaudeCodeAdapter()
     await adapter.init({ projectDir: TMP })
