@@ -49,8 +49,31 @@ import {
   type EngineeringStandardsSummary,
 } from '../workflow/EngineeringStandards.js'
 import { doctorResourceAssets, scanResourceAssets, settleResourceAssets } from '../workflow/ResourceGovernance.js'
+import {
+  analyzeContextGovernance,
+  renderContextGrillPrompt,
+  writeContextGovernanceTemplates,
+} from '../workflow/ContextGovernance.js'
+import {
+  createDiagnosticLoop,
+  renderDiagnosticLoopMarkdown,
+  validateDiagnosticLoop,
+} from '../workflow/DiagnosticLoop.js'
+import {
+  createTddSlice,
+  evaluateTddSlice,
+  renderTddSliceMarkdown,
+  type TddCommandEvidence,
+} from '../workflow/TddLoop.js'
+import { nextWorkflowOpenTask, removeWorkflowOpenTask, toolEvidenceRunCompletesOpenTask } from '../workflow/WorkflowOpenTasks.js'
 import { TaskMetricsStore } from '../workflow/TaskMetricsStore.js'
-import { checkTaskArtifactCompleteness, type TaskArtifactLevel } from '../workflow/TaskArtifactScaffolder.js'
+import {
+  appendContextGrillArtifact,
+  appendDiagnosticLoopArtifact,
+  appendTddSliceArtifact,
+  checkTaskArtifactCompleteness,
+  type TaskArtifactLevel,
+} from '../workflow/TaskArtifactScaffolder.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
 import { inspectToolCapabilities } from '../tools/ToolCapabilityRegistry.js'
 import { evaluateToolEvidenceGate } from '../tools/ToolEvidenceGate.js'
@@ -95,6 +118,17 @@ function ensureDir(dir: string) {
 
 function isTruthyFlag(value: unknown): boolean {
   return value === true || value === '' || value === 'true' || value === '1'
+}
+
+function commandEvidence(command: string, exitCode: unknown, summary: unknown): TddCommandEvidence | undefined {
+  if (exitCode === undefined || exitCode === null || exitCode === '') return undefined
+  const parsed = Number.parseInt(String(exitCode), 10)
+  if (Number.isNaN(parsed)) return undefined
+  return {
+    command,
+    exitCode: parsed,
+    outputSummary: summary ? String(summary) : `Command exited ${parsed}`,
+  }
 }
 
 type PreflightProfile = 'quick' | 'full' | 'ci'
@@ -862,10 +896,240 @@ const contextGlossary = defineCommand({
   },
 })
 
+const contextInit = defineCommand({
+  meta: { name: 'init', description: 'Create CONTEXT.md and CONTEXT-MAP.md starter templates' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    name: { type: 'string', description: 'Project display name' },
+    force: { type: 'boolean', default: false, description: 'Overwrite existing templates' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const result = writeContextGovernanceTemplates({
+      projectDir: resolve(String(args.dir ?? PROJECT_DIR)),
+      projectName: args.name ? String(args.name) : undefined,
+      force: isTruthyFlag(args.force),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log('\nSCALE Context Templates')
+    for (const file of result.created) console.log(`  [CREATED] ${file}`)
+    for (const file of result.skipped) console.log(`  [SKIPPED] ${file}`)
+  },
+})
+
+const contextGrill = defineCommand({
+  meta: { name: 'grill', description: 'Check project context docs and generate request-specific grill questions' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id for workflow state and artifact linkage' },
+    task: { type: 'string', required: true, description: 'Task or requirement description' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory where explore.md should be updated' },
+    write: { type: 'boolean', default: false, description: 'Append context grill output to the task explore artifact' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const taskId = String(args['task-id'] ?? `context-${Date.now()}`)
+    const changedFiles = parseCommaList(args.files)
+    const report = analyzeContextGovernance({
+      projectDir,
+      request: String(args.task ?? ''),
+      changedFiles,
+    })
+    const artifactPath = isTruthyFlag(args.write)
+      ? appendContextGrillArtifact({
+          projectDir,
+          artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']) : undefined,
+          report,
+        }) ?? undefined
+      : undefined
+    if (args['task-id'] || artifactPath) {
+      const writer = new WorkflowArtifactWriter(SCALE_DIR)
+      const current = writer.readCurrentState()
+      const currentOpenTasks = current?.taskId === taskId ? current.openTasks : []
+      writer.updateCurrentState({
+        taskId,
+        phase: 'explore',
+        artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']).replace(/\\/g, '/') : undefined,
+        exploredFiles: changedFiles,
+        fileCount: changedFiles.length,
+        mainContradiction: report.findings[0]?.message ?? 'context governance ready',
+        openTasks: removeWorkflowOpenTask(currentOpenTasks, 'context-grill'),
+      })
+    }
+    if (args.json) {
+      console.log(JSON.stringify({ ...report, artifactPath }, null, 2))
+      return
+    }
+    console.log(renderContextGrillPrompt(report))
+    if (artifactPath) console.log(`\nArtifact: ${artifactPath}`)
+  },
+})
+
 
 const context = defineCommand({
   meta: { name: 'context', description: 'Context assembly' },
-  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary },
+  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary, init: contextInit, grill: contextGrill },
+})
+
+// ============================================================================
+// diagnose command - evidence-first debugging loop
+// ============================================================================
+
+const diagnosePlanCommand = defineCommand({
+  meta: { name: 'plan', description: 'Create a reproducible diagnostic loop before fixing a bug' },
+  args: {
+    'task-id': { type: 'string', required: true },
+    symptom: { type: 'string', required: true },
+    repro: { type: 'string', description: 'Command that reproduces the current failure' },
+    'expected-failure': { type: 'string', description: 'Expected failing behavior or assertion' },
+    files: { type: 'string', description: 'Comma-separated changed or suspicious files' },
+    verify: { type: 'string', description: 'Comma-separated verification commands after the fix' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory where plan.md should be updated' },
+    write: { type: 'boolean', default: false, description: 'Append diagnostic loop output to the task plan artifact' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const changedFiles = parseCommaList(args.files)
+    const loop = createDiagnosticLoop({
+      taskId: String(args['task-id']),
+      symptom: String(args.symptom),
+      reproductionCommand: args.repro ? String(args.repro) : undefined,
+      expectedFailure: args['expected-failure'] ? String(args['expected-failure']) : undefined,
+      changedFiles,
+      verificationCommands: parseCommaList(args.verify),
+    })
+    const validation = validateDiagnosticLoop(loop)
+    const artifactPath = isTruthyFlag(args.write)
+      ? appendDiagnosticLoopArtifact({
+          projectDir: PROJECT_DIR,
+          artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']) : undefined,
+          loop,
+          validation,
+        }) ?? undefined
+      : undefined
+    if (artifactPath || args['artifact-dir']) {
+      const writer = new WorkflowArtifactWriter(SCALE_DIR)
+      const current = writer.readCurrentState()
+      const currentOpenTasks = current?.taskId === loop.taskId ? current.openTasks : []
+      writer.updateCurrentState({
+        taskId: loop.taskId,
+        phase: 'plan',
+        artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']).replace(/\\/g, '/') : undefined,
+        filesModified: changedFiles,
+        openTasks: validation.ready
+          ? removeWorkflowOpenTask(currentOpenTasks.filter(task => task.trim().startsWith('scale ')), 'diagnostic-loop')
+          : uniqueStrings([
+              ...currentOpenTasks,
+              ...validation.blockers,
+            ]),
+      })
+    }
+    if (args.json) {
+      console.log(JSON.stringify({ loop, validation, artifactPath }, null, 2))
+      return
+    }
+    console.log(renderDiagnosticLoopMarkdown(loop))
+    if (!validation.ready) {
+      console.log('\nBlockers:')
+      for (const blocker of validation.blockers) console.log(`  - ${blocker}`)
+    }
+    if (artifactPath) console.log(`\nArtifact: ${artifactPath}`)
+  },
+})
+
+const diagnose = defineCommand({
+  meta: { name: 'diagnose', description: 'Evidence-first debugging workflows' },
+  subCommands: { plan: diagnosePlanCommand },
+})
+
+// ============================================================================
+// tdd command - vertical slice RED/GREEN/REFACTOR loop
+// ============================================================================
+
+const tddSliceCommand = defineCommand({
+  meta: { name: 'slice', description: 'Create and evaluate a TDD vertical slice' },
+  args: {
+    'task-id': { type: 'string', required: true },
+    behavior: { type: 'string', required: true },
+    'public-interface': { type: 'string', required: true },
+    'failing-test': { type: 'string', required: true },
+    'test-file': { type: 'string', required: true },
+    'impl-files': { type: 'string', required: true },
+    'red-exit-code': { type: 'string', description: 'Exit code from the RED command' },
+    'red-summary': { type: 'string', description: 'Short RED output summary' },
+    'green-exit-code': { type: 'string', description: 'Exit code from the GREEN command' },
+    'green-summary': { type: 'string', description: 'Short GREEN output summary' },
+    'refactor-exit-code': { type: 'string', description: 'Exit code from the REFACTOR command' },
+    'refactor-summary': { type: 'string', description: 'Short REFACTOR output summary' },
+    'artifact-dir': { type: 'string', description: 'Task artifact directory where verification.md should be updated' },
+    write: { type: 'boolean', default: false, description: 'Append TDD slice output to the task verification artifact' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const failingTest = String(args['failing-test'])
+    const slice = createTddSlice({
+      taskId: String(args['task-id']),
+      behavior: String(args.behavior),
+      publicInterface: String(args['public-interface']),
+      failingTestCommand: failingTest,
+      testFile: String(args['test-file']),
+      implementationFiles: parseCommaList(args['impl-files']),
+      redEvidence: commandEvidence(failingTest, args['red-exit-code'], args['red-summary']),
+      greenEvidence: commandEvidence(failingTest, args['green-exit-code'], args['green-summary']),
+      refactorEvidence: commandEvidence(failingTest, args['refactor-exit-code'], args['refactor-summary']),
+    })
+    const evaluation = evaluateTddSlice(slice)
+    const artifactPath = isTruthyFlag(args.write)
+      ? appendTddSliceArtifact({
+          projectDir: PROJECT_DIR,
+          artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']) : undefined,
+          slice,
+        }) ?? undefined
+      : undefined
+    let tddStatePath: string | undefined
+    if (slice.redEvidence && slice.greenEvidence && slice.refactorEvidence) {
+      const writer = new WorkflowArtifactWriter(SCALE_DIR)
+      writer.writeTDDEvidence({
+        timestamp: new Date().toISOString(),
+        taskId: slice.taskId,
+        red: slice.redEvidence.exitCode !== 0,
+        green: slice.greenEvidence.exitCode === 0,
+        refactor: slice.refactorEvidence.exitCode === 0,
+        testFirst: slice.redEvidence.exitCode !== 0,
+        testFile: slice.testFile,
+        implFile: slice.implementationFiles[0] ?? '',
+      })
+      writer.updateCurrentState({
+        taskId: slice.taskId,
+        phase: 'verify',
+        artifactsDir: args['artifact-dir'] ? String(args['artifact-dir']).replace(/\\/g, '/') : undefined,
+        filesModified: slice.implementationFiles,
+        openTasks: removeWorkflowOpenTask(writer.readCurrentState()?.openTasks, 'tdd-slice'),
+      })
+      tddStatePath = join(writer.getStateDir(), `tdd-${slice.taskId}.json`)
+    }
+    if (args.json) {
+      console.log(JSON.stringify({ slice, evaluation, artifactPath, tddStatePath }, null, 2))
+      return
+    }
+    console.log(renderTddSliceMarkdown(slice))
+    if (evaluation.blockers.length > 0) {
+      console.log('\nBlockers:')
+      for (const blocker of evaluation.blockers) console.log(`  - ${blocker}`)
+    }
+    if (artifactPath) console.log(`\nArtifact: ${artifactPath}`)
+    if (tddStatePath) console.log(`TDD state: ${tddStatePath}`)
+  },
+})
+
+const tdd = defineCommand({
+  meta: { name: 'tdd', description: 'TDD vertical slice workflows' },
+  subCommands: { slice: tddSliceCommand },
 })
 
 // ============================================================================
@@ -1325,6 +1589,9 @@ const status = defineCommand({
     const latestReviews = reviewStore.listReviews(5)
     const latestTask = tasks[0]
     const taskPayload = latestTask?.payload as { verificationEvidenceIds?: string[]; reviewEvidenceIds?: string[]; reviewPassed?: boolean; reviewedAt?: number; verifiedAt?: number; testPassed?: boolean; lintStatus?: string; testCoverage?: number } | undefined
+    const workflowState = new WorkflowArtifactWriter(SCALE_DIR).readCurrentState()
+    const currentOpenTasks = workflowState?.taskId === latestTask?.id ? workflowState.openTasks ?? [] : []
+    const nextOpenTask = nextWorkflowOpenTask(currentOpenTasks)
 
     const blockers: string[] = []
     const latestBlockingEvidence = latestEvidence.find(record => !record.passed)
@@ -1342,6 +1609,8 @@ const status = defineCommand({
       if (!specs[0]) return 'scale define "<feature>" --description "<what to build>"'
       if (!plans[0]) return `scale plan ${specs[0].id}`
       if (!latestTask) return `scale build ${plans[0].id}`
+      if (nextOpenTask?.kind === 'command') return nextOpenTask.value
+      if (nextOpenTask?.kind === 'blocker') return `Resolve workflow blocker: ${nextOpenTask.value}`
       if (!taskPayload?.verificationEvidenceIds?.length) return `scale verify ${latestTask.id}`
       if (latestTask.status !== 'COMPLETED') return `scale verify ${latestTask.id}`
       if (!taskPayload.reviewEvidenceIds?.length || taskPayload.reviewPassed !== true) return `scale review ${latestTask.id}`
@@ -1380,6 +1649,14 @@ const status = defineCommand({
         summary: record.summary,
         createdAt: record.createdAt,
       })),
+      workflowState: workflowState ? {
+        taskId: workflowState.taskId,
+        level: workflowState.level,
+        phase: workflowState.phase,
+        artifactsDir: workflowState.artifactsDir,
+        openTasks: workflowState.openTasks,
+        skillIntents: workflowState.skillIntents,
+      } : null,
       blockers,
       nextCommand,
     }
@@ -1411,6 +1688,11 @@ const status = defineCommand({
     if (blockers.length > 0) {
       console.log('\nBlockers:')
       for (const blocker of blockers) console.log(`  - ${blocker}`)
+    }
+
+    if (result.workflowState?.openTasks.length) {
+      console.log('\nOpen Tasks:')
+      for (const task of result.workflowState.openTasks) console.log(`  - ${task}`)
     }
 
     console.log(`\nNext: ${nextCommand}`)
@@ -2612,6 +2894,16 @@ const toolRunCommand = defineCommand({
     const report = await result.orchestrator.run(result.plan, {
       dryRun: isTruthyFlag(args['dry-run']),
     })
+    if (toolEvidenceRunCompletesOpenTask(report)) {
+      const writer = new WorkflowArtifactWriter(SCALE_DIR)
+      const current = writer.readCurrentState()
+      if (current?.taskId === report.taskId) {
+        writer.updateCurrentState({
+          taskId: report.taskId,
+          openTasks: removeWorkflowOpenTask(current.openTasks, 'tool-evidence'),
+        })
+      }
+    }
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
     } else {
@@ -2878,6 +3170,8 @@ const main = defineCommand({
     status,
     workflow,
     evidence,
+    diagnose,
+    tdd,
     tool,
     skill,
     skills: skill,

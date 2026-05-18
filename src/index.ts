@@ -102,6 +102,8 @@ export { wireEffects } from './orchestration/EffectsWiring.js'
 
 // Tool Orchestration Governance
 export * from './tools/index.js'
+export * from './workflow/WorkflowGuidance.js'
+export * from './workflow/WorkflowOpenTasks.js'
 
 // Routing
 export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'
@@ -174,6 +176,9 @@ export type { SkillProposal, SkillStep, ISkillCreator, SkillExample, SkillCriter
 export { GrillingSessionManager } from './skills/GrillingSessionSkill.js'
 export type { GrillingSession, GrillingQuestion, GrillingOption, GrillingConclusion } from './skills/GrillingSessionSkill.js'
 export { REQUIREMENT_CLARITY_TREE, DESIGN_DEPTH_TREE, TECH_SELECTION_TREE } from './skills/GrillingTemplates.js'
+export * from './workflow/ContextGovernance.js'
+export * from './workflow/DiagnosticLoop.js'
+export * from './workflow/TddLoop.js'
 
 // Issue Triage FSM (Phase 12 - mattpoclock/skills style)
 export { IssueTriageFSM, ISSUE_TRIAGE_MACHINE } from './tasks/IssueTriageFSM.js'

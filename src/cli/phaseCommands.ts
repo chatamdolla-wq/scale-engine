@@ -22,6 +22,8 @@ import { EvidenceStore } from '../workflow/EvidenceStore.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
 import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
+import { createWorkflowGuidance, renderWorkflowGuidance } from '../workflow/WorkflowGuidance.js'
+import { blockingWorkflowOpenTasks, removeWorkflowOpenTask } from '../workflow/WorkflowOpenTasks.js'
 import { doctorEngineeringStandards, settleEngineeringStandards, type EngineeringStandardFinding, type EngineeringStandardsSummary } from '../workflow/EngineeringStandards.js'
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
 import { inspectWorkspaceLifecycle, type WorkspaceLifecycleReport } from '../workflow/WorkspaceLifecycle.js'
@@ -888,6 +890,16 @@ export const phaseBuild = defineCommand({
       })
     }
 
+    const workflowGuidance = createWorkflowGuidance({
+      taskId: task.id,
+      description: taskPayloadWithSkills.description,
+      level: workflowLevel,
+      artifactDir: taskArtifacts?.relativeDir,
+      files: taskPayloadWithSkills.filesInvolved,
+      skillIntents: taskPayloadWithSkills.skillIntents,
+      requiredSkillVerification: taskPayloadWithSkills.requiredSkillVerification,
+    })
+
     new WorkflowArtifactWriter(SCALE_DIR).updateCurrentState({
       taskId: task.id,
       level: workflowLevel,
@@ -902,6 +914,7 @@ export const phaseBuild = defineCommand({
       recommendedSkills: skillPlan.recommendedSkills,
       requiredSkillArtifacts: skillPlan.requiredArtifacts,
       requiredSkillVerification: skillPlan.requiredVerification,
+      openTasks: workflowGuidance.items.filter(item => item.required).map(item => item.command),
     })
 
     // FSM transitions: PENDING -> READY -> RUNNING
@@ -928,7 +941,7 @@ export const phaseBuild = defineCommand({
       await fsm.transition(args['plan-id'], 'implement', { actor: { kind: 'system', component: 'phase-build' } })
     }
 
-    const result = { phase: 'BUILD', task: { ...task, payload: taskPayloadWithSkills }, status: 'RUNNING', artifactDir: taskArtifacts?.relativeDir, artifactFiles: taskArtifacts?.created ?? [], skillPlan }
+    const result = { phase: 'BUILD', task: { ...task, payload: taskPayloadWithSkills }, status: 'RUNNING', artifactDir: taskArtifacts?.relativeDir, artifactFiles: taskArtifacts?.created ?? [], skillPlan, workflowGuidance }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nBUILD: ${task.id}`)
@@ -938,7 +951,8 @@ export const phaseBuild = defineCommand({
       if (skillPlan.requiredSkills.length) console.log(`   Required skills: ${skillPlan.requiredSkills.join(', ')}`)
       if (skillPlan.recommendedSkills.length) console.log(`   Recommended skills: ${skillPlan.recommendedSkills.join(', ')}`)
       if (taskArtifacts?.relativeDir) console.log(`   Artifacts: ${taskArtifacts.relativeDir}`)
-      console.log(`\n   Implement now, then run: scale verify ${task.id}\n`)
+      console.log(`\n${renderWorkflowGuidance(workflowGuidance)}`)
+      console.log('')
     }
   },
 })
@@ -1112,7 +1126,8 @@ export const phaseVerify = defineCommand({
       verifiedAt: Date.now(),
     }
     await store.update(args['task-id'], { payload: updatedPayload })
-    const workflowState = new WorkflowArtifactWriter(SCALE_DIR).updateCurrentState({
+    const workflowWriter = new WorkflowArtifactWriter(SCALE_DIR)
+    let workflowState = workflowWriter.updateCurrentState({
       taskId: args['task-id'],
       phase: 'verify',
       lastTaskId: args['task-id'],
@@ -1161,9 +1176,11 @@ export const phaseVerify = defineCommand({
       requireEvidence: args['require-tool-evidence'],
       allowSkipped: args['allow-skipped-tool-evidence'],
     })
+    const workflowOpenTaskBlockers = blockingWorkflowOpenTasks(workflowState.openTasks, args['task-id'])
+    const workflowOpenTasksBlocked = workflowOpenTaskBlockers.length > 0
 
     // Attempt FSM transition to COMPLETED
-    // Guards: build_passed, lint_passed, tests_passed, and optional artifact policy.
+    // Guards: build_passed, lint_passed, tests_passed, open workflow tasks, and optional artifact policy.
     const codePassed = results.buildStatus === 'success' &&
                        (results.buildExitCode ?? 1) === 0 &&
                        results.lintStatus === 'success' &&
@@ -1175,7 +1192,8 @@ export const phaseVerify = defineCommand({
       !(skillGate?.blocked ?? false) &&
       !skillInstallationBlocked &&
       !engineeringStandards.blocked &&
-      !(toolEvidenceGate?.blocked ?? false)
+      !(toolEvidenceGate?.blocked ?? false) &&
+      !workflowOpenTasksBlocked
 
     let transitionResult = null
     if (completionEligible) {
@@ -1205,9 +1223,16 @@ export const phaseVerify = defineCommand({
       console.log('\n   Engineering standards gate blocked completion - fix blocking standards findings')
     } else if (!args.json && toolEvidenceGate?.blocked) {
       console.log('\n   Tool evidence gate blocked completion - required tools need passed execution evidence')
+    } else if (!args.json && workflowOpenTasksBlocked) {
+      console.log('\n   Workflow open tasks blocked completion - finish required workflow commands first')
     }
 
     const passed = completionEligible && (transitionResult?.success ?? false)
+    if (passed) {
+      workflowState = workflowWriter.updateCurrentState({
+        openTasks: removeWorkflowOpenTask(workflowState.openTasks, 'verification'),
+      })
+    }
     const verificationArtifactPath = appendVerificationArtifact({
       projectDir: PROJECT_DIR,
       artifactsDir: workflowState.artifactsDir,
@@ -1256,7 +1281,7 @@ export const phaseVerify = defineCommand({
     }
     await store.update(args['task-id'], { payload: finalPayload })
     const metricGateStatus = codePassed &&
-      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked)
+      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked || workflowOpenTasksBlocked)
       ? 'blocked'
       : undefined
     const metricRecord = await recordVerificationMetric({
@@ -1282,6 +1307,11 @@ export const phaseVerify = defineCommand({
       engineeringStandards,
       skillGate: finalSkillGate,
       toolEvidenceGate: finalToolEvidenceGate,
+      workflowOpenTasks: {
+        blocked: workflowOpenTasksBlocked,
+        blockers: workflowOpenTaskBlockers,
+        openTasks: workflowState.openTasks ?? [],
+      },
       skillInstallation: {
         ...skillInstallation,
         checked: requireInstalledSkills,

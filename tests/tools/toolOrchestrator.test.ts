@@ -6,7 +6,7 @@ import { createSkillPlan, resolveSkillRoutingPolicy } from '../../src/skills/rou
 import { inspectToolCapabilities } from '../../src/tools/ToolCapabilityRegistry.js'
 import { ToolEvidenceStore } from '../../src/tools/ToolEvidenceStore.js'
 import { resolveToolPolicy } from '../../src/tools/ToolPolicy.js'
-import { ToolOrchestrator } from '../../src/tools/ToolOrchestrator.js'
+import { ToolOrchestrator, type ToolExecutionPlan } from '../../src/tools/ToolOrchestrator.js'
 
 let dirs: string[] = []
 
@@ -142,5 +142,60 @@ describe('ToolOrchestrator', () => {
       exitCode: 1,
     })
     expect(evidence[0].outputSummary).not.toContain('secret-token-value')
+  })
+
+  it('runs a safe CLI version check with the default executor and records passed evidence', async () => {
+    const projectDir = makeProject()
+    const evidenceStore = new ToolEvidenceStore({ projectDir })
+    const orchestrator = new ToolOrchestrator({
+      projectDir,
+      policy: resolveToolPolicy({ mode: 'evidence-required' }),
+      evidenceStore,
+    })
+    const plan: ToolExecutionPlan = {
+      taskId: 'TASK-CLI',
+      taskName: 'Check external CLI evidence',
+      mode: 'evidence-required',
+      blockers: [],
+      warnings: [],
+      steps: [
+        {
+          id: 'tool-1-node-version',
+          toolId: 'node-version',
+          domain: 'externalCli',
+          adapter: 'cli',
+          required: true,
+          status: 'ready',
+          reason: 'Node is available.',
+          capability: {
+            id: 'node-version',
+            name: 'Node.js',
+            category: 'cli',
+            command: process.execPath,
+            versionArgs: ['--version'],
+            requiredFor: ['externalCli'],
+            installed: true,
+            status: 'installed',
+            checkedPaths: [`PATH:${process.execPath}`],
+          },
+        },
+      ],
+    }
+
+    const report = await orchestrator.run(plan)
+
+    expect(report.ok).toBe(true)
+    expect(report.evidence[0]).toMatchObject({
+      tool: 'node-version',
+      adapter: 'cli',
+      status: 'passed',
+      exitCode: 0,
+    })
+    expect(report.evidence[0].version).toMatch(/^v\d+/)
+    expect(evidenceStore.summary('TASK-CLI')).toMatchObject({
+      total: 1,
+      passed: 1,
+      ok: true,
+    })
   })
 })

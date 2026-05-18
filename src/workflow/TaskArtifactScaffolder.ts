@@ -3,6 +3,9 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { governanceTemplateContent, type GovernanceArtifactTemplateName } from './GovernanceTemplates.js'
 import type { GateResult } from './types.js'
 import { skillPlanMarkdown, type SkillPlan } from '../skills/routing/index.js'
+import { renderContextGrillPrompt, type ContextGovernanceReport } from './ContextGovernance.js'
+import { renderDiagnosticLoopMarkdown, type DiagnosticLoop, type DiagnosticValidation } from './DiagnosticLoop.js'
+import { evaluateTddSlice, renderTddSliceMarkdown, type TddSlice } from './TddLoop.js'
 
 export type TaskArtifactLevel = 'S' | 'M' | 'L' | 'CRITICAL'
 
@@ -38,6 +41,25 @@ export interface TaskArtifactCheckOptions {
   artifactsDir?: string
   level: TaskArtifactLevel
   skillRequiredArtifacts?: string[]
+}
+
+export interface ContextGrillArtifactAppendOptions {
+  projectDir?: string
+  artifactsDir?: string
+  report: ContextGovernanceReport
+}
+
+export interface DiagnosticLoopArtifactAppendOptions {
+  projectDir?: string
+  artifactsDir?: string
+  loop: DiagnosticLoop
+  validation: DiagnosticValidation
+}
+
+export interface TddSliceArtifactAppendOptions {
+  projectDir?: string
+  artifactsDir?: string
+  slice: TddSlice
 }
 
 export interface TaskArtifactIncompleteItem {
@@ -122,6 +144,48 @@ export function appendVerificationArtifact(options: VerificationArtifactAppendOp
   return target
 }
 
+export function appendContextGrillArtifact(options: ContextGrillArtifactAppendOptions): string | null {
+  return appendTaskArtifactSection({
+    projectDir: options.projectDir,
+    artifactsDir: options.artifactsDir,
+    fileName: 'explore.md',
+    title: 'SCALE Context Grill',
+    content: renderContextGrillPrompt(options.report),
+  })
+}
+
+export function appendDiagnosticLoopArtifact(options: DiagnosticLoopArtifactAppendOptions): string | null {
+  const validationLines = [
+    `Ready: ${options.validation.ready}`,
+    ...options.validation.blockers.map(blocker => `Blocker: ${blocker}`),
+    ...options.validation.warnings.map(warning => `Warning: ${warning}`),
+  ]
+  return appendTaskArtifactSection({
+    projectDir: options.projectDir,
+    artifactsDir: options.artifactsDir,
+    fileName: 'plan.md',
+    title: 'SCALE Diagnostic Loop',
+    content: `${renderDiagnosticLoopMarkdown(options.loop)}\n\n## Validation\n${validationLines.map(line => `- ${line}`).join('\n')}`,
+  })
+}
+
+export function appendTddSliceArtifact(options: TddSliceArtifactAppendOptions): string | null {
+  const evaluation = evaluateTddSlice(options.slice)
+  const evaluationLines = [
+    `Ready for implementation: ${evaluation.readyForImplementation}`,
+    `Ready for completion: ${evaluation.readyForCompletion}`,
+    ...evaluation.blockers.map(blocker => `Blocker: ${blocker}`),
+    ...evaluation.warnings.map(warning => `Warning: ${warning}`),
+  ]
+  return appendTaskArtifactSection({
+    projectDir: options.projectDir,
+    artifactsDir: options.artifactsDir,
+    fileName: 'verification.md',
+    title: 'SCALE TDD Vertical Slice',
+    content: `${renderTddSliceMarkdown(options.slice)}\n\n## Evaluation\n${evaluationLines.map(line => `- ${line}`).join('\n')}`,
+  })
+}
+
 export function checkTaskArtifactCompleteness(options: TaskArtifactCheckOptions): TaskArtifactCheckResult {
   if (options.level === 'S') {
     return { complete: true, artifactsDir: options.artifactsDir, required: [], missing: [], incomplete: [] }
@@ -186,6 +250,23 @@ Final Status: ${options.passed ? 'passed' : 'failed'}
 | --- | --- | --- |
 ${rows.length ? rows.join('\n') : '| no command evidence | FAIL | no evidence items recorded |'}
 `
+}
+
+function appendTaskArtifactSection(options: {
+  projectDir?: string
+  artifactsDir?: string
+  fileName: string
+  title: string
+  content: string
+}): string | null {
+  if (!options.artifactsDir) return null
+  const projectDir = resolve(options.projectDir ?? process.cwd())
+  const dir = isAbsolute(options.artifactsDir) ? options.artifactsDir : resolve(projectDir, options.artifactsDir)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const target = join(dir, options.fileName)
+  if (!existsSync(target)) writeFileSync(target, `# ${options.fileName}\n`, 'utf-8')
+  appendFileSync(target, `\n\n## ${options.title} - ${new Date().toISOString()}\n\n${options.content}\n`, 'utf-8')
+  return target
 }
 
 function readTemplate(projectDir: string, name: string): string {

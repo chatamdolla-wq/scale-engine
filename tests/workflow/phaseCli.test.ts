@@ -509,6 +509,60 @@ export function leaky(token: string) {
     expect(verifyResult.metric).toMatchObject({ finalGateStatus: 'blocked' })
   }, 120_000)
 
+  it('blocks verify while required workflow open tasks remain', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'CLI Regression Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'premature verify returns passed false,workflowOpenTasks blocked true,blockers list includes scale context grill',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete generated task artifacts', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Workflow open task guard', '--level', 'M', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      buildResult.task.id,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(verify.exitCode).toBe(0)
+    const verifyResult = parseJson<{
+      passed: boolean
+      workflowOpenTasks: { blocked: boolean; blockers: string[] }
+      metric: { finalGateStatus: string }
+    }>(verify.stdout)
+    expect(verifyResult.passed).toBe(false)
+    expect(verifyResult.workflowOpenTasks).toMatchObject({
+      blocked: true,
+    })
+    expect(verifyResult.workflowOpenTasks.blockers.join('\n')).toContain('scale context grill')
+    expect(verifyResult.metric.finalGateStatus).toBe('blocked')
+  }, 120_000)
+
   it('blocks ship before review, then allows review -> ship --no-commit without changing HEAD', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -531,9 +585,131 @@ export function leaky(token: string) {
 
     const build = await runScale(['build', planId, '--description', 'CLI regression task', '--level', 'L', '--service', 'api,gateway', '--json'], scaleDir, projectDir)
     expect(build.exitCode).toBe(0)
-    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    const buildResult = parseJson<{
+      task: { id: string }
+      artifactDir?: string
+      workflowGuidance: { items: Array<{ id: string; command: string; required: boolean }> }
+    }>(build.stdout)
     const taskId = buildResult.task.id
     expect(buildResult.artifactDir).toContain('docs/worklog/tasks/')
+    expect(buildResult.workflowGuidance.items.map(item => item.id)).toEqual([
+      'context-grill',
+      'diagnostic-loop',
+      'tdd-slice',
+      'verification',
+    ])
+    expect(buildResult.workflowGuidance.items[0].command).toContain('--write')
+    expect(JSON.parse(readFileSync(join(scaleDir, 'state', 'current.json'), 'utf-8'))).toMatchObject({
+      taskId,
+      openTasks: buildResult.workflowGuidance.items.filter(item => item.required).map(item => item.command),
+    })
+    const status = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(status.exitCode).toBe(0)
+    const statusResult = parseJson<{
+      nextCommand: string
+      workflowState: { taskId: string; openTasks: string[] }
+    }>(status.stdout)
+    expect(statusResult.nextCommand).toContain('scale context grill')
+    expect(statusResult.workflowState).toMatchObject({
+      taskId,
+      openTasks: buildResult.workflowGuidance.items.filter(item => item.required).map(item => item.command),
+    })
+    const context = await runScale([
+      'context',
+      'grill',
+      '--task-id',
+      taskId,
+      '--task',
+      'CLI regression task',
+      '--artifact-dir',
+      buildResult.artifactDir!,
+      '--write',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(context.exitCode).toBe(0)
+    expect(parseJson<{ artifactPath?: string }>(context.stdout).artifactPath).toContain(projectDir)
+    const afterContextStatus = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(afterContextStatus.exitCode).toBe(0)
+    expect(parseJson<{ nextCommand: string }>(afterContextStatus.stdout).nextCommand).toContain('scale diagnose plan')
+
+    const incompleteDiagnose = await runScale([
+      'diagnose',
+      'plan',
+      '--task-id',
+      taskId,
+      '--symptom',
+      'CLI regression task',
+      '--artifact-dir',
+      buildResult.artifactDir!,
+      '--write',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(incompleteDiagnose.exitCode).toBe(0)
+    const afterIncompleteDiagnoseStatus = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(afterIncompleteDiagnoseStatus.exitCode).toBe(0)
+    const incompleteStatus = parseJson<{ nextCommand: string; workflowState: { openTasks: string[] } }>(afterIncompleteDiagnoseStatus.stdout)
+    expect(incompleteStatus.nextCommand).toContain('scale diagnose plan')
+    expect(incompleteStatus.workflowState.openTasks.join('\n')).toContain('reproduction command')
+
+    const diagnose = await runScale([
+      'diagnose',
+      'plan',
+      '--task-id',
+      taskId,
+      '--symptom',
+      'CLI regression task',
+      '--repro',
+      'node -v',
+      '--expected-failure',
+      'regression is reproducible',
+      '--verify',
+      'node -v',
+      '--artifact-dir',
+      buildResult.artifactDir!,
+      '--write',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(diagnose.exitCode).toBe(0)
+    const afterDiagnoseStatus = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(afterDiagnoseStatus.exitCode).toBe(0)
+    expect(parseJson<{ nextCommand: string }>(afterDiagnoseStatus.stdout).nextCommand).toContain('scale tdd slice')
+
+    const tdd = await runScale([
+      'tdd',
+      'slice',
+      '--task-id',
+      taskId,
+      '--behavior',
+      'CLI regression task',
+      '--public-interface',
+      'scale build',
+      '--failing-test',
+      'node -v',
+      '--test-file',
+      'tests/workflow/phaseCli.test.ts',
+      '--impl-files',
+      'src/cli/phaseCommands.ts',
+      '--red-exit-code',
+      '1',
+      '--red-summary',
+      'expected command guidance to advance',
+      '--green-exit-code',
+      '0',
+      '--green-summary',
+      'command guidance advances',
+      '--refactor-exit-code',
+      '0',
+      '--refactor-summary',
+      'command guidance stays green',
+      '--artifact-dir',
+      buildResult.artifactDir!,
+      '--write',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(tdd.exitCode).toBe(0)
+    const afterTddStatus = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(afterTddStatus.exitCode).toBe(0)
+    expect(parseJson<{ nextCommand: string }>(afterTddStatus.stdout).nextCommand).toBe(`scale verify ${taskId}`)
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
     const artifactCheck = await runScale(['task-artifacts', 'check', '--dir', buildResult.artifactDir!, '--level', 'L', '--json'], scaleDir, projectDir)
     expect(artifactCheck.exitCode).toBe(1)
@@ -581,6 +757,9 @@ export function leaky(token: string) {
     })
     expect(verifyResult.artifactCheck.complete).toBe(false)
     expect(verifyResult.artifactCheck.incomplete.map(item => item.file)).toContain('mini-prd.md')
+    const afterVerifyStatus = await runScale(['status', '--json'], scaleDir, projectDir)
+    expect(afterVerifyStatus.exitCode).toBe(0)
+    expect(parseJson<{ nextCommand: string }>(afterVerifyStatus.stdout).nextCommand).toBe(`scale review ${taskId}`)
 
     const metrics = await runScale(['metrics', 'list', '--json'], scaleDir, projectDir)
     expect(metrics.exitCode).toBe(0)
@@ -899,7 +1078,7 @@ export function leaky(token: string) {
     expect(plan.exitCode).toBe(0)
     const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
 
-    const build = await runScale(['build', planId, '--description', 'Scoped ship task', '--json'], scaleDir, projectDir)
+    const build = await runScale(['build', planId, '--description', 'Scoped ship task', '--level', 'S', '--json'], scaleDir, projectDir)
     expect(build.exitCode).toBe(0)
     const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
     const taskId = buildResult.task.id

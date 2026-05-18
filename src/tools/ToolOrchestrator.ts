@@ -1,4 +1,5 @@
 import type { SkillPlan } from '../skills/routing/index.js'
+import { execa } from 'execa'
 import { inspectToolCapabilities, TOOL_CAPABILITY_CATALOG, type ToolCapabilityEntry, type ToolCapabilityReport, type ToolCapabilityCategory } from './ToolCapabilityRegistry.js'
 import { ToolEvidenceStore, type ToolEvidenceAdapter, type ToolEvidenceStatus, type ToolRunEvidence } from './ToolEvidenceStore.js'
 import { requiredToolsForDomains, resolveToolPolicy, type ResolvedToolPolicy } from './ToolPolicy.js'
@@ -218,6 +219,7 @@ export class ToolOrchestrator {
 
   private async executeStep(step: ToolExecutionStep, input: Record<string, unknown>): Promise<ToolStepExecutionResult> {
     if (this.executeStepImpl) return this.executeStepImpl(step, input)
+    if (step.adapter === 'cli') return executeCliCapabilityCheck(step)
     return {
       status: 'skipped',
       outputSummary: `No executor configured for ${step.toolId}; evidence recorded as skipped.`,
@@ -243,6 +245,57 @@ function dryRunResult(step: ToolExecutionStep): ToolStepExecutionResult {
     outputPaths: [],
     version: step.capability?.version,
   }
+}
+
+async function executeCliCapabilityCheck(step: ToolExecutionStep): Promise<ToolStepExecutionResult> {
+  const command = step.capability?.command
+  const args = step.capability?.versionArgs ?? ['--version']
+  if (!command) {
+    return {
+      status: 'skipped',
+      outputSummary: `No safe CLI command configured for ${step.toolId}; evidence recorded as skipped.`,
+      outputPaths: [],
+    }
+  }
+
+  try {
+    const result = await execa(command, args, {
+      reject: false,
+      timeout: 10_000,
+      cwd: process.cwd(),
+      env: process.env,
+      stdin: 'ignore',
+    })
+    const stdout = result.stdout.trim()
+    const stderr = result.stderr.trim()
+    const exitCode = result.exitCode ?? 1
+    const outputSummary = summarizeCliOutput(step.toolId, stdout, stderr, exitCode)
+    return {
+      status: exitCode === 0 ? 'passed' : 'failed',
+      outputSummary,
+      outputPaths: [],
+      exitCode,
+      version: stdout.split(/\r?\n/).find(Boolean) ?? step.capability?.version,
+    }
+  } catch (error) {
+    return {
+      status: 'failed',
+      outputSummary: `CLI check failed for ${step.toolId}: ${error instanceof Error ? error.message : String(error)}`,
+      outputPaths: [],
+      exitCode: 1,
+    }
+  }
+}
+
+function summarizeCliOutput(toolId: string, stdout: string, stderr: string, exitCode: number): string {
+  const lines = [`CLI version check for ${toolId} exited with ${exitCode}.`]
+  if (stdout) lines.push(`stdout: ${tail(stdout)}`)
+  if (stderr) lines.push(`stderr: ${tail(stderr)}`)
+  return lines.join(' ')
+}
+
+function tail(value: string): string {
+  return value.split(/\r?\n/).slice(-5).join('\n').slice(0, 1000)
 }
 
 function adapterForCategory(category: ToolCapabilityCategory | undefined): ToolEvidenceAdapter {
