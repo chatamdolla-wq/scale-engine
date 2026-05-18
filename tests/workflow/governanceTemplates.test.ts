@@ -122,6 +122,30 @@ describe('writeGovernanceTemplates', () => {
     })
   })
 
+  it('auto-detects a root Node service for runnable project-scaffold demos', () => {
+    const dir = makeDir()
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: '@demo/small-app',
+      scripts: {
+        build: 'tsc --noEmit',
+        lint: 'tsc --noEmit',
+        test: 'vitest run',
+      },
+    }, null, 2), 'utf-8')
+
+    writeGovernanceTemplates(dir, {
+      mode: 'standard',
+      projectName: 'Small App',
+      pack: 'project-scaffold',
+    })
+
+    const matrix = JSON.parse(readFileSync(join(dir, '.scale', 'verification.json'), 'utf-8'))
+    expect(matrix.profiles.default.services).toEqual(['small-app'])
+    expect(matrix.services).toEqual([
+      { name: 'small-app', path: '.', type: 'node', required: true },
+    ])
+  })
+
   it('generates Go service-matrix verification config', () => {
     const dir = makeDir()
 

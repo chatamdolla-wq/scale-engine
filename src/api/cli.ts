@@ -121,7 +121,7 @@ import {
 } from '../workflow/WorkspaceTopology.js'
 import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { SCALE_ENGINE_VERSION } from '../version.js'
@@ -207,6 +207,8 @@ interface EngineeringStandardsGateStatus {
 
 function evaluateEngineeringStandardsGate(options: {
   policy: VerificationPolicy
+  projectDir?: string
+  scaleDir?: string
   taskId?: string
   artifactsDir?: string
   settle?: boolean
@@ -224,15 +226,15 @@ function evaluateEngineeringStandardsGate(options: {
 
   const settlement = options.settle && options.artifactsDir
     ? settleEngineeringStandards({
-        projectDir: PROJECT_DIR,
-        scaleDir: SCALE_DIR,
+        projectDir: options.projectDir ?? PROJECT_DIR,
+        scaleDir: options.scaleDir ?? SCALE_DIR,
         taskId: options.taskId,
         artifactsDir: options.artifactsDir,
       })
     : undefined
   const doctor = settlement?.doctor ?? doctorEngineeringStandards({
-    projectDir: PROJECT_DIR,
-    scaleDir: SCALE_DIR,
+    projectDir: options.projectDir ?? PROJECT_DIR,
+    scaleDir: options.scaleDir ?? SCALE_DIR,
   })
 
   return {
@@ -294,6 +296,25 @@ function createEngine() {
   })
 
   return { eventBus, store, fsm, gateway, roleGate, kb, ctx, fsmAgentBridge, workflowEngine }
+}
+
+function resolveScaleDirForProject(projectDir: string): string {
+  return isAbsolute(SCALE_DIR) ? SCALE_DIR : join(projectDir, SCALE_DIR)
+}
+
+function createVerificationWorkflowEngine(scaleDir: string): WorkflowEngine {
+  ensureDir(scaleDir)
+  const eventBus = new EventBus({ eventsDir: join(scaleDir, 'events') })
+  const capabilityRegistry = new CapabilityRegistry(eventBus)
+  const skillRegistry = new SkillRegistry(eventBus)
+  registerCoreSkills(skillRegistry)
+  registerExternalSkills(skillRegistry, eventBus)
+  return new WorkflowEngine({
+    eventBus,
+    capabilityRegistry,
+    skillRegistry,
+    scaleDir,
+  })
 }
 
 // ============================================================================
@@ -1520,6 +1541,7 @@ function normalizeWorkspaceTopologyKind(value: unknown): WorkspaceTopologyKind {
 const preflight = defineCommand({
   meta: { name: 'preflight', description: 'Run service-aware verification without a task artifact' },
   args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
     'build-cmd': { type: 'string', description: 'Override build command' },
     'lint-cmd': { type: 'string', description: 'Override lint command' },
     'test-cmd': { type: 'string', description: 'Override test command' },
@@ -1532,12 +1554,14 @@ const preflight = defineCommand({
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
-    const { workflowEngine } = getEngine()
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const workflowEngine = createVerificationWorkflowEngine(scaleDir)
     const preflightProfile = normalizePreflightProfile(args['preflight-profile'])
     const gateStages = gatesForPreflightProfile(preflightProfile)
     const resolved = resolveVerificationTargets({
-      projectDir: PROJECT_DIR,
-      scaleDir: SCALE_DIR,
+      projectDir,
+      scaleDir,
       profile: args.profile,
       service: args.service,
     })
@@ -1547,6 +1571,8 @@ const preflight = defineCommand({
     }
     const engineeringStandards = evaluateEngineeringStandardsGate({
       policy: resolved.policy,
+      projectDir,
+      scaleDir,
     })
 
     const targetResults: Array<{
@@ -1588,7 +1614,7 @@ const preflight = defineCommand({
       const passed = gates.every(gate => gate.passed)
       targetResults.push({
         service: target.service?.name,
-        cwd: target.config.cwd ?? PROJECT_DIR,
+        cwd: target.config.cwd ?? projectDir,
         gates,
         passed,
       })

@@ -36,6 +36,22 @@ async function runScale(args: string[], scaleDir: string, projectDir?: string) {
   })
 }
 
+async function runScaleWithoutProjectEnv(args: string[]) {
+  return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
+    env: {
+      ...process.env,
+      SCALE_DIR: undefined,
+      SCALE_PROJECT_DIR: undefined,
+      SCALE_LOG_LEVEL: undefined,
+      SCALE_VERIFICATION_BUILD_CMD: undefined,
+      SCALE_VERIFICATION_LINT_CMD: undefined,
+      SCALE_VERIFICATION_TEST_CMD: undefined,
+      SCALE_VERIFICATION_COVERAGE_CMD: undefined,
+    },
+    reject: false,
+  })
+}
+
 function parseJson<T = unknown>(stdout: string): T {
   return JSON.parse(stdout) as T
 }
@@ -391,6 +407,54 @@ export function login(token: string) {
     expect(result.passed).toBe(true)
     expect(result.services).toEqual(['api', 'gateway'])
     expect(result.targets.every(target => target.passed)).toBe(true)
+  }, 120_000)
+
+  it('honors --dir for init and preflight without SCALE_PROJECT_DIR', async () => {
+    const projectDir = makeProjectDir()
+    writeFileSync(join(projectDir, 'package.json'), JSON.stringify({
+      name: 'small-scaffold-app',
+      type: 'module',
+      scripts: {
+        build: 'node -v',
+        lint: 'node -v',
+        test: 'node -v',
+      },
+    }, null, 2), 'utf-8')
+
+    const init = await runScaleWithoutProjectEnv([
+      'init',
+      '--dir',
+      projectDir,
+      '--governance-pack',
+      'project-scaffold',
+      '--agent',
+      'codex',
+      '--json',
+    ])
+    expect(init.exitCode).toBe(0)
+
+    const preflight = await runScaleWithoutProjectEnv([
+      'preflight',
+      '--dir',
+      projectDir,
+      '--service',
+      'all',
+      '--preflight-profile',
+      'quick',
+      '--json',
+    ])
+
+    expect(preflight.exitCode).toBe(0)
+    const result = parseJson<{ passed: boolean; services: string[]; targets: Array<{ service: string; cwd: string; passed: boolean }> }>(preflight.stdout)
+    expect(result.passed).toBe(true)
+    expect(result.services).toEqual(['small-scaffold-app'])
+    expect(result.targets).toEqual([
+      expect.objectContaining({
+        service: 'small-scaffold-app',
+        cwd: projectDir,
+        passed: true,
+      }),
+    ])
   }, 120_000)
 
   it('passes governance-only preflight when no services or root commands are configured', async () => {

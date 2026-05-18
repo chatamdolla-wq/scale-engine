@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { skillRoutingPolicyTemplate } from '../skills/routing/SkillPolicy.js'
 import { readGovernanceLock, writeGovernanceLock } from './GovernanceLock.js'
 import {
@@ -59,7 +59,7 @@ export function writeGovernanceTemplates(
   const projectName = options.projectName ?? 'Project'
   const pack = resolveGovernanceTemplatePack(options.pack)
   const packMode = pack.modeDefaults[mode]
-  const services = options.services ?? pack.defaultServices ?? []
+  const services = options.services ?? pack.defaultServices ?? detectRootServices(projectDir, pack.id)
   const exclude = options.exclude ?? pack.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor']
   const result: GovernanceTemplateResult = { created: [], skipped: [] }
   const lockFiles = new Map<string, { path: string; owned: boolean; sha256?: string }>()
@@ -178,6 +178,39 @@ function writePackGeneratedFile(
     : file.content
   const created = writeIfMissing(result, join(projectDir, file.path), content)
   if (created) lockFiles.set(file.path, { path: file.path, owned: file.owned })
+}
+
+function detectRootServices(projectDir: string, packId: GovernancePackId): VerificationService[] {
+  if (packId === 'moe-workspace' || packId === 'go-service-matrix') return []
+  if (existsSync(join(projectDir, 'package.json'))) {
+    return [{ name: detectNodeServiceName(projectDir), path: '.', type: 'node', required: true }]
+  }
+  if (existsSync(join(projectDir, 'go.mod'))) {
+    return [{ name: basename(projectDir) || 'app', path: '.', type: 'go', required: true }]
+  }
+  if (
+    existsSync(join(projectDir, 'pyproject.toml')) ||
+    existsSync(join(projectDir, 'requirements.txt')) ||
+    existsSync(join(projectDir, 'setup.py'))
+  ) {
+    return [{ name: basename(projectDir) || 'app', path: '.', type: 'python', required: true }]
+  }
+  return []
+}
+
+function detectNodeServiceName(projectDir: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf-8')) as { name?: unknown }
+    const raw = typeof pkg.name === 'string' ? pkg.name : ''
+    const normalized = raw
+      .replace(/^@[^/]+\//, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (normalized) return normalized
+  } catch {
+    // Fall back to the directory name when package.json is absent or malformed.
+  }
+  return basename(projectDir) || 'app'
 }
 
 function shouldUseGeneratedHeader(file: GovernanceGeneratedFile): boolean {
