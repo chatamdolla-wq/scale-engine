@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.20.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.21.1-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.20.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.21.1-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.20.0
+# SCALE Engine v0.21.1
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 

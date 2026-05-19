@@ -1,34 +1,31 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.20.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.21.1-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.20.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.21.1-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.20.0
+# SCALE Engine v0.21.1
 
-SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么不能交付。
+SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
 源码仓库：https://github.com/hongmaple0820/scale-engine
 国内镜像：https://gitee.com/hongmaple/scale-engine
 npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 语言：[中文](README.md) | [English](README.en.md)
 
-## 🌐 社区与推广
+## 社区与推广
 
 ### 链接
 
 | 平台 | 链接 | 说明 |
 |------|------|------|
-| 🌐 **官网** | [https://scale-os.vercel.app](https://scale-os.vercel.app) | 在线配置器 + 完整文档 |
-| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-os](https://github.com/hongmaple0820/scale-os) | 源码 + Issues + PR |
+| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | 源码 + Issues + PR |
 | 🔧 **Gitee** | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像 |
 | 📦 **npm** | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | 包下载 |
-| 🧰 **项目脚手架** | [https://github.com/hongmaple0820/project-scaffold](https://github.com/hongmaple0820/project-scaffold) | 工程化工作流实践脚手架 |
-
 ## 它解决什么问题
 
 AI 编码真正难的不是“写代码”，而是持续稳定地遵守工程纪律：

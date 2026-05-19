@@ -6,11 +6,9 @@ SCALE Engine 是工程化 Agent 工作流与项目治理引擎。社区入口统
 
 | 平台 | 链接 | 说明 |
 |------|------|------|
-| 🌐 **官网** | [https://scale-os.vercel.app](https://scale-os.vercel.app) | 在线配置器 + 完整文档 |
-| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-os](https://github.com/hongmaple0820/scale-os) | 源码 + Issues + PR |
+| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | 源码 + Issues + PR |
 | 🔧 **Gitee** | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像 |
 | 📦 **npm** | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | 包下载 |
-| 🧰 **项目脚手架** | [https://github.com/hongmaple0820/project-scaffold](https://github.com/hongmaple0820/project-scaffold) | 工程化工作流实践脚手架 |
 
 ## 参与方式
 
