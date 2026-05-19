@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.18.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.20.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.18.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.20.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.18.0
+# SCALE Engine v0.20.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -240,6 +240,20 @@ npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.
 ```
 
 ## Release Notes
+
+### v0.20.0
+
+- Added Context Budget and Progressive Governance so low-risk S tasks stay lightweight while auth, data, security, deployment, and cross-module changes escalate automatically.
+- Added Code Intelligence with adapter-first CodeGraph / Graphify support, explicit fallback, impact analysis, context recommendations, and exploration ROI.
+- Added Workflow Eval, Failure Replay, and improvement candidates with pass@k, fix iterations, tool-call counts, token estimates, and human-correction metrics.
+- Added Skill Radar for intent-based skills, MCP, browser, desktop automation, and external CLI recommendations with confidence, safety level, and evidence requirements.
+- Added Memory Brain for evidence-backed long-term memory candidates, contradiction detection, dream maintenance, explicit promotion, and failure replay ingestion.
+- Added Governance Dashboard to summarize runtime, eval, memory, resource, and HTML artifact evidence in a local HTML review surface.
+- Fixed new `--dir` aware commands so relative `.scale` state resolves inside the target project instead of the caller workspace.
+
+### v0.19.0
+
+- Added product smoke gates, runtime evidence learning settlement, memory context packs, workspace conflict blockers, and release-readiness demo coverage.
 
 ### v0.18.0
 

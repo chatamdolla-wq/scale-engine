@@ -1,0 +1,87 @@
+# Context Budget And Progressive Governance
+
+Status: implemented baseline
+Since: v0.20 development branch
+
+This feature keeps SCALE from becoming its own context pollution source. It separates always-loaded rules from on-demand documents, runtime evidence, historical archives, and generated artifacts.
+
+## Commands
+
+Report token cost by context category:
+
+```bash
+scale context budget --json
+```
+
+Write the report to `.scale/context-budget.json`:
+
+```bash
+scale context budget --write
+```
+
+Check thresholds:
+
+```bash
+scale context doctor --max-always 2500 --max-task 8000
+```
+
+Build a lazy-loaded task context pack:
+
+```bash
+scale context pack \
+  --task "Review frontend route with browser evidence" \
+  --level L \
+  --files src/routes/upload.tsx \
+  --budget 4000 \
+  --json
+```
+
+Evaluate progressive governance mode:
+
+```bash
+scale governance mode \
+  --task "Change auth permissions and database migration" \
+  --files src/auth/user.ts,migrations/001.sql \
+  --requested-mode minimal \
+  --json
+```
+
+Report governance benefit and overhead:
+
+```bash
+scale governance roi \
+  --task-id TASK-123 \
+  --task "Review frontend route with browser evidence" \
+  --files src/routes/upload.tsx \
+  --json
+```
+
+## Categories
+
+| Category | Meaning | Loading Policy |
+| --- | --- | --- |
+| `always` | Tiny entrypoint rules and source-of-truth governance config | Keep under strict token budget |
+| `on-demand` | Domain docs and governance guides | Load only when task trigger matches |
+| `evidence` | Runtime evidence and task artifacts | Summarize and reference by path |
+| `archive` | Historical plans and old roadmap context | Do not load unless explicitly requested |
+| `generated` | HTML reports, screenshots, graph outputs, generated artifacts | Keep manifest-only by default |
+
+## Progressive Governance
+
+SCALE now has a baseline risk classifier. It keeps low-risk documentation work in `minimal` mode and escalates risky tasks to `standard`, `expanded`, or `critical`.
+
+Examples:
+
+| Signal | Mode |
+| --- | --- |
+| README typo | `minimal` |
+| normal implementation task | `standard` |
+| UI, browser, E2E, public interface, or cross-module work | `expanded` |
+| auth, permission, secret, database, migration, production config, release, or destructive operation | `critical` |
+
+This is not a replacement for verification. It only decides which governance behavior should activate.
+
+## Governance ROI
+
+`scale governance roi` reports both benefit and overhead. Early ROI is estimated from context budget and risk signals. Later versions should replace estimates with measured eval data such as file reads saved, tool calls saved, fix iterations reduced, and human corrections avoided.
+

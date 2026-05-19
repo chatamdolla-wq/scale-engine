@@ -1,6 +1,6 @@
 # SCALE Engine 文档地图
 
-这个目录同时包含用户指南、参考文档、历史规划和推广材料。为了避免新用户迷路，请按下面的分层阅读。
+这个目录同时包含用户指南、治理能力说明、架构参考、历史规划和推广素材。新用户应优先阅读入门入口和当前治理能力文档，历史规划仅作为背景材料。
 
 ## 新用户入口
 
@@ -20,10 +20,16 @@
 | [TOOL_ORCHESTRATION.md](TOOL_ORCHESTRATION.md) | skills、MCP、CLI、浏览器、桌面自动化的编排策略 |
 | [RUNTIME_EVIDENCE.md](RUNTIME_EVIDENCE.md) | 会话 ledger、运行时证据和最终交付检查 |
 | [MEMORY_FABRIC.md](MEMORY_FABRIC.md) | Runtime evidence、session events、knowledge recall 和 graph status 的预算化上下文包 |
+| [MEMORY_BRAIN.md](MEMORY_BRAIN.md) | 证据驱动的长期记忆、矛盾检测、dream 整理和 failure replay 沉淀 |
+| [CONTEXT_BUDGET.md](CONTEXT_BUDGET.md) | Context Budget、Progressive Governance、Lazy Loading 和 Governance ROI |
+| [CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md) | CodeGraph、Graphify 和显式 fallback 的代码智能与探索 ROI |
+| [WORKFLOW_EVAL.md](WORKFLOW_EVAL.md) | Workflow Eval、pass@k 指标、Failure Replay 和改进候选 |
+| [SKILL_RADAR.md](SKILL_RADAR.md) | Skill Radar、能力置信度、证据要求和供应链安全检查 |
+| [GOVERNANCE_DASHBOARD.md](GOVERNANCE_DASHBOARD.md) | Runtime、eval、memory、resource、HTML artifact 的统一治理面板 |
 | [RELEASE_READINESS.md](RELEASE_READINESS.md) | 发版前质量门槛、官方 demo 和真实项目落地验收 |
 | [SKILL-REPOSITORY.md](SKILL-REPOSITORY.md) | 受治理 skill repository 和安装安全策略 |
 | [VIBE-TEMPLATES.md](VIBE-TEMPLATES.md) | 可复制的 Vibe Coding 提示词模板 |
-| [LEADERSHIP-PRESETS.md](LEADERSHIP-PRESETS.md) | CEO/CTO/PM/Architect 等内置领导者角色预设 |
+| [LEADERSHIP-PRESETS.md](LEADERSHIP-PRESETS.md) | CEO、CTO、PM、Architect 等内置领导者角色预设 |
 
 ## 架构与参考
 
@@ -47,6 +53,7 @@
 | [WEEK1-2-REPORT.md](WEEK1-2-REPORT.md) | 阶段报告 |
 | [TASK_GUARD_SUMMARY.md](TASK_GUARD_SUMMARY.md) | Task Guard 总结 |
 | [TASK_GUARD_WORKFLOW_DEMO.md](TASK_GUARD_WORKFLOW_DEMO.md) | 早期 workflow demo |
+| [plans/2026-05-19-agent-engineering-os-upgrade-plan.md](plans/2026-05-19-agent-engineering-os-upgrade-plan.md) | Agent Engineering OS 升级审核稿：Context Budget、CodeGraph、Memory Brain、Skill Radar、HTML Artifact 和 Eval Harness |
 | [plans/](plans/) | 规划方案和技术方案归档 |
 | [superpowers/](superpowers/) | 外部方法论对照和计划归档 |
 
@@ -54,15 +61,16 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [promote-article-v3.md](promote-article-v3.md) | 推广文章草稿 |
-| [promote-article-v3.html](promote-article-v3.html) | 推广文章 HTML 版本 |
+| [promote-article-v2.md](promote-article-v2.md) | 推广文章草稿 v2 |
+| [promote-article-v2.html](promote-article-v2.html) | 推广文章 HTML v2 |
+| [promote-article-v3.md](promote-article-v3.md) | 推广文章草稿 v3 |
+| [promote-article-v3.html](promote-article-v3.html) | 推广文章 HTML v3 |
 | [imgs/](imgs/) | 社群二维码和推广图片 |
 
 ## 维护规则
 
 - 面向新用户的文档优先放在 `docs/start/`。
 - 当前可执行能力放在根 README 和当前治理能力文档中。
-- 历史规划不要混入新手教程，避免用户把旧计划当当前事实。
-- 如果 CLI 行为变化，必须同步更新 README、`docs/start/quickstart.md` 和相关 reference 文档。
-- 如果新增 governance pack，必须同时更新 README、`docs/start/README.md` 和对应测试。
-
+- 历史规划不要混入新手教程，避免用户把旧计划当成当前事实。
+- 如果 CLI 行为变化，必须同步更新 `README.md`、`docs/start/quickstart.md` 和相关 reference 文档。
+- 如果新增 governance pack，必须同时更新 `README.md`、`docs/start/README.md` 和对应测试。

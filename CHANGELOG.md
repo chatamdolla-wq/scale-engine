@@ -1,3 +1,27 @@
+## 0.20.0 - 2026-05-19
+
+### Agent Engineering OS governance
+
+- Added Context Budget and Progressive Governance commands so agents can keep S-level work lightweight while escalating risky auth, data, security, deployment, and cross-module tasks.
+- Added Code Intelligence with adapter-first CodeGraph/Graphify support, explicit source-scan fallback, impact/context queries, and exploration ROI metrics.
+- Added Workflow Eval with baseline suites, pass@k metrics, token/tool-call counters, Failure Replay records, comparison reports, and improvement candidates.
+- Added Skill Radar with capability confidence, safety level, evidence requirements, supply-chain checks, and guarded recommendations for UI/UX, browser, desktop, MCP, and external CLI work.
+- Added Memory Brain for evidence-backed long-term memory, contradiction detection, dream maintenance, promotion review, export/import, and Failure Replay incident ingestion.
+- Added Governance Dashboard to render runtime evidence, eval failures, memory health, resource findings, and HTML artifacts into a local review HTML report.
+
+### Cross-project correctness
+
+- Fixed new `--dir` aware commands so relative `.scale` state resolves inside the target project when `SCALE_DIR` is not set.
+- Restored the docs index as readable UTF-8 Chinese and added entries for the new governance modules.
+- Included new governance reference docs in the npm package manifest.
+
+### Verification
+
+- Added CLI coverage for context budget, progressive governance, code intelligence, workflow eval, skill radar, memory brain, and governance dashboard.
+- Verified the final local release candidate with build, lint, full Vitest suite, `npm pack --dry-run`, and `git diff --check`.
+
+---
+
 ## 0.19.0 - 2026-05-19
 
 ### Runtime evidence and product smoke gates

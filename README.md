@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.18.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.20.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.18.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.20.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.18.0
+# SCALE Engine v0.20.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么不能交付。
 
@@ -190,6 +190,102 @@ scale memory settle --task "Fix OAuth callback state lookup" --task-id <task-id>
 
 详见 [Memory Fabric](docs/MEMORY_FABRIC.md)。
 
+## Context Budget 与 Progressive Governance
+
+Context Budget 会把 always-loaded、on-demand、evidence、archive、generated 上下文分开统计，避免 Agent 把所有规则、历史方案、报告和生成物一次性塞进提示词。
+
+```bash
+scale context budget --json
+scale context doctor --max-always 2500 --max-task 8000
+scale context pack --task "Review frontend route with browser evidence" --level L --budget 4000 --json
+```
+
+Progressive Governance 会根据任务文本和变更文件自动推荐 `minimal`、`standard`、`expanded` 或 `critical` 治理模式，并用 ROI 报告解释治理收益和开销：
+
+```bash
+scale governance mode --task "Change auth permissions" --files src/auth/user.ts --requested-mode minimal --json
+scale governance roi --task-id <task-id> --task "Review frontend route" --files src/routes/upload.tsx --json
+```
+
+详见 [Context Budget And Progressive Governance](docs/CONTEXT_BUDGET.md)。
+
+## Code Intelligence 与探索 ROI
+
+Code Intelligence 是 adapter-first 的代码理解层：优先消费外部 CodeGraph 或 Graphify 产物，缺失时明确降级到内部 source scan，不静默假装已经完成代码图谱分析。
+
+```bash
+scale codegraph init
+scale codegraph status --json
+scale codegraph query "UserService.create" --json
+scale codegraph impact --symbol UserService.create --json
+scale codegraph context --symbol UserService.create --budget 2000 --json
+scale codegraph roi --symbol UserService.create --json
+```
+
+它会输出 provider、fallback 状态、相关文件、confidence，以及 `fileReadsSaved` / `toolCallsSaved` 等探索收益指标。`scale governance roi` 也可以通过 `--symbol` 或 `--code-query` 把代码智能纳入治理 ROI。
+
+详见 [Code Intelligence](docs/CODE_INTELLIGENCE.md)。
+
+## Workflow Eval 与 Failure Replay
+
+Workflow Eval 用轻量套件衡量工作流是否真的减少返工、工具调用、token 消耗和人类纠偏。失败时会保留 Failure Replay，而不是只留下一个失败状态。
+
+```bash
+scale eval init
+scale eval run --suite workflow-baseline --json
+scale eval compare --baseline <run-id> --candidate <run-id> --json
+scale eval failures --since 30d --json
+scale eval promote-failure <failure-id>
+```
+
+默认产物写入 `.scale/evals/`，属于本地运行时证据。长期提交到 Git 的应是经过整理的报告、基准 fixture 或明确要沉淀的改进项。
+
+详见 [Workflow Eval Harness](docs/WORKFLOW_EVAL.md)。
+
+## Skill Radar
+
+Skill Radar chooses skills, MCP, browser automation, desktop automation, and external CLIs by task intent instead of relying on a static prompt list. It returns confidence, safety level, evidence requirements, and fallback behavior so agents can actively use tools without silently crossing safety boundaries.
+
+```bash
+scale skill radar --task "Design upload UI and run browser E2E checks" --files src/pages/upload.tsx
+scale skill radar --task "Automate WPS desktop workflow with CUA" --json
+scale skill doctor --supply-chain
+```
+
+Desktop CUA and external agent CLIs are blocked by default through Tool Policy until deliberately enabled. Third-party skills stay review-required until source, scripts, license, and pinned revision are checked.
+
+See [Skill Radar](docs/SKILL_RADAR.md).
+
+## Memory Brain
+
+Memory Brain stores long-term project knowledge separately from the short context pack. Runtime evidence and learning candidates enter as candidates first; active memory requires evidence paths, project scope, confidence, and explicit promotion.
+
+```bash
+scale memory ingest --from evidence --task-id <task-id>
+scale memory ingest --from failure --failure-id <failure-replay-id>
+scale memory query "OAuth callback state design"
+scale memory contradictions --json
+scale memory dream --json
+scale memory promote <candidate-id>
+```
+
+The point is not to remember everything. The point is to keep useful, reviewed project facts while reporting contradictions instead of silently overwriting them.
+
+See [Memory Brain](docs/MEMORY_BRAIN.md).
+
+## Governance Dashboard
+
+Governance Dashboard renders a local HTML health view from runtime evidence, Workflow Eval, Memory Brain, Resource Governance, and task HTML artifacts:
+
+```bash
+scale artifact dashboard
+scale artifact dashboard --task-id <task-id> --json
+```
+
+Default output is `.scale/reports/governance-dashboard.html`. Markdown and JSON remain the maintainable source of truth; the dashboard is a review surface for humans.
+
+See [Governance Dashboard](docs/GOVERNANCE_DASHBOARD.md).
+
 ## Runtime Evidence
 
 M/L/CRITICAL 任务在最终交付前应留下运行时证据，避免 Agent 没有真实验证就声称完成：
@@ -297,13 +393,15 @@ npx vitest run tests/workflow/phaseCli.test.ts
 npx vitest run tests/workflow/reviewAnalyzer.test.ts tests/workflow/reviewStore.test.ts tests/workflow/gateSystem.test.ts
 ```
 
-## Unreleased
+## v0.20.0 Updates
 
-- 新增 Runtime Evidence + Memory Fabric：`scale runtime start/end/record/doctor/final-check` 和 `scale memory pack/doctor/settle`。
-- `memory settle` 会把真实运行证据沉淀为本地学习候选，默认需要人审后才能进入长期知识库或工程规范。
-- 官方 demo 已加入 runtime evidence、memory settle 和 HTML artifact 的完整闭环 smoke 测试。
-- 修复绝对 `SCALE_DIR` 在 resource governance 和 engineering standards 中被错误拼到项目目录下的问题。
-- 发版前质量门槛见 [Release Readiness](docs/RELEASE_READINESS.md)，官方 demo 必须跑通完整闭环后再发版。
+- Added Context Budget and Progressive Governance so low-risk S tasks stay lightweight while auth, data, security, deployment, and cross-module changes escalate automatically.
+- Added Code Intelligence with adapter-first CodeGraph / Graphify support, explicit fallback, impact analysis, context recommendations, and exploration ROI.
+- Added Workflow Eval, Failure Replay, and improvement candidates with pass@k, fix iterations, tool-call counts, token estimates, and human-correction metrics.
+- Added Skill Radar for intent-based skills, MCP, browser, desktop automation, and external CLI recommendations with confidence, safety level, and evidence requirements.
+- Added Memory Brain for evidence-backed long-term memory candidates, contradiction detection, dream maintenance, explicit promotion, and failure replay ingestion.
+- Added Governance Dashboard to summarize runtime, eval, memory, resource, and HTML artifact evidence in a local HTML review surface.
+- Fixed new --dir-aware commands so relative .scale state resolves inside the target project instead of the caller workspace.
 
 ## v0.18.0 更新
 

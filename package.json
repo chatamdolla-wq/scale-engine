@@ -1,6 +1,6 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "Executable AI agent governance with workflow gates, evidence, skill/tool orchestration, and traceable HTML artifacts",
   "type": "module",
   "bin": {
@@ -17,6 +17,12 @@
   "files": [
     "dist",
     "docs/README.md",
+    "docs/CODE_INTELLIGENCE.md",
+    "docs/CONTEXT_BUDGET.md",
+    "docs/WORKFLOW_EVAL.md",
+    "docs/SKILL_RADAR.md",
+    "docs/MEMORY_BRAIN.md",
+    "docs/GOVERNANCE_DASHBOARD.md",
     "docs/MEMORY_FABRIC.md",
     "docs/RUNTIME_EVIDENCE.md",
     "docs/start",

@@ -33,6 +33,15 @@ export type {
 } from './UIPrototypeRenderer.js'
 
 export {
+  renderGovernanceDashboard,
+} from './GovernanceDashboard.js'
+export type {
+  GovernanceDashboardOptions,
+  GovernanceDashboardResult,
+  GovernanceDashboardSummary,
+} from './GovernanceDashboard.js'
+
+export {
   HTML_ARTIFACT_TYPES,
   defaultHtmlArtifactPolicy,
   doctorHtmlArtifacts,

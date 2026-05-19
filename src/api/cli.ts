@@ -13,6 +13,26 @@ import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '.
 import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
 import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
+import {
+  buildContextPack,
+  doctorContextBudget,
+  scanContextBudget,
+  writeContextBudgetReport,
+} from '../context/ContextBudget.js'
+import {
+  buildCodeGraphContext,
+  createCodeGraphRoiReport,
+  impactCodeGraph,
+  inspectCodeIntelligence,
+  queryCodeGraph,
+  writeCodeIntelligenceConfig,
+} from '../codegraph/CodeIntelligence.js'
+import {
+  WorkflowEvalStore,
+  compareWorkflowEvalRuns,
+  renderWorkflowEvalReport,
+  runWorkflowEvalSuite,
+} from '../eval/WorkflowEval.js'
 import { FSMAgentBridge, type FSMContextSnapshot } from '../fsm/FSMAgentBridge.js'
 import { CapabilityRegistry } from '../capabilities/CapabilityRegistry.js'
 import { SkillRegistry } from '../skills/SkillRegistry.js'
@@ -31,6 +51,11 @@ import {
   recommendSkillWorkflow,
   renderSkillRepositoryMarkdown,
 } from '../skills/SkillRepository.js'
+import {
+  evaluateSkillRadar,
+  inspectSkillSupplyChain,
+  renderSkillRadarMarkdown,
+} from '../skills/SkillRadar.js'
 import { listLeadershipPresets, renderLeadershipPresetsMarkdown } from '../agents/LeadershipPresets.js'
 import { listWorkflowPresets, getPresetsByScenario } from '../workflows/presets.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
@@ -45,6 +70,8 @@ import {
 } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
+import { createGovernanceRoiReport } from '../governance/GovernanceRoi.js'
+import { evaluateProgressiveGovernance, normalizeGovernanceMode } from '../governance/ProgressiveGovernance.js'
 import {
   baselineEngineeringStandards,
   doctorEngineeringStandards,
@@ -91,6 +118,7 @@ import {
   resolveHtmlArtifactForOpen,
   settleHtmlArtifacts,
 } from '../output/HTMLArtifactLayer.js'
+import { renderGovernanceDashboard } from '../output/GovernanceDashboard.js'
 import {
   cleanupWorkspaceLifecycle,
   inspectWorkspaceLifecycle,
@@ -109,6 +137,7 @@ import {
 } from '../runtime/index.js'
 import {
   MemoryFabric,
+  MemoryBrain,
   doctorMemoryFabric,
   renderContextPackMarkdown,
   renderMemoryLearningCandidateMarkdown,
@@ -122,7 +151,7 @@ import {
 } from '../workflow/WorkspaceTopology.js'
 import type { GateResult, GateStage } from '../workflow/types.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { SCALE_ENGINE_VERSION } from '../version.js'
@@ -1054,10 +1083,562 @@ const contextGrill = defineCommand({
   },
 })
 
+function parsePositiveIntArg(value: unknown, name: string): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const parsed = Number.parseInt(String(value), 10)
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`)
+  }
+  return parsed
+}
+
+const contextBudget = defineCommand({
+  meta: { name: 'budget', description: 'Report Always/on-demand/evidence/archive/generated context token cost' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'max-always': { type: 'string', description: 'Maximum Always-loaded estimated tokens' },
+    'max-task': { type: 'string', description: 'Maximum task context estimated tokens' },
+    write: { type: 'boolean', default: false, description: 'Write .scale/context-budget.json' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = scanContextBudget({
+      projectDir,
+      scaleDir,
+      maxAlwaysTokens: parsePositiveIntArg(args['max-always'], '--max-always'),
+      maxTaskTokens: parsePositiveIntArg(args['max-task'], '--max-task'),
+    })
+    const path = isTruthyFlag(args.write) ? writeContextBudgetReport(report) : undefined
+    if (args.json) {
+      console.log(JSON.stringify({ ...report, path }, null, 2))
+      return
+    }
+    console.log('SCALE Context Budget')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Total: ${report.summary.totalTokens} estimated tokens across ${report.summary.totalFiles} files`)
+    console.log(`  Always: ${report.summary.alwaysTokens}/${report.thresholds.maxAlwaysTokens}`)
+    for (const [category, summary] of Object.entries(report.summary.byCategory)) {
+      console.log(`  ${category}: ${summary.tokens} tokens in ${summary.files} files`)
+    }
+    for (const recommendation of report.recommendations) console.log(`  recommendation: ${recommendation}`)
+    if (path) console.log(`  wrote: ${path}`)
+  },
+})
+
+const contextPack = defineCommand({
+  meta: { name: 'pack', description: 'Build a lazy-loaded context pack for a task' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    task: { type: 'string', required: true, description: 'Current task or question' },
+    'task-id': { type: 'string', description: 'Task id' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated files or modules in scope' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context pack' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const pack = buildContextPack({
+      projectDir,
+      scaleDir,
+      task: String(args.task),
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      level: String(args.level ?? 'M'),
+      files: parseCommaList(args.files),
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(pack, null, 2))
+      return
+    }
+    console.log('SCALE Context Pack')
+    console.log(`  Task: ${pack.task.task}`)
+    console.log(`  Budget: ${pack.totalEstimatedTokens}/${pack.task.budget}`)
+    for (const section of pack.sections) {
+      console.log(`  [${section.included ? 'IN' : 'OUT'}] ${section.id}: ${section.estimatedTokens} tokens`)
+    }
+  },
+})
+
+const contextDoctor = defineCommand({
+  meta: { name: 'doctor', description: 'Check context budget thresholds and generated-artifact loading risk' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'max-always': { type: 'string', description: 'Maximum Always-loaded estimated tokens' },
+    'max-task': { type: 'string', description: 'Maximum task context estimated tokens' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = doctorContextBudget({
+      projectDir,
+      scaleDir,
+      maxAlwaysTokens: parsePositiveIntArg(args['max-always'], '--max-always'),
+      maxTaskTokens: parsePositiveIntArg(args['max-task'], '--max-task'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE Context Doctor: ${report.ok ? 'OK' : 'FAILED'}`)
+    for (const check of report.checks) {
+      console.log(`  [${check.status.toUpperCase()}] ${check.name}: ${check.message}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 
 const context = defineCommand({
   meta: { name: 'context', description: 'Context assembly' },
-  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary, init: contextInit, grill: contextGrill },
+  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary, init: contextInit, grill: contextGrill, budget: contextBudget, pack: contextPack, doctor: contextDoctor },
+})
+
+// ============================================================================
+// codegraph command - Adapter-first code intelligence
+// ============================================================================
+
+const codegraphStatus = defineCommand({
+  meta: { name: 'status', description: 'Inspect CodeGraph, Graphify, and fallback code intelligence providers' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = inspectCodeIntelligence({
+      projectDir,
+      scaleDir,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Code Intelligence Status')
+    console.log(`  Config: ${report.configPath} (${report.configExists ? 'found' : 'default'})`)
+    for (const provider of report.providers) {
+      console.log(`  [${provider.available ? 'AVAILABLE' : 'UNAVAILABLE'}] ${provider.id} (${provider.type}): ${provider.reason}`)
+    }
+    console.log(`  Fallback: ${report.fallback.available ? 'available' : 'disabled'} (${report.fallback.tools.join(', ')})`)
+    for (const recommendation of report.recommendations) console.log(`  recommendation: ${recommendation}`)
+  },
+})
+
+const codegraphInit = defineCommand({
+  meta: { name: 'init', description: 'Create .scale/code-intelligence.json provider configuration' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    force: { type: 'boolean', default: false, description: 'Overwrite existing configuration' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const result = writeCodeIntelligenceConfig({
+      projectDir,
+      scaleDir,
+      force: isTruthyFlag(args.force),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log(`SCALE Code Intelligence Config: ${result.written ? 'written' : 'exists'}`)
+    console.log(`  ${result.path}`)
+  },
+})
+
+const codegraphQuery = defineCommand({
+  meta: { name: 'query', description: 'Query code intelligence providers, with explicit fallback when graph data is unavailable' },
+  args: {
+    query: { type: 'positional', required: true, description: 'Symbol, function, class, route, or text query' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = queryCodeGraph({
+      projectDir,
+      scaleDir,
+      query: String(args.query),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    printCodeGraphReport(report)
+  },
+})
+
+const codegraphImpact = defineCommand({
+  meta: { name: 'impact', description: 'Find likely impacted files for a symbol' },
+  args: {
+    symbol: { type: 'string', required: true, description: 'Symbol to analyze' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = impactCodeGraph({
+      projectDir,
+      scaleDir,
+      symbol: String(args.symbol),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    printCodeGraphReport(report)
+  },
+})
+
+const codegraphContext = defineCommand({
+  meta: { name: 'context', description: 'Build a budgeted file context recommendation from code intelligence' },
+  args: {
+    symbol: { type: 'string', required: true, description: 'Symbol to analyze' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for recommended files' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = buildCodeGraphContext({
+      projectDir,
+      scaleDir,
+      symbol: String(args.symbol),
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    printCodeGraphReport(report)
+    console.log(`  Context budget: ${report.totalEstimatedTokens}/${report.budget}`)
+    for (const file of report.contextFiles) {
+      console.log(`  [${file.included ? 'IN' : 'OUT'}] ${file.path}: ${file.estimatedTokens} tokens`)
+    }
+  },
+})
+
+const codegraphRoi = defineCommand({
+  meta: { name: 'roi', description: 'Estimate exploration ROI from code intelligence or fallback query results' },
+  args: {
+    query: { type: 'string', description: 'Text query' },
+    symbol: { type: 'string', description: 'Symbol to analyze' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    if (!args.query && !args.symbol) throw new Error('Provide --query or --symbol.')
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = createCodeGraphRoiReport({
+      projectDir,
+      scaleDir,
+      query: args.query ? String(args.query) : undefined,
+      symbol: args.symbol ? String(args.symbol) : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Code Intelligence ROI')
+    console.log(`  Query: ${report.query}`)
+    console.log(`  Provider: ${report.provider ?? 'fallback'}`)
+    console.log(`  Fallback: ${report.fallbackUsed}`)
+    console.log(`  Graph hits: ${report.metrics.graphHits}`)
+    console.log(`  Reads saved: ${report.metrics.fileReadsSaved}`)
+    console.log(`  Recommendation: ${report.recommendation}`)
+  },
+})
+
+function printCodeGraphReport(report: {
+  mode: string
+  query: string
+  provider?: string
+  fallbackUsed: boolean
+  confidence: number
+  files: string[]
+  hits: Array<{ file: string; line?: number; symbol?: string; reason: string }>
+  roi: { fileReadsSaved: number; toolCallsSaved: number }
+  warnings: string[]
+}) {
+  console.log('SCALE Code Intelligence')
+  console.log(`  Mode: ${report.mode}`)
+  console.log(`  Query: ${report.query}`)
+  console.log(`  Provider: ${report.provider ?? 'fallback'}`)
+  console.log(`  Fallback used: ${report.fallbackUsed}`)
+  console.log(`  Confidence: ${report.confidence}`)
+  console.log(`  Files: ${report.files.length}`)
+  console.log(`  Estimated reads saved: ${report.roi.fileReadsSaved}`)
+  for (const hit of report.hits.slice(0, 12)) {
+    const line = hit.line ? `:${hit.line}` : ''
+    const symbol = hit.symbol ? ` ${hit.symbol}` : ''
+    console.log(`  - ${hit.file}${line}${symbol} (${hit.reason})`)
+  }
+  for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+}
+
+const codegraph = defineCommand({
+  meta: { name: 'codegraph', description: 'Adapter-first code intelligence and exploration ROI' },
+  subCommands: { status: codegraphStatus, init: codegraphInit, query: codegraphQuery, impact: codegraphImpact, context: codegraphContext, roi: codegraphRoi },
+})
+
+// ============================================================================
+// eval command - Workflow eval baseline and failure replay
+// ============================================================================
+
+const evalInit = defineCommand({
+  meta: { name: 'init', description: 'Create a lightweight workflow eval suite under .scale/evals' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    suite: { type: 'string', default: 'workflow-baseline', description: 'Suite id' },
+    force: { type: 'boolean', default: false, description: 'Overwrite the existing suite file' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const store = new WorkflowEvalStore({
+      projectDir,
+      scaleDir,
+    })
+    const result = store.initSuite(String(args.suite ?? 'workflow-baseline'), isTruthyFlag(args.force))
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log(`SCALE Workflow Eval Suite: ${result.written ? 'written' : 'exists'}`)
+    console.log(`  Suite: ${result.suite.id}`)
+    console.log(`  Path: ${result.path}`)
+    console.log(`  Cases: ${result.suite.cases.length}`)
+  },
+})
+
+const evalRun = defineCommand({
+  meta: { name: 'run', description: 'Run a workflow eval suite and preserve failure replay artifacts' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    suite: { type: 'string', default: 'workflow-baseline', description: 'Suite id or JSON path' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const result = await runWorkflowEvalSuite({
+      projectDir,
+      scaleDir,
+      suite: String(args.suite ?? 'workflow-baseline'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      if (!result.run.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE Workflow Eval: ${result.run.ok ? 'PASS' : 'FAIL'}`)
+    console.log(`  Run: ${result.run.id}`)
+    console.log(`  Suite: ${result.run.suiteId}`)
+    console.log(`  Pass@1: ${(result.run.metrics.passAt1Rate * 100).toFixed(1)}%`)
+    console.log(`  Pass@3: ${(result.run.metrics.passAt3Rate * 100).toFixed(1)}%`)
+    console.log(`  Tool calls: ${result.run.metrics.totalToolCalls}`)
+    console.log(`  Estimated tokens: ${result.run.metrics.estimatedTokens}`)
+    console.log(`  Failures: ${result.run.metrics.failureReplayCount}`)
+    console.log(`  Run path: ${result.runPath}`)
+    for (const failurePath of result.failurePaths) console.log(`  Failure replay: ${failurePath}`)
+    if (!result.run.ok) process.exitCode = 1
+  },
+})
+
+const evalCompare = defineCommand({
+  meta: { name: 'compare', description: 'Compare two workflow eval runs by pass rate, iterations, tool calls, and token estimate' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    baseline: { type: 'string', required: true, description: 'Baseline run id or JSON path' },
+    candidate: { type: 'string', required: true, description: 'Candidate run id or JSON path' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const comparison = compareWorkflowEvalRuns({
+      projectDir,
+      scaleDir,
+      baseline: String(args.baseline),
+      candidate: String(args.candidate),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(comparison, null, 2))
+      return
+    }
+    console.log(`SCALE Workflow Eval Compare: ${comparison.recommendation}`)
+    console.log(`  Baseline: ${comparison.baseline.id}`)
+    console.log(`  Candidate: ${comparison.candidate.id}`)
+    console.log(`  Delta Pass@1: ${(comparison.delta.passAt1Rate * 100).toFixed(1)}%`)
+    console.log(`  Delta Pass@3: ${(comparison.delta.passAt3Rate * 100).toFixed(1)}%`)
+    console.log(`  Delta fix iterations: ${comparison.delta.averageFixIterations.toFixed(2)}`)
+    console.log(`  Delta tool calls: ${comparison.delta.totalToolCalls}`)
+    console.log(`  Delta estimated tokens: ${comparison.delta.estimatedTokens}`)
+    console.log(`  Delta human corrections: ${comparison.delta.humanCorrections}`)
+  },
+})
+
+const evalReport = defineCommand({
+  meta: { name: 'report', description: 'Render a Markdown workflow eval report from a saved run' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    run: { type: 'string', required: true, description: 'Run id or JSON path' },
+    output: { type: 'string', alias: 'o', description: 'Write report to a Markdown file' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const store = new WorkflowEvalStore({ projectDir, scaleDir })
+    const run = store.loadRun(String(args.run))
+    const markdown = renderWorkflowEvalReport(run)
+    const outputPath = args.output ? resolve(projectDir, String(args.output)) : undefined
+    if (outputPath) {
+      mkdirSync(dirname(outputPath), { recursive: true })
+      writeFileSync(outputPath, markdown, 'utf-8')
+    }
+    if (args.json) {
+      console.log(JSON.stringify({ runId: run.id, outputPath, markdown }, null, 2))
+      return
+    }
+    if (outputPath) console.log(`Workflow eval report written: ${outputPath}`)
+    else console.log(markdown)
+  },
+})
+
+const evalFailures = defineCommand({
+  meta: { name: 'failures', description: 'List failure replay records for workflow improvement' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Filter by task/case id' },
+    since: { type: 'string', default: '30d', description: 'Window such as 30d; use all for no date filter' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const store = new WorkflowEvalStore({
+      projectDir,
+      scaleDir,
+    })
+    const failures = store.listFailures({
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      sinceDays: parseSinceDays(args.since),
+    })
+    if (args.json) {
+      console.log(JSON.stringify({ count: failures.length, failures }, null, 2))
+      return
+    }
+    console.log(`SCALE Failure Replays: ${failures.length}`)
+    for (const failure of failures) {
+      console.log(`  [${failure.status}] ${failure.id} ${failure.category} task=${failure.taskId}`)
+      console.log(`    prevention: ${failure.prevention}`)
+    }
+  },
+})
+
+const evalReplay = defineCommand({
+  meta: { name: 'replay', description: 'Show failure replay records by failure id or task id' },
+  args: {
+    id: { type: 'positional', description: 'Failure replay id' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task/case id to replay' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const store = new WorkflowEvalStore({
+      projectDir,
+      scaleDir,
+    })
+    const failures = args.id
+      ? [store.getFailure(String(args.id))].filter(Boolean)
+      : store.listFailures({ taskId: args['task-id'] ? String(args['task-id']) : undefined })
+    if (args.json) {
+      console.log(JSON.stringify({ count: failures.length, failures }, null, 2))
+      if (failures.length === 0) process.exitCode = 1
+      return
+    }
+    if (failures.length === 0) {
+      console.log('No failure replay records found.')
+      process.exitCode = 1
+      return
+    }
+    for (const failure of failures) {
+      if (!failure) continue
+      console.log(`Failure Replay: ${failure.id}`)
+      console.log(`  Task: ${failure.task}`)
+      console.log(`  Category: ${failure.category}`)
+      console.log(`  Phase: ${failure.phase}`)
+      console.log(`  Wrong turn: ${failure.wrongTurn}`)
+      console.log(`  Evidence: ${failure.evidence}`)
+      console.log(`  Correction: ${failure.correction}`)
+      console.log(`  Prevention: ${failure.prevention}`)
+      if (failure.replayCommand) console.log(`  Replay command: ${failure.replayCommand}`)
+    }
+  },
+})
+
+const evalPromoteFailure = defineCommand({
+  meta: { name: 'promote-failure', description: 'Promote a failure replay into a workflow improvement candidate' },
+  args: {
+    id: { type: 'positional', required: true, description: 'Failure replay id' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const store = new WorkflowEvalStore({
+      projectDir,
+      scaleDir,
+    })
+    const candidate = store.promoteFailure(String(args.id))
+    if (args.json) {
+      console.log(JSON.stringify(candidate, null, 2))
+      return
+    }
+    console.log(`Workflow improvement candidate: ${candidate.id}`)
+    console.log(`  Failure: ${candidate.failureId}`)
+    console.log(`  Category: ${candidate.category}`)
+    console.log(`  Recommendation: ${candidate.recommendation}`)
+  },
+})
+
+function parseSinceDays(value: unknown): number | undefined {
+  const text = String(value ?? '').trim().toLowerCase()
+  if (!text || text === 'all') return undefined
+  const match = text.match(/^(\d+)(d|day|days)?$/)
+  if (!match) return undefined
+  const days = Number.parseInt(match[1], 10)
+  return Number.isFinite(days) && days > 0 ? days : undefined
+}
+
+const evalCommand = defineCommand({
+  meta: { name: 'eval', description: 'Workflow eval harness, pass@k metrics, and failure replay' },
+  subCommands: {
+    init: evalInit,
+    run: evalRun,
+    compare: evalCompare,
+    report: evalReport,
+    failures: evalFailures,
+    replay: evalReplay,
+    'promote-failure': evalPromoteFailure,
+  },
 })
 
 // ============================================================================
@@ -2032,9 +2613,87 @@ const governanceDiff = defineCommand({
   },
 })
 
+const governanceModeCommand = defineCommand({
+  meta: { name: 'mode', description: 'Evaluate progressive governance mode from task text and changed files' },
+  args: {
+    task: { type: 'string', description: 'Task or requirement description' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    'requested-mode': { type: 'string', description: 'Requested governance mode: minimal, standard, expanded, or critical' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = evaluateProgressiveGovernance({
+      task: args.task ? String(args.task) : undefined,
+      changedFiles: parseCommaList(args.files),
+      requestedMode: normalizeGovernanceMode(args['requested-mode']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Progressive Governance')
+    console.log(`  Recommended: ${report.recommendedMode}`)
+    console.log(`  Effective: ${report.effectiveMode}`)
+    if (report.escalated) console.log(`  Escalated from requested mode: ${report.requestedMode}`)
+    for (const signal of report.signals) {
+      console.log(`  [${signal.mode}] ${signal.id}: ${signal.reason}`)
+    }
+    for (const behavior of report.requiredBehaviors) {
+      console.log(`  behavior: ${behavior}`)
+    }
+  },
+})
+
+const governanceRoiCommand = defineCommand({
+  meta: { name: 'roi', description: 'Report benefit and overhead signals for active governance modules' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id' },
+    task: { type: 'string', description: 'Task or requirement description' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    'requested-mode': { type: 'string', description: 'Requested governance mode' },
+    'code-query': { type: 'string', description: 'Optional code intelligence query to include in ROI' },
+    symbol: { type: 'string', description: 'Optional symbol impact query to include in ROI' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const governanceReport = evaluateProgressiveGovernance({
+      task: args.task ? String(args.task) : undefined,
+      changedFiles: parseCommaList(args.files),
+      requestedMode: normalizeGovernanceMode(args['requested-mode']),
+    })
+    const contextBudget = scanContextBudget({ projectDir, scaleDir })
+    const codeIntelligence = args.symbol
+      ? impactCodeGraph({ projectDir, scaleDir, symbol: String(args.symbol) })
+      : args['code-query']
+        ? queryCodeGraph({ projectDir, scaleDir, query: String(args['code-query']) })
+        : undefined
+    const report = createGovernanceRoiReport({
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      contextBudget,
+      governance: governanceReport,
+      codeIntelligence,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Governance ROI')
+    console.log(`  Recommendation: ${report.summary.recommendation}`)
+    for (const module of report.modules) {
+      console.log(`  [${module.evidenceLevel}] ${module.module}`)
+      console.log(`    benefit: ${module.benefit}`)
+      console.log(`    overhead: ${module.overhead}`)
+      console.log(`    recommendation: ${module.recommendation}`)
+    }
+  },
+})
+
 const governance = defineCommand({
   meta: { name: 'governance', description: 'Governance template pack tools' },
-  subCommands: { diff: governanceDiff },
+  subCommands: { diff: governanceDiff, mode: governanceModeCommand, roi: governanceRoiCommand },
 })
 
 // ============================================================================
@@ -2430,9 +3089,45 @@ const artifactOpen = defineCommand({
   },
 })
 
+const artifactDashboard = defineCommand({
+  meta: { name: 'dashboard', description: 'Render a governance HTML dashboard from runtime, eval, memory, resource, and artifact evidence' },
+  args: {
+    dir: { type: 'string', default: '.', description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Optional task id to scope runtime/eval evidence and task HTML artifacts' },
+    output: { type: 'string', alias: 'o', description: 'Output HTML path; defaults to .scale/reports/governance-dashboard.html' },
+    theme: { type: 'string', default: 'auto', description: 'Theme mode: dark/light/auto' },
+    lang: { type: 'string', default: 'zh', description: 'HTML language: zh/en' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = renderGovernanceDashboard({
+      projectDir,
+      scaleDir,
+      taskId: typeof args['task-id'] === 'string' ? args['task-id'] : undefined,
+      output: typeof args.output === 'string' ? args.output : undefined,
+      theme: normalizeThemeArg(args.theme),
+      lang: normalizeLangArg(args.lang),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(`SCALE Governance Dashboard: ${report.ok ? 'OK' : 'ATTENTION'}`)
+    console.log(`  HTML: ${report.outputPath}`)
+    console.log(`  Manifest: ${report.manifestPath}`)
+    for (const finding of report.findings) {
+      console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}: ${finding.message}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 const artifact = defineCommand({
   meta: { name: 'artifact', description: 'Derived HTML artifact rendering and safety checks' },
-  subCommands: { render: artifactRender, doctor: artifactDoctor, settle: artifactSettle, open: artifactOpen },
+  subCommands: { render: artifactRender, doctor: artifactDoctor, settle: artifactSettle, open: artifactOpen, dashboard: artifactDashboard },
 })
 
 function normalizeThemeArg(value: unknown): 'dark' | 'light' | 'auto' {
@@ -2867,6 +3562,30 @@ function parseMemoryBudget(value: unknown): number | undefined {
   return parsed
 }
 
+function normalizeMemorySource(value: unknown): 'evidence' | 'candidate' | 'failure' {
+  const normalized = String(value ?? 'evidence').trim().toLowerCase()
+  if (normalized === 'evidence' || normalized === 'candidate' || normalized === 'failure') return normalized
+  throw new Error('--from must be evidence, candidate, or failure.')
+}
+
+function normalizeMemoryNodeType(value: unknown): 'fact' | 'decision' | 'incident' | 'relation' | 'contradiction' | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'fact' || normalized === 'decision' || normalized === 'incident' || normalized === 'relation' || normalized === 'contradiction') return normalized
+  throw new Error('--type must be fact, decision, incident, relation, or contradiction.')
+}
+
+function normalizeMemoryScope(value: unknown): 'project' | 'workspace' | 'global-candidate' | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const normalized = String(value).trim().toLowerCase()
+  if (normalized === 'project' || normalized === 'workspace' || normalized === 'global-candidate') return normalized
+  throw new Error('--scope must be project, workspace, or global-candidate.')
+}
+
+function memoryBrain(): MemoryBrain {
+  return new MemoryBrain({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+}
+
 const memoryPack = defineCommand({
   meta: { name: 'pack', description: 'Build a compact context pack from runtime evidence, session events, knowledge, and graph status' },
   args: {
@@ -2999,9 +3718,221 @@ const memorySettle = defineCommand({
   },
 })
 
+const memoryIngest = defineCommand({
+  meta: { name: 'ingest', description: 'Ingest runtime evidence, learning candidates, or failure replays into the project memory brain' },
+  args: {
+    from: { type: 'string', default: 'evidence', description: 'Source: evidence, candidate, or failure' },
+    'task-id': { type: 'string', description: 'Task id to scope runtime evidence' },
+    'session-id': { type: 'string', description: 'Session id to scope runtime evidence' },
+    'candidate-id': { type: 'string', description: 'Memory learning candidate id' },
+    'failure-id': { type: 'string', description: 'Workflow eval failure replay id' },
+    type: { type: 'string', description: 'Memory type override: fact/decision/incident/relation/contradiction' },
+    scope: { type: 'string', description: 'Memory scope: project/workspace/global-candidate' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    let from: ReturnType<typeof normalizeMemorySource>
+    let type: ReturnType<typeof normalizeMemoryNodeType>
+    let scope: ReturnType<typeof normalizeMemoryScope>
+    try {
+      from = normalizeMemorySource(args.from)
+      type = normalizeMemoryNodeType(args.type)
+      scope = normalizeMemoryScope(args.scope)
+    } catch (error) {
+      console.error((error as Error).message)
+      process.exit(1)
+      return
+    }
+    const report = memoryBrain().ingest({
+      from,
+      taskId: args['task-id'],
+      sessionId: args['session-id'],
+      candidateId: args['candidate-id'],
+      failureId: args['failure-id'],
+      type,
+      scope,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Ingest')
+    console.log(`  Source: ${report.source}`)
+    console.log(`  Created: ${report.created}`)
+    console.log(`  Skipped: ${report.skipped}`)
+    for (const node of report.nodes) console.log(`  [${node.status}] ${node.id}: ${node.title}`)
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const memoryQuery = defineCommand({
+  meta: { name: 'query', description: 'Query concise project-scoped long-term memory with evidence references' },
+  args: {
+    query: { type: 'positional', required: true, description: 'Search query' },
+    limit: { type: 'string', default: '8', description: 'Maximum number of memory nodes' },
+    status: { type: 'string', description: 'Filter by status: candidate/active/stale/rejected' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const limit = Number.parseInt(String(args.limit ?? '8'), 10)
+    const status = args.status ? String(args.status) as 'candidate' | 'active' | 'stale' | 'rejected' : undefined
+    const report = memoryBrain().query(String(args.query), {
+      limit: Number.isFinite(limit) && limit > 0 ? limit : 8,
+      status,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('\nSCALE Memory Query')
+    console.log(`  Query: ${report.query}`)
+    console.log(`  Results: ${report.count}`)
+    for (const node of report.nodes) {
+      console.log(`  [${node.status}/${node.type}] ${node.id}: ${node.title}`)
+      console.log(`    confidence: ${node.confidence}; evidence: ${node.evidencePaths.join(', ') || 'none'}`)
+      console.log(`    ${node.summary}`)
+    }
+  },
+})
+
+const memoryContradictions = defineCommand({
+  meta: { name: 'contradictions', description: 'Report conflicting project memory instead of silently resolving it' },
+  args: {
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = memoryBrain().contradictions()
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Contradictions')
+    console.log(`  Count: ${report.count}`)
+    for (const item of report.contradictions) {
+      console.log(`  [CONFLICT] ${item.title}`)
+      console.log(`    nodes: ${item.nodeIds.join(', ')}`)
+      console.log(`    evidence: ${item.evidencePaths.join(', ') || 'none'}`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const memoryDream = defineCommand({
+  meta: { name: 'dream', description: 'Run memory maintenance: duplicates, stale memories, contradictions, and promotion candidates' },
+  args: {
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = memoryBrain().dream()
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Dream')
+    console.log(`  Total: ${report.summary.total}`)
+    console.log(`  Active: ${report.summary.active}`)
+    console.log(`  Candidates: ${report.summary.candidate}`)
+    console.log(`  Contradictions: ${report.summary.contradictions}`)
+    console.log(`  Duplicate groups: ${report.summary.duplicateGroups}`)
+    for (const item of report.promotionCandidates) console.log(`  [PROMOTE?] ${item.id}: ${item.title}`)
+    for (const item of report.staleCandidates) console.log(`  [STALE] ${item.id}: ${item.reason}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const memoryPromote = defineCommand({
+  meta: { name: 'promote', description: 'Promote a memory candidate to active project memory after evidence review' },
+  args: {
+    id: { type: 'positional', required: true, description: 'Memory node id or learning candidate id' },
+    scope: { type: 'string', description: 'Scope override: project/workspace/global-candidate' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    let scope: ReturnType<typeof normalizeMemoryScope>
+    try {
+      scope = normalizeMemoryScope(args.scope)
+    } catch (error) {
+      console.error((error as Error).message)
+      process.exit(1)
+      return
+    }
+    const report = memoryBrain().promote(String(args.id), { scope })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Promote')
+    console.log(`  Status: ${report.ok ? 'promoted' : 'blocked'}`)
+    if (report.node) console.log(`  Node: ${report.node.id} (${report.node.status})`)
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const memoryExport = defineCommand({
+  meta: { name: 'export', description: 'Export project memory as JSONL' },
+  args: {
+    output: { type: 'string', alias: 'o', description: 'Output JSONL file; stdout when omitted' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const jsonl = memoryBrain().exportJsonl()
+    if (args.output) {
+      const outputPath = resolve(PROJECT_DIR, String(args.output))
+      ensureDir(dirname(outputPath))
+      writeFileSync(outputPath, jsonl, 'utf-8')
+      if (args.json) {
+        console.log(JSON.stringify({ ok: true, outputPath, bytes: jsonl.length }, null, 2))
+        return
+      }
+      console.log(`[OK] Memory JSONL exported: ${outputPath}`)
+      return
+    }
+    console.log(jsonl)
+  },
+})
+
+const memoryImport = defineCommand({
+  meta: { name: 'import', description: 'Import project memory from JSONL' },
+  args: {
+    file: { type: 'positional', required: true, description: 'Input JSONL file' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const filePath = resolve(PROJECT_DIR, String(args.file))
+    const report = memoryBrain().importJsonl(filePath)
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Import')
+    console.log(`  Imported: ${report.imported}`)
+    console.log(`  Skipped: ${report.skipped}`)
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 const memory = defineCommand({
-  meta: { name: 'memory', description: 'Memory Fabric context packs and budget diagnostics' },
-  subCommands: { pack: memoryPack, doctor: memoryDoctor, settle: memorySettle },
+  meta: { name: 'memory', description: 'Memory Fabric context packs and project-scoped long-term memory' },
+  subCommands: {
+    pack: memoryPack,
+    doctor: memoryDoctor,
+    settle: memorySettle,
+    ingest: memoryIngest,
+    query: memoryQuery,
+    contradictions: memoryContradictions,
+    dream: memoryDream,
+    promote: memoryPromote,
+    export: memoryExport,
+    import: memoryImport,
+  },
 })
 
 // ============================================================================
@@ -3210,13 +4141,16 @@ const skillPlanCommand = defineCommand({
 const skillDoctorCommand = defineCommand({
   meta: { name: 'doctor', description: 'Check workflow skill installation status' },
   args: {
-    dir: { type: 'string', default: '.', description: 'Project directory' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'supply-chain': { type: 'boolean', default: false, description: 'Include supply-chain safety review for known skill sources' },
     json: { type: 'boolean', default: false, description: 'Output skill doctor report as JSON' },
   },
   run({ args }) {
-    const report = inspectWorkflowSkills({ projectDir: args.dir })
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const report = inspectWorkflowSkills({ projectDir })
+    const supplyChain = isTruthyFlag(args['supply-chain']) ? inspectSkillSupplyChain({ projectDir }) : undefined
     if (args.json) {
-      console.log(JSON.stringify(report, null, 2))
+      console.log(JSON.stringify(supplyChain ? { installation: report, supplyChain } : report, null, 2))
       return
     }
     console.log('\nSCALE Skill Doctor')
@@ -3226,7 +4160,17 @@ const skillDoctorCommand = defineCommand({
       if (skill.detectedPath) console.log(`    path: ${skill.detectedPath}`)
       if (!skill.installed) console.log(`    install: ${skill.installCommand}`)
     }
-    if (!report.ok) process.exitCode = 1
+    if (supplyChain) {
+      console.log('\nSkill Supply Chain')
+      console.log(`  Evaluated: ${supplyChain.evaluated}`)
+      console.log(`  Blocked: ${supplyChain.blocked}`)
+      console.log(`  Warnings: ${supplyChain.warnings}`)
+      for (const entry of supplyChain.entries.filter(entry => entry.blocked || entry.findings.length > 0)) {
+        console.log(`  [${entry.blocked ? 'BLOCKED' : 'WARN'}] ${entry.id}: ${entry.risk}`)
+        for (const finding of entry.findings) console.log(`    - ${finding.rule}: ${finding.message}`)
+      }
+    }
+    if (!report.ok || supplyChain?.ok === false) process.exitCode = 1
   },
 })
 
@@ -3336,6 +4280,59 @@ const skillSafetyCommand = defineCommand({
   },
 })
 
+const skillRadarCommand = defineCommand({
+  meta: { name: 'radar', description: 'Recommend skills, MCP, and CLI capabilities with confidence, safety, and evidence requirements' },
+  args: {
+    task: { type: 'string', required: true, description: 'Task description' },
+    phase: { type: 'string', description: 'Workflow phase' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or relevant files' },
+    services: { type: 'string', description: 'Comma-separated services or modules' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    output: { type: 'string', alias: 'o', description: 'Write markdown report to file' },
+    json: { type: 'boolean', default: false, description: 'Output radar report as JSON' },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = evaluateSkillRadar({
+      projectDir,
+      scaleDir,
+      task: String(args.task),
+      phase: args.phase ? String(args.phase) : undefined,
+      level: String(args.level ?? 'M'),
+      files: parseCommaList(args.files),
+      services: parseCommaList(args.services),
+    })
+
+    if (args.output) {
+      const outputPath = resolve(projectDir, String(args.output))
+      ensureDir(dirname(outputPath))
+      writeFileSync(outputPath, renderSkillRadarMarkdown(report), 'utf-8')
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+
+    console.log('\nSCALE Skill Radar')
+    console.log(`  Task: ${report.task}`)
+    console.log(`  Level: ${report.level}`)
+    console.log(`  Domains: ${report.detectedDomains.map(domain => `${domain.domain}:${domain.score}`).join(', ') || 'none'}`)
+    console.log(`  Policy: ${report.policyMode}`)
+    console.log(`  Tools: ${report.toolSummary.installed}/${report.toolSummary.total} installed`)
+    for (const item of report.recommendations.slice(0, 8)) {
+      console.log(`  [${item.action}] ${item.id} confidence=${item.confidence.toFixed(2)} safety=${item.safetyLevel}`)
+      console.log(`    evidence: ${item.requiredEvidence.join(', ') || 'none'}`)
+      if (item.safetyLevel === 'blocked' || item.action === 'suggest-fallback') console.log(`    fallback: ${item.fallback}`)
+    }
+    if (args.output) console.log(`  Report: ${resolve(projectDir, String(args.output))}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 const skillRecommendCommand = defineCommand({
   meta: { name: 'recommend', description: 'Recommend a composable skill workflow for a task' },
   args: {
@@ -3370,6 +4367,7 @@ const skill = defineCommand({
     check: skillCheckCommand,
     repo: skillRepoCommand,
     safety: skillSafetyCommand,
+    radar: skillRadarCommand,
     recommend: skillRecommendCommand,
   },
 })
@@ -3810,6 +4808,8 @@ const main = defineCommand({
     stats,
     preflight,
     governance,
+    codegraph,
+    eval: evalCommand,
     artifact,
     assets,
     standards,
