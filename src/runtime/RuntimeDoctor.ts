@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { RuntimeEvidenceLedger, type RuntimeEvidenceSummary } from './RuntimeEvidenceLedger.js'
 import { SessionLedger, type RuntimeSessionLevel } from './SessionLedger.js'
+import { loadVerificationMatrix, resolveVerificationPolicy } from '../workflow/VerificationProfile.js'
 
 export type RuntimeDoctorStatus = 'ok' | 'warn' | 'fail'
 
@@ -36,9 +37,15 @@ export function doctorRuntimeEvidence(options: RuntimeDoctorOptions = {}): Runti
   const sessionsDir = join(scaleRoot, 'events', 'sessions')
   const evidenceLedger = new RuntimeEvidenceLedger({ projectDir, scaleDir: scaleRoot, createDirs: false })
   const sessionLedger = new SessionLedger({ projectDir, scaleDir: scaleRoot, createDirs: false })
+  const policy = resolveVerificationPolicy(loadVerificationMatrix(projectDir, scaleRoot))
   const evidence = evidenceLedger.summary({
     taskId: options.taskId,
     sessionId: options.sessionId,
+  })
+  const evidenceRecords = evidenceLedger.list({
+    taskId: options.taskId,
+    sessionId: options.sessionId,
+    limit: Number.MAX_SAFE_INTEGER,
   })
 
   const checks: RuntimeDoctorCheck[] = []
@@ -86,6 +93,28 @@ export function doctorRuntimeEvidence(options: RuntimeDoctorOptions = {}): Runti
     })
   }
 
+  const productSmokeMode = policy.productSmokeGate ?? 'warn'
+  if (level !== 'S' && productSmokeMode !== 'off') {
+    const productSmokePassed = evidenceRecords.some(record => record.status === 'passed' && isProductSmokeEvidence(record))
+    const productSmokeFailed = evidenceRecords.some(record => record.status === 'failed' && isProductSmokeEvidence(record))
+    if (productSmokePassed) {
+      checks.push({
+        name: 'Runtime product smoke evidence',
+        status: 'ok',
+        message: 'Passed product smoke evidence recorded',
+      })
+    } else {
+      checks.push({
+        name: 'Runtime product smoke evidence',
+        status: productSmokeMode === 'block' || productSmokeFailed ? 'fail' : 'warn',
+        message: productSmokeFailed
+          ? 'Product smoke evidence failed and no later passed product smoke evidence was recorded'
+          : 'No passed product smoke evidence recorded for this M/L/CRITICAL task',
+        fix: 'Run a real product-path smoke check and record it with metadata.productSmoke=true or metadata.realProductPath=true',
+      })
+    }
+  }
+
   const blocked = checks.some(check => check.status === 'fail')
   return {
     ok: !blocked,
@@ -93,6 +122,14 @@ export function doctorRuntimeEvidence(options: RuntimeDoctorOptions = {}): Runti
     checks,
     evidence,
   }
+}
+
+function isProductSmokeEvidence(record: { title: string; summary: string; metadata?: Record<string, unknown> }): boolean {
+  const metadata = record.metadata ?? {}
+  if (metadata.productSmoke === true || metadata.realProductPath === true) return true
+  if (metadata.gate === 'G8' || metadata.gate === 'productSmoke') return true
+  const text = `${record.title}\n${record.summary}`.toLowerCase()
+  return text.includes('product smoke') || text.includes('real product path')
 }
 
 function checkDirectory(name: string, dir: string, fix: string): RuntimeDoctorCheck {

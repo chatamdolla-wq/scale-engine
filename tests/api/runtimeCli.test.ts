@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -186,5 +186,95 @@ describe('runtime CLI', () => {
         },
       },
     })
+  }, 120_000)
+
+  it('blocks final check under productSmokeGate=block until product smoke evidence is recorded', async () => {
+    const scaleDir = makeDir('scale-runtime-cli-scale-')
+    const projectDir = makeDir('scale-runtime-cli-project-')
+    mkdirSync(scaleDir, { recursive: true })
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      profiles: { default: { commands: {} } },
+      policy: { productSmokeGate: 'block' },
+    }, null, 2), 'utf-8')
+
+    await runScale([
+      'runtime',
+      'start',
+      '--session-id',
+      'SESSION-SMOKE',
+      '--task-id',
+      'TASK-SMOKE',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+
+    await runScale([
+      'runtime',
+      'record',
+      '--task-id',
+      'TASK-SMOKE',
+      '--session-id',
+      'SESSION-SMOKE',
+      '--title',
+      'unit tests',
+      '--status',
+      'passed',
+      '--exit-code',
+      '0',
+      '--summary',
+      'unit tests passed',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const blocked = await runScale([
+      'runtime',
+      'final-check',
+      '--task-id',
+      'TASK-SMOKE',
+      '--session-id',
+      'SESSION-SMOKE',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(blocked.exitCode).toBe(1)
+    expect(parseJson<{ reasons: string[] }>(blocked.stdout).reasons.join('\n')).toContain('No passed product smoke evidence')
+
+    const smoke = await runScale([
+      'runtime',
+      'record',
+      '--task-id',
+      'TASK-SMOKE',
+      '--session-id',
+      'SESSION-SMOKE',
+      '--title',
+      'Product smoke: cross-driver copy',
+      '--status',
+      'passed',
+      '--exit-code',
+      '0',
+      '--summary',
+      'gateway -> netdisk -> storage task completed',
+      '--metadata-json',
+      '{"productSmoke":true}',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(smoke.exitCode).toBe(0)
+
+    const ready = await runScale([
+      'runtime',
+      'final-check',
+      '--task-id',
+      'TASK-SMOKE',
+      '--session-id',
+      'SESSION-SMOKE',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(ready.exitCode).toBe(0)
+    expect(parseJson<{ ready: boolean }>(ready.stdout).ready).toBe(true)
   }, 120_000)
 })

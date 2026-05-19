@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { evaluateFinalReportReadiness } from '../../src/runtime/FinalReportGuard.js'
@@ -113,6 +113,51 @@ describe('runtime doctor', () => {
       }),
     ]))
     expect(evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-RED', sessionId: 'SESSION-RED', level: 'M' })).toMatchObject({
+      ready: true,
+      blocked: false,
+    })
+  })
+
+  it('blocks final readiness when product smoke policy is block and only generic evidence exists', () => {
+    const projectDir = makeProject()
+    mkdirSync(join(projectDir, '.scale'), { recursive: true })
+    writeFileSync(join(projectDir, '.scale', 'verification.json'), JSON.stringify({
+      version: 1,
+      profiles: { default: { commands: {} } },
+      policy: { productSmokeGate: 'block' },
+    }, null, 2), 'utf-8')
+
+    const ledger = new RuntimeEvidenceLedger({ projectDir })
+    new SessionLedger({ projectDir }).start({ sessionId: 'SESSION-SMOKE', taskId: 'TASK-SMOKE', level: 'M' })
+    ledger.record({
+      taskId: 'TASK-SMOKE',
+      sessionId: 'SESSION-SMOKE',
+      kind: 'command',
+      title: 'unit tests',
+      status: 'passed',
+      exitCode: 0,
+      summary: 'unit tests passed',
+    })
+
+    const missingSmoke = evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-SMOKE', sessionId: 'SESSION-SMOKE', level: 'M' })
+    expect(missingSmoke).toMatchObject({
+      ready: false,
+      blocked: true,
+    })
+    expect(missingSmoke.reasons.join('\n')).toContain('No passed product smoke evidence')
+
+    ledger.record({
+      taskId: 'TASK-SMOKE',
+      sessionId: 'SESSION-SMOKE',
+      kind: 'command',
+      title: 'Product smoke: cross-driver copy',
+      status: 'passed',
+      exitCode: 0,
+      summary: 'gateway -> netdisk -> storage task completed',
+      metadata: { productSmoke: true },
+    })
+
+    expect(evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-SMOKE', sessionId: 'SESSION-SMOKE', level: 'M' })).toMatchObject({
       ready: true,
       blocked: false,
     })

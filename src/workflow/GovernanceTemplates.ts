@@ -865,7 +865,8 @@ scale runtime record \\
   --command "<exact smoke command>" \\
   --exit-code 0 \\
   --summary "<business result, task id, status, or observable output>" \\
-  --artifacts ".agent/logs/<service>/<smoke>.json"
+  --artifacts ".agent/logs/<service>/<smoke>.json" \\
+  --metadata-json '{"productSmoke":true,"realProductPath":true}'
 \`\`\`
 
 ## Assertions
