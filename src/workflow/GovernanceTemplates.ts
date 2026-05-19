@@ -1129,7 +1129,7 @@ if (!fs.existsSync(configPath)) {
   process.exit(1);
 }
 
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\\uFEFF/, ''));
 const probes = Array.isArray(config.probes) ? config.probes.filter(probe => probe && probe.enabled === true) : [];
 
 if (probes.length === 0) {

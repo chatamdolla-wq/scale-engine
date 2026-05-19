@@ -285,6 +285,34 @@ describe('ProductSmokeGate', () => {
     })
   })
 
+  it('does not pass or record runtime evidence when the smoke report is skipped', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'scale-product-smoke-skipped-'))
+    dirs.push(projectDir)
+    const scaleDir = join(projectDir, '.scale')
+    const report = JSON.stringify({
+      version: 1,
+      status: 'skipped',
+      message: 'No enabled product smoke probes',
+      results: [],
+    })
+    const gate = new ProductSmokeGate({
+      command: nodePrintCommand(report),
+      source: 'override',
+      reason: 'test skipped product smoke command',
+    }, {
+      projectDir,
+      scaleDir,
+      profile: 'productSmoke',
+    })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(false)
+    expect(result.status).toBe('FAILED')
+    expect(result.blockers).toContain('Product smoke did not run real probes: No enabled product smoke probes')
+    expect(existsSync(join(scaleDir, 'evidence', 'runtime'))).toBe(false)
+  })
+
   it('fails when the product smoke command exits non-zero', async () => {
     const gate = new ProductSmokeGate({
       command: 'node -e "process.stderr.write(\\"route mismatch\\"); process.exit(2)"',

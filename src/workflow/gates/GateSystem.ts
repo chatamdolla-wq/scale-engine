@@ -30,6 +30,12 @@ interface CommandResult {
   cwd: string
 }
 
+interface ProductSmokeReport {
+  status?: unknown
+  message?: unknown
+  results?: unknown
+}
+
 type SecuritySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 
 interface SecurityScanFinding {
@@ -1063,6 +1069,29 @@ export class SecurityGate implements IGate {
   }
 }
 
+function parseProductSmokeReport(commandResult: CommandResult | null): ProductSmokeReport | null {
+  const raw = commandResult?.stdout.trim()
+  if (!raw || !raw.startsWith('{')) return null
+  try {
+    const parsed = JSON.parse(raw) as ProductSmokeReport
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function productSmokeReportBlocker(report: ProductSmokeReport | null): string | null {
+  if (!report || typeof report.status !== 'string') return null
+  if (report.status === 'passed') return null
+  const message = typeof report.message === 'string' && report.message.trim()
+    ? report.message.trim()
+    : `reported status ${report.status}`
+  if (report.status === 'skipped') {
+    return `Product smoke did not run real probes: ${message}`
+  }
+  return `Product smoke report failed: ${message}`
+}
+
 export class ProductSmokeGate implements IGate {
   stage = 'G8' as GateStage
   name = 'Product Smoke'
@@ -1086,6 +1115,8 @@ export class ProductSmokeGate implements IGate {
       if (commandResult.code !== 0) {
         blockers.push(`Product smoke failed: ${commandResult.stderr || commandResult.stdout || `exit code ${commandResult.code}`}`)
       }
+      const reportBlocker = productSmokeReportBlocker(parseProductSmokeReport(commandResult))
+      if (reportBlocker) blockers.push(reportBlocker)
     } catch (e) {
       blockers.push(`Product smoke execution failed: ${e}`)
     }
