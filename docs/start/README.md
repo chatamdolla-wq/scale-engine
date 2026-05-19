@@ -13,7 +13,10 @@
 3. 回到根目录 [README](../../README.md)
    理解 SCALE Engine 的核心能力和 governance pack 选择。
 
-4. 查看 [文档地图](../README.md)
+4. [升级管理](../UPGRADE_MANAGEMENT.md)
+   理解工作流更新、第三方 skills/MCP/CLI 更新时如何先检查、生成计划、避免覆盖本地改动。
+
+5. 查看 [文档地图](../README.md)
    区分哪些文档是用户指南、哪些是参考资料、哪些是历史规划和过程记录。
 
 ## 你应该先看到什么
@@ -39,4 +42,5 @@
 | Go 多服务后端 | `scale init --governance-pack go-service-matrix` |
 | 多仓库/MOE 工作区 | `scale init --governance-pack moe-workspace` |
 | 文档、报告、截图、脚本混乱 | `scale init --governance-pack resource-governance` |
+| 工作流或第三方能力要升级 | `scale upgrade check && scale upgrade plan --html` |
 

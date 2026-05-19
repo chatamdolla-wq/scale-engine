@@ -102,6 +102,26 @@ scale --version
 
 需要 Node.js 20 或更高版本。
 
+## 更新工作流
+
+SCALE 把升级分成三层：CLI 自身、已生成到项目里的 governance pack 文件、第三方 skills/MCP/CLI 能力。默认只检查和生成计划，不自动覆盖用户改过的文件，也不自动安装第三方工具。
+
+```bash
+scale upgrade check --dir .
+scale upgrade plan --dir . --html
+scale tools outdated --dir .
+scale skill outdated --dir .
+```
+
+升级原则：
+
+- `scale upgrade check` 读取 `.scale/governance.lock.json`，判断当前项目是干净、缺文件、模板过期，还是存在本地改动。
+- `scale upgrade plan` 生成非破坏性计划；遇到用户改过的生成文件时标记 `manual-review`。
+- `scale tools outdated` 和 `scale skill outdated` 只列出更新面、来源、信任等级和安全策略，不做自动安装。
+- 第三方社区来源默认人工评审，高权限桌面自动化默认阻断自动升级。
+
+详细说明见 [升级管理](docs/UPGRADE_MANAGEMENT.md)。
+
 ## Governance Pack
 
 在已有项目中安装治理工作流：

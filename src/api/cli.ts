@@ -70,6 +70,12 @@ import {
 } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
+import {
+  createThirdPartyUpdateReport,
+  createUpgradeCheckReport,
+  createUpgradePlanReport,
+  writeUpgradePlanHtml,
+} from '../workflow/UpgradeManager.js'
 import { createGovernanceRoiReport } from '../governance/GovernanceRoi.js'
 import { evaluateProgressiveGovernance, normalizeGovernanceMode } from '../governance/ProgressiveGovernance.js'
 import {
@@ -2697,6 +2703,132 @@ const governance = defineCommand({
 })
 
 // ============================================================================
+// upgrade command - Safe workflow/template/capability update planning
+// ============================================================================
+
+const upgradeCheck = defineCommand({
+  meta: { name: 'check', description: 'Check SCALE workflow, governance pack, and third-party capability update status' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'target-version': { type: 'string', description: 'Target SCALE Engine version; defaults to the running CLI version' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = createUpgradeCheckReport({
+      projectDir: args.dir,
+      targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Upgrade Check')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Status: ${report.status}`)
+    console.log(`  SCALE Engine: ${report.scaleEngine.currentVersion ?? 'none'} -> ${report.scaleEngine.latestVersion}`)
+    console.log(`  Governance pack: ${report.governancePack.id ?? 'none'} v${report.governancePack.currentVersion ?? 'none'} -> v${report.governancePack.latestVersion ?? 'none'}`)
+    console.log(`  Generated files: ${report.generatedFiles.clean} clean, ${report.generatedFiles.changed} changed, ${report.generatedFiles.missing} missing`)
+    console.log(`  Third-party policy: ${report.thirdParty.policy}; review required: ${report.thirdParty.reviewRequired}`)
+    console.log('  Next:')
+    for (const command of report.recommendedCommands) console.log(`    ${command}`)
+  },
+})
+
+const upgradePlan = defineCommand({
+  meta: { name: 'plan', description: 'Create a non-destructive SCALE upgrade plan' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'target-version': { type: 'string', description: 'Target SCALE Engine version; defaults to the running CLI version' },
+    html: { type: 'boolean', default: false, description: 'Write .scale/reports/upgrade-plan.html' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = createUpgradePlanReport({
+      projectDir: args.dir,
+      targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
+    })
+    const htmlPath = args.html ? writeUpgradePlanHtml(report) : undefined
+    if (args.json) {
+      console.log(JSON.stringify({ ...report, htmlPath }, null, 2))
+      return
+    }
+    console.log('SCALE Upgrade Plan')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Status: ${report.status}`)
+    console.log(`  Apply mode: ${report.applyMode}`)
+    if (report.blockers.length > 0) {
+      console.log('  Blockers:')
+      for (const blocker of report.blockers) console.log(`    [${blocker.code}] ${blocker.path ?? ''} ${blocker.message}`)
+    }
+    console.log('  Steps:')
+    for (const step of report.steps) {
+      const path = step.path ? ` ${step.path}` : ''
+      const command = step.command ? ` -> ${step.command}` : ''
+      console.log(`    [${step.risk}] ${step.action}${path}: ${step.reason}${command}`)
+    }
+    if (htmlPath) console.log(`  HTML: ${htmlPath}`)
+  },
+})
+
+const upgradeApply = defineCommand({
+  meta: { name: 'apply', description: 'Guarded entrypoint for applying an upgrade plan' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    confirm: { type: 'boolean', default: false, description: 'Confirm that the current plan was reviewed' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const plan = createUpgradePlanReport({ projectDir: args.dir })
+    const result = {
+      ok: false,
+      applied: false,
+      reason: args.confirm
+        ? 'Automatic apply is not enabled yet; use the plan to update clean/missing files explicitly.'
+        : 'Run scale upgrade plan first, review the impact, then rerun with --confirm when automatic apply is enabled.',
+      plan,
+    }
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log('SCALE Upgrade Apply')
+    console.log(`  Applied: ${result.applied}`)
+    console.log(`  Reason: ${result.reason}`)
+    console.log(`  Apply mode: ${plan.applyMode}`)
+  },
+})
+
+const upgradeRollback = defineCommand({
+  meta: { name: 'rollback', description: 'Explain rollback state for SCALE upgrades' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const result = {
+      ok: true,
+      projectDir: resolve(String(args.dir ?? PROJECT_DIR)),
+      available: false,
+      reason: 'No automatic upgrade apply has been enabled in this version, so no SCALE-managed rollback point exists.',
+      recommendedRollback: 'Use git status/diff to review local changes, or restore from your VCS if you manually applied an upgrade.',
+    }
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log('SCALE Upgrade Rollback')
+    console.log(`  Available: ${result.available}`)
+    console.log(`  Reason: ${result.reason}`)
+    console.log(`  Recommendation: ${result.recommendedRollback}`)
+  },
+})
+
+const upgrade = defineCommand({
+  meta: { name: 'upgrade', description: 'Safe update planning for SCALE workflow, generated templates, skills, MCP, and CLI tools' },
+  subCommands: { check: upgradeCheck, plan: upgradePlan, apply: upgradeApply, rollback: upgradeRollback },
+})
+
+// ============================================================================
 // assets command - Resource lifecycle governance
 // ============================================================================
 
@@ -4358,6 +4490,30 @@ const skillRecommendCommand = defineCommand({
   },
 })
 
+const skillOutdatedCommand = defineCommand({
+  meta: { name: 'outdated', description: 'List skill update surfaces without installing or upgrading anything' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = createThirdPartyUpdateReport('skill')
+    if (args.json) {
+      console.log(JSON.stringify({ ...report, projectDir: resolve(String(args.dir ?? PROJECT_DIR)) }, null, 2))
+      return
+    }
+    console.log('\nSCALE Skill Outdated')
+    console.log(`  Policy: ${report.policy}`)
+    console.log(`  Skills: ${report.summary.total}`)
+    console.log(`  Review required: ${report.reviewRequired}`)
+    for (const entry of report.entries) {
+      console.log(`  [${entry.updatePolicy}] ${entry.id} trust=${entry.trust} latest=${entry.latestVersion}`)
+      if (entry.source) console.log(`    source: ${entry.source}`)
+      console.log(`    reason: ${entry.reason}`)
+    }
+  },
+})
+
 const skill = defineCommand({
   meta: { name: 'skill', description: 'Skill discovery and management' },
   subCommands: {
@@ -4369,6 +4525,7 @@ const skill = defineCommand({
     safety: skillSafetyCommand,
     radar: skillRadarCommand,
     recommend: skillRecommendCommand,
+    outdated: skillOutdatedCommand,
   },
 })
 
@@ -4608,9 +4765,34 @@ const toolEvidenceCommand = defineCommand({
   },
 })
 
+const toolOutdatedCommand = defineCommand({
+  meta: { name: 'outdated', description: 'List MCP, browser, desktop, and external CLI update surfaces without installing anything' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+  },
+  run({ args }) {
+    const report = createThirdPartyUpdateReport(['cli', 'mcp', 'browser', 'desktop'])
+    if (args.json) {
+      console.log(JSON.stringify({ ...report, projectDir: resolve(String(args.dir ?? PROJECT_DIR)) }, null, 2))
+      return
+    }
+    console.log('\nSCALE Tool Outdated')
+    console.log(`  Policy: ${report.policy}`)
+    console.log(`  Tools: ${report.summary.total}`)
+    console.log(`  Review required: ${report.reviewRequired}`)
+    console.log(`  Blocked: ${report.summary.blocked}`)
+    for (const entry of report.entries) {
+      console.log(`  [${entry.updatePolicy}] ${entry.id} category=${entry.category} trust=${entry.trust} latest=${entry.latestVersion}`)
+      if (entry.source) console.log(`    source: ${entry.source}`)
+      console.log(`    reason: ${entry.reason}`)
+    }
+  },
+})
+
 const tool = defineCommand({
   meta: { name: 'tool', description: 'Skills, MCP, browser, desktop, and external CLI governance' },
-  subCommands: { policy: toolPolicyCommand, doctor: toolDoctorCommand, plan: toolPlanCommand, run: toolRunCommand, evidence: toolEvidenceCommand },
+  subCommands: { policy: toolPolicyCommand, doctor: toolDoctorCommand, plan: toolPlanCommand, run: toolRunCommand, evidence: toolEvidenceCommand, outdated: toolOutdatedCommand },
 })
 
 // ============================================================================
@@ -4807,6 +4989,7 @@ const main = defineCommand({
     evolve,
     stats,
     preflight,
+    upgrade,
     governance,
     codegraph,
     eval: evalCommand,
@@ -4824,6 +5007,7 @@ const main = defineCommand({
     diagnose,
     tdd,
     tool,
+    tools: tool,
     skill,
     skills: skill,
     agent,

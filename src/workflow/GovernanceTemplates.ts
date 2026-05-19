@@ -287,6 +287,28 @@ Keep \`.scale/engineering-standards.json\` and \`.scale/frameworks.json\` as the
 Keep \`.scale/engineering-standards-baseline.json\` as the temporary exception list for known legacy standards findings; it must not be used to hide new or changed-file problems.
 Use \`artifactGate: "warn"\` while introducing the workflow, then move M/L/CRITICAL work to \`"block"\` once templates and local gates are stable.
 
+## Workflow Upgrade
+
+Do not rerun \`scale init\` as a blind upgrade command. Generated governance files may contain local project adaptations.
+
+Use the guarded upgrade flow:
+
+\`\`\`bash
+scale upgrade check --dir .
+scale upgrade plan --dir . --html
+scale tools outdated --dir .
+scale skill outdated --dir .
+scale preflight --preflight-profile quick
+\`\`\`
+
+Rules:
+
+- \`.scale/governance.lock.json\` records generated file hashes and pack versions.
+- Clean or missing generated files can be planned safely.
+- Locally changed generated files require manual review before replacement or merge.
+- Third-party skills, MCP servers, browser tools, desktop automation, and external CLI tools are never auto-installed by the upgrade flow.
+- Community sources require source, install script, permission, and changelog review. Desktop automation is treated as high risk.
+
 ## HTML Artifacts
 
 Markdown remains the editable source of truth for task artifacts. HTML artifacts are derived human-review surfaces for plan comparison, implementation plans, code reviews, status reports, incident reports, and release reports.
