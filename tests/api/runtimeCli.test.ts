@@ -277,4 +277,48 @@ describe('runtime CLI', () => {
     expect(ready.exitCode).toBe(0)
     expect(parseJson<{ ready: boolean }>(ready.stdout).ready).toBe(true)
   }, 120_000)
+
+  it('auto-records runtime evidence when productSmoke preflight passes', async () => {
+    const scaleDir = makeDir('scale-runtime-cli-scale-')
+    const projectDir = makeDir('scale-runtime-cli-project-')
+    mkdirSync(scaleDir, { recursive: true })
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'productSmoke',
+      profiles: {
+        productSmoke: {
+          commands: {
+            smoke: 'node -p 42',
+          },
+        },
+      },
+      policy: {
+        productSmokeGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+
+    const preflight = await runScale([
+      'preflight',
+      '--profile',
+      'productSmoke',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(preflight.exitCode).toBe(0)
+    expect(parseJson<{ passed: boolean; gates: string[] }>(preflight.stdout)).toMatchObject({
+      passed: true,
+      gates: ['G8'],
+    })
+
+    const finalCheck = await runScale([
+      'runtime',
+      'final-check',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(finalCheck.exitCode).toBe(0)
+    const readiness = parseJson<{ ready: boolean; report: { evidence: { passed: number } } }>(finalCheck.stdout)
+    expect(readiness.ready).toBe(true)
+    expect(readiness.report.evidence.passed).toBe(1)
+  }, 120_000)
 })

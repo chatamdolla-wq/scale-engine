@@ -7,9 +7,18 @@ export interface VerificationCommandConfig {
   test?: string
   coverage?: string
   smoke?: string
+  runtimeEvidence?: VerificationRuntimeEvidenceConfig
   tddEvidence?: string
   tddStrict?: boolean
   cwd?: string
+}
+
+export interface VerificationRuntimeEvidenceConfig {
+  projectDir?: string
+  scaleDir?: string
+  taskId?: string
+  sessionId?: string
+  profile?: string
 }
 
 export interface ResolvedVerificationCommand {
@@ -26,6 +35,7 @@ export interface ResolvedVerificationCommands {
   test: ResolvedVerificationCommand
   coverage: ResolvedVerificationCommand
   smoke: ResolvedVerificationCommand
+  runtimeEvidence?: VerificationRuntimeEvidenceConfig
   tddEvidence?: string
   tddStrict?: boolean
 }
@@ -50,6 +60,7 @@ export function detectVerificationCommands(
     test: withCwd(resolveScriptCommand(packageManager, scripts, 'test', overrides.test), cwd),
     coverage: withCwd(resolveCoverageCommand(packageManager, scripts, overrides.coverage), cwd),
     smoke: withCwd(resolveScriptCommand(packageManager, scripts, 'smoke', overrides.smoke), cwd),
+    runtimeEvidence: overrides.runtimeEvidence,
     tddEvidence: overrides.tddEvidence,
     tddStrict: overrides.tddStrict,
   }

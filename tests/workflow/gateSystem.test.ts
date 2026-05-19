@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -245,6 +245,44 @@ describe('ProductSmokeGate', () => {
     expect(result.passed).toBe(true)
     expect(result.status).toBe('PASSED')
     expect(result.evidenceItems?.[0].label).toBe('Product smoke command')
+  })
+
+  it('records passed product smoke runtime evidence when configured', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'scale-product-smoke-runtime-'))
+    dirs.push(projectDir)
+    const scaleDir = join(projectDir, '.scale')
+    const gate = new ProductSmokeGate({
+      command: nodePrintCommand('copy task completed through gateway'),
+      source: 'override',
+      reason: 'test product smoke command',
+    }, {
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-SMOKE',
+      sessionId: 'SESSION-SMOKE',
+      profile: 'productSmoke',
+    })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(true)
+    const evidenceDir = join(scaleDir, 'evidence', 'runtime')
+    expect(existsSync(evidenceDir)).toBe(true)
+    const records = readdirSync(evidenceDir).filter(file => file.endsWith('.json'))
+    expect(records.length).toBe(1)
+    const record = JSON.parse(readFileSync(join(evidenceDir, records[0]), 'utf-8'))
+    expect(record).toMatchObject({
+      taskId: 'TASK-SMOKE',
+      sessionId: 'SESSION-SMOKE',
+      kind: 'command',
+      status: 'passed',
+      metadata: {
+        productSmoke: true,
+        realProductPath: true,
+        gate: 'G8',
+        profile: 'productSmoke',
+      },
+    })
   })
 
   it('fails when the product smoke command exits non-zero', async () => {

@@ -1611,6 +1611,11 @@ const preflight = defineCommand({
         test: args['test-cmd'] ?? target.config.test,
         coverage: args['coverage-cmd'] ?? target.config.coverage,
         smoke: target.config.smoke,
+        runtimeEvidence: {
+          projectDir,
+          scaleDir,
+          profile: resolved.profileName,
+        },
         tddEvidence: args['tdd-evidence'],
         tddStrict: isTruthyFlag(args['tdd-strict']),
         gates: gateStages,

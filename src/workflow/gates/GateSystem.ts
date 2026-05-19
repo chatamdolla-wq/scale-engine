@@ -5,9 +5,10 @@ import type { IEventBus } from '../../core/eventBus.js'
 import type { GateStage, GateResult, GateStatus, GateEvidence } from '../types.js'
 import { EvidenceStore } from '../EvidenceStore.js'
 import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
-import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig } from '../VerificationCommands.js'
+import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig, type VerificationRuntimeEvidenceConfig } from '../VerificationCommands.js'
 import { execa } from 'execa'
 import { createHash } from 'node:crypto'
+import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
 
 export interface IGate {
   stage: GateStage
@@ -228,7 +229,7 @@ export class GateSystem {
     this.registerGate(new TestGate(this.commands.test))
     this.registerGate(new CoverageGate(this.commands.coverage))
     this.registerGate(new SecurityGate())
-    this.registerGate(new ProductSmokeGate(this.commands.smoke))
+    this.registerGate(new ProductSmokeGate(this.commands.smoke, this.commands.runtimeEvidence))
   }
 }
 
@@ -1068,7 +1069,10 @@ export class ProductSmokeGate implements IGate {
   description = 'Run configured real product-path smoke command'
   requiredLevel: RequiredLevel = 'M'
 
-  constructor(private command: ResolvedVerificationCommand) {}
+  constructor(
+    private command: ResolvedVerificationCommand,
+    private runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+  ) {}
 
   async execute(): Promise<GateResult> {
     if (!this.command.command) {
@@ -1086,16 +1090,52 @@ export class ProductSmokeGate implements IGate {
       blockers.push(`Product smoke execution failed: ${e}`)
     }
     const passed = blockers.length === 0
+    if (passed) {
+      const evidenceError = this.recordRuntimeEvidence(commandResult)
+      if (evidenceError) blockers.push(evidenceError)
+    }
     const evidenceItems = [
       commandEvidence('Product smoke command', this.command, passed, commandResult),
     ]
     return {
       gate: this.stage,
-      status: passed ? 'PASSED' : 'FAILED',
-      passed,
+      status: blockers.length === 0 ? 'PASSED' : 'FAILED',
+      passed: blockers.length === 0,
       evidence: textEvidence(evidenceItems),
       evidenceItems,
       blockers,
     } as GateResult
+  }
+
+  private recordRuntimeEvidence(commandResult: CommandResult | null): string | null {
+    if (!this.runtimeEvidence) return null
+    try {
+      const projectDir = this.runtimeEvidence.projectDir ?? this.command.cwd ?? process.cwd()
+      const ledger = new RuntimeEvidenceLedger({
+        projectDir,
+        scaleDir: this.runtimeEvidence.scaleDir,
+      })
+      ledger.record({
+        taskId: this.runtimeEvidence.taskId,
+        sessionId: this.runtimeEvidence.sessionId,
+        kind: 'command',
+        title: 'Product smoke: G8',
+        status: 'passed',
+        command: this.command.command,
+        exitCode: commandResult?.code,
+        summary: tail(commandResult?.stdout || commandResult?.stderr || 'Product smoke gate passed', 1000),
+        artifacts: ['.agent/logs/product-smoke.json'],
+        metadata: {
+          productSmoke: true,
+          realProductPath: true,
+          gate: 'G8',
+          profile: this.runtimeEvidence.profile ?? 'productSmoke',
+          source: this.command.source,
+        },
+      })
+      return null
+    } catch (error) {
+      return `Product smoke runtime evidence could not be recorded: ${error instanceof Error ? error.message : String(error)}`
+    }
   }
 }
