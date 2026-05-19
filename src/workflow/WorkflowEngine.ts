@@ -177,7 +177,10 @@ export class WorkflowEngine {
     if (commandOverrides) {
       this.gateSystem = new GateSystem(this.eventBus, commandOverrides, this.artifactWriter)
     }
-    const results = await this.gateSystem.executeAll(commandOverrides?.gates ?? ['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
+    const defaultGates: GateStage[] = commandOverrides?.smoke
+      ? ['G8']
+      : ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
+    const results = await this.gateSystem.executeAll(commandOverrides?.gates ?? defaultGates)
     return results
   }
 

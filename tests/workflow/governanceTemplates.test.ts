@@ -36,8 +36,12 @@ describe('writeGovernanceTemplates', () => {
       join(dir, 'docs', 'workflow', 'templates', 'architecture-review.md'),
       join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'),
       join(dir, 'docs', 'workflow', 'templates', 'pre-push-scale-preflight.sh'),
+      join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'),
       join(dir, 'docs', 'worklog', 'metrics.md'),
+      join(dir, 'scripts', 'qa', 'product-smoke.ps1'),
+      join(dir, 'scripts', 'qa', 'product-smoke.sh'),
       join(dir, '.scale', 'verification.json'),
+      join(dir, '.scale', 'product-smoke.json'),
       join(dir, '.scale', 'skills.json'),
       join(dir, '.scale', 'tools.json'),
       join(dir, '.scale', 'resource-policy.json'),
@@ -53,11 +57,24 @@ describe('writeGovernanceTemplates', () => {
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('## HTML Artifacts')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'), 'utf-8')).toContain('## Tool Orchestration')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'), 'utf-8')).toContain('## Browser Or Web Evidence')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('## Real Product Path')
+    expect(readFileSync(join(dir, 'scripts', 'qa', 'product-smoke.ps1'), 'utf-8')).toContain('$ConfigPath = Join-Path $Root ".scale\\product-smoke.json"')
+    expect(readFileSync(join(dir, 'scripts', 'qa', 'product-smoke.sh'), 'utf-8')).toContain('CONFIG_PATH="$ROOT/.scale/product-smoke.json"')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'github-actions-scale-preflight.yml'), 'utf-8')).toContain('scale-engine@latest preflight --service all --preflight-profile ci')
-    expect(JSON.parse(readFileSync(join(dir, '.scale', 'verification.json'), 'utf-8')).policy).toMatchObject({
+    const verification = JSON.parse(readFileSync(join(dir, '.scale', 'verification.json'), 'utf-8'))
+    expect(verification.policy).toMatchObject({
       mode: 'critical',
       artifactGate: 'block',
       engineeringStandardsGate: 'block',
+      productSmokeGate: 'block',
+    })
+    expect(verification.profiles.productSmoke.commands.smoke).toBe('powershell -ExecutionPolicy Bypass -File scripts/qa/product-smoke.ps1')
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'product-smoke.json'), 'utf-8'))).toMatchObject({
+      version: 1,
+      gate: 'block',
+      runtimeEvidence: {
+        requiredKind: 'command',
+      },
     })
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'skills.json'), 'utf-8')).policy).toMatchObject({
       mode: 'block',
@@ -211,6 +228,7 @@ describe('writeGovernanceTemplates', () => {
       'security-review.md',
       'db-change-plan.md',
       'e2e-plan.md',
+      'product-smoke.md',
       'plan.md',
       'verification.md',
       'review.md',

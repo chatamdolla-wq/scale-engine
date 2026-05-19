@@ -1039,6 +1039,7 @@ export const phaseVerify = defineCommand({
         lint: args['lint-cmd'] ?? target.config.lint,
         test: args['test-cmd'] ?? target.config.test,
         coverage: args['coverage-cmd'] ?? target.config.coverage,
+        smoke: target.config.smoke,
         tddEvidence: args['tdd-evidence'],
         tddStrict: isTruthyFlag(args['tdd-strict']),
       })

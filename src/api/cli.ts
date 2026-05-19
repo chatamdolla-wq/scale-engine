@@ -1558,13 +1558,16 @@ const preflight = defineCommand({
     const scaleDir = resolveScaleDirForProject(projectDir)
     const workflowEngine = createVerificationWorkflowEngine(scaleDir)
     const preflightProfile = normalizePreflightProfile(args['preflight-profile'])
-    const gateStages = gatesForPreflightProfile(preflightProfile)
     const resolved = resolveVerificationTargets({
       projectDir,
       scaleDir,
       profile: args.profile,
       service: args.service,
     })
+    let gateStages = gatesForPreflightProfile(preflightProfile)
+    if (resolved.targets.some(target => target.config.smoke)) {
+      gateStages = ['G8']
+    }
     const commandTargetsSkipped = shouldSkipPreflightCommandTargets(resolved, args)
     if (commandTargetsSkipped) {
       resolved.warnings.push('No verification services or profile commands configured; command gates skipped for this governance-only project.')
@@ -1607,6 +1610,7 @@ const preflight = defineCommand({
         lint: args['lint-cmd'] ?? target.config.lint,
         test: args['test-cmd'] ?? target.config.test,
         coverage: args['coverage-cmd'] ?? target.config.coverage,
+        smoke: target.config.smoke,
         tddEvidence: args['tdd-evidence'],
         tddStrict: isTruthyFlag(args['tdd-strict']),
         gates: gateStages,

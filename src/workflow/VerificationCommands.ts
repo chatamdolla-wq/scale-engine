@@ -6,6 +6,7 @@ export interface VerificationCommandConfig {
   lint?: string
   test?: string
   coverage?: string
+  smoke?: string
   tddEvidence?: string
   tddStrict?: boolean
   cwd?: string
@@ -24,6 +25,7 @@ export interface ResolvedVerificationCommands {
   lint: ResolvedVerificationCommand
   test: ResolvedVerificationCommand
   coverage: ResolvedVerificationCommand
+  smoke: ResolvedVerificationCommand
   tddEvidence?: string
   tddStrict?: boolean
 }
@@ -47,6 +49,7 @@ export function detectVerificationCommands(
     lint: withCwd(resolveScriptCommand(packageManager, scripts, 'lint', overrides.lint), cwd),
     test: withCwd(resolveScriptCommand(packageManager, scripts, 'test', overrides.test), cwd),
     coverage: withCwd(resolveCoverageCommand(packageManager, scripts, overrides.coverage), cwd),
+    smoke: withCwd(resolveScriptCommand(packageManager, scripts, 'smoke', overrides.smoke), cwd),
     tddEvidence: overrides.tddEvidence,
     tddStrict: overrides.tddStrict,
   }

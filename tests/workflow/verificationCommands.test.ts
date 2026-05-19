@@ -71,11 +71,12 @@ describe('detectVerificationCommands', () => {
     expect(commands.lint.source).toBe('missing')
     expect(commands.test.source).toBe('missing')
     expect(commands.coverage.source).toBe('missing')
+    expect(commands.smoke.source).toBe('missing')
   })
 
   it('uses overrides over detected scripts', () => {
     const dir = makeProject({
-      scripts: { build: 'tsc', lint: 'eslint .', test: 'vitest', coverage: 'vitest --coverage' },
+      scripts: { build: 'tsc', lint: 'eslint .', test: 'vitest', coverage: 'vitest --coverage', smoke: 'node smoke.js' },
     })
 
     const commands = detectVerificationCommands(dir, {
@@ -83,11 +84,24 @@ describe('detectVerificationCommands', () => {
       lint: 'custom lint',
       test: 'custom test',
       coverage: 'custom coverage',
+      smoke: 'custom smoke',
     })
 
     expect(commands.build.command).toBe('custom build')
     expect(commands.lint.command).toBe('custom lint')
     expect(commands.test.command).toBe('custom test')
     expect(commands.coverage.command).toBe('custom coverage')
+    expect(commands.smoke.command).toBe('custom smoke')
+  })
+
+  it('detects package smoke scripts for product path checks', () => {
+    const dir = makeProject({
+      scripts: { smoke: 'node smoke.js' },
+    })
+
+    const commands = detectVerificationCommands(dir)
+
+    expect(commands.smoke.command).toBe('npm run smoke')
+    expect(commands.smoke.source).toBe('package-script')
   })
 })

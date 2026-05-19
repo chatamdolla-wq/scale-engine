@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { BuildGate, CoverageGate, ExplorationGate, PlanningGate, SecurityGate, TDDGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
+import { BuildGate, CoverageGate, ExplorationGate, PlanningGate, ProductSmokeGate, SecurityGate, TDDGate, runShellCommand } from '../../src/workflow/gates/GateSystem.js'
 import { WorkflowArtifactWriter } from '../../src/workflow/WorkflowArtifactWriter.js'
 
 let dirs: string[] = []
@@ -228,6 +228,39 @@ describe('CoverageGate', () => {
     expect(result.passed).toBe(false)
     expect(result.status).toBe('FAILED')
     expect(result.blockers).toContain('Coverage percentage could not be parsed')
+  })
+})
+
+describe('ProductSmokeGate', () => {
+  it('passes when the product smoke command exits successfully', async () => {
+    const gate = new ProductSmokeGate({
+      command: nodePrintCommand('copy task completed through gateway'),
+      source: 'override',
+      reason: 'test product smoke command',
+    })
+
+    const result = await gate.execute()
+
+    expect(result.gate).toBe('G8')
+    expect(result.passed).toBe(true)
+    expect(result.status).toBe('PASSED')
+    expect(result.evidenceItems?.[0].label).toBe('Product smoke command')
+  })
+
+  it('fails when the product smoke command exits non-zero', async () => {
+    const gate = new ProductSmokeGate({
+      command: 'node -e "process.stderr.write(\\"route mismatch\\"); process.exit(2)"',
+      source: 'override',
+      reason: 'test failing product smoke command',
+    })
+
+    const result = await gate.execute()
+
+    expect(result.gate).toBe('G8')
+    expect(result.passed).toBe(false)
+    expect(result.status).toBe('FAILED')
+    expect(result.blockers[0]).toContain('Product smoke failed')
+    expect(result.evidenceItems?.[0].exitCode).toBe(2)
   })
 })
 

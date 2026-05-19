@@ -123,6 +123,33 @@ describe('resolveVerificationProfile', () => {
     })
   })
 
+  it('resolves product smoke profile commands and policy', () => {
+    const dir = makeProject()
+    writeFileSync(join(dir, '.scale', 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: {
+        default: { commands: {} },
+        productSmoke: {
+          commands: {
+            smoke: 'powershell -ExecutionPolicy Bypass -File scripts/qa/product-smoke.ps1',
+          },
+        },
+      },
+      policy: {
+        productSmokeGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+
+    const resolved = resolveVerificationProfile({ projectDir: dir, profile: 'productSmoke' })
+
+    expect(resolved.profileName).toBe('productSmoke')
+    expect(resolved.config.smoke).toBe('powershell -ExecutionPolicy Bypass -File scripts/qa/product-smoke.ps1')
+    expect(resolved.policy).toMatchObject({
+      productSmokeGate: 'block',
+    })
+  })
+
   it('uses profile service selection when no service is requested', () => {
     const dir = makeProject()
     mkdirSync(join(dir, 'services', 'api'), { recursive: true })

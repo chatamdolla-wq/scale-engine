@@ -228,6 +228,7 @@ export class GateSystem {
     this.registerGate(new TestGate(this.commands.test))
     this.registerGate(new CoverageGate(this.commands.coverage))
     this.registerGate(new SecurityGate())
+    this.registerGate(new ProductSmokeGate(this.commands.smoke))
   }
 }
 
@@ -1058,5 +1059,43 @@ export class SecurityGate implements IGate {
     if (!this.isTestPath(file)) return false
     return /\b(?:text|content|diff|source)\b\s*[:=]/.test(line) &&
       /['"`].*(?:password|api[_-]?key|secret|token|auth|credential|private[_-]?key|git add|shell: true|@ts-ignore|catch)/i.test(line)
+  }
+}
+
+export class ProductSmokeGate implements IGate {
+  stage = 'G8' as GateStage
+  name = 'Product Smoke'
+  description = 'Run configured real product-path smoke command'
+  requiredLevel: RequiredLevel = 'M'
+
+  constructor(private command: ResolvedVerificationCommand) {}
+
+  async execute(): Promise<GateResult> {
+    if (!this.command.command) {
+      return missingCommandResult(this.stage, 'Product smoke command', this.command)
+    }
+
+    const blockers: string[] = []
+    let commandResult: CommandResult | null = null
+    try {
+      commandResult = await runShellCommand(this.command.command, 180000, this.command.cwd)
+      if (commandResult.code !== 0) {
+        blockers.push(`Product smoke failed: ${commandResult.stderr || commandResult.stdout || `exit code ${commandResult.code}`}`)
+      }
+    } catch (e) {
+      blockers.push(`Product smoke execution failed: ${e}`)
+    }
+    const passed = blockers.length === 0
+    const evidenceItems = [
+      commandEvidence('Product smoke command', this.command, passed, commandResult),
+    ]
+    return {
+      gate: this.stage,
+      status: passed ? 'PASSED' : 'FAILED',
+      passed,
+      evidence: textEvidence(evidenceItems),
+      evidenceItems,
+      blockers,
+    } as GateResult
   }
 }

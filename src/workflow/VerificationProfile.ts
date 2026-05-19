@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { VerificationCommandConfig } from './VerificationCommands.js'
 
-export type VerificationCommandName = 'build' | 'lint' | 'test' | 'coverage'
+export type VerificationCommandName = 'build' | 'lint' | 'test' | 'coverage' | 'smoke'
 export type VerificationArtifactGateMode = 'off' | 'warn' | 'block'
 export type VerificationArtifactGateLevel = 'M' | 'L' | 'CRITICAL'
 export type VerificationEngineeringStandardsGateMode = 'off' | 'warn' | 'block'
@@ -26,6 +26,7 @@ export interface VerificationPolicy {
   artifactGate?: VerificationArtifactGateMode
   artifactGateLevels?: VerificationArtifactGateLevel[]
   engineeringStandardsGate?: VerificationEngineeringStandardsGateMode
+  productSmokeGate?: VerificationEngineeringStandardsGateMode
 }
 
 export interface VerificationMatrix {
@@ -67,6 +68,7 @@ export const DEFAULT_VERIFICATION_POLICY: VerificationPolicy = {
   artifactGate: 'warn',
   artifactGateLevels: ['M', 'L', 'CRITICAL'],
   engineeringStandardsGate: 'warn',
+  productSmokeGate: 'warn',
 }
 
 export function loadVerificationMatrix(
@@ -122,6 +124,7 @@ export function resolveVerificationProfile(
       lint: commands.lint,
       test: commands.test,
       coverage: commands.coverage,
+      smoke: commands.smoke,
     },
     profileName,
     service,
@@ -185,6 +188,7 @@ export function resolveVerificationPolicy(matrix: VerificationMatrix | null | un
     artifactGate: normalizeArtifactGate(policy.artifactGate) ?? DEFAULT_VERIFICATION_POLICY.artifactGate,
     artifactGateLevels: normalizeArtifactGateLevels(policy.artifactGateLevels),
     engineeringStandardsGate: normalizeEngineeringStandardsGate(policy.engineeringStandardsGate) ?? DEFAULT_VERIFICATION_POLICY.engineeringStandardsGate,
+    productSmokeGate: normalizeEngineeringStandardsGate(policy.productSmokeGate) ?? DEFAULT_VERIFICATION_POLICY.productSmokeGate,
   }
 }
 

@@ -33,6 +33,7 @@ export type GovernanceArtifactTemplateName =
   | 'security-review.md'
   | 'db-change-plan.md'
   | 'e2e-plan.md'
+  | 'product-smoke.md'
   | 'plan.md'
   | 'verification.md'
   | 'review.md'
@@ -82,6 +83,7 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/product-smoke.md', governanceTemplateContent('product-smoke.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/plan.md', governanceTemplateContent('plan.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/verification.md', governanceTemplateContent('verification.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/review.md', governanceTemplateContent('review.md'))
@@ -89,6 +91,8 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/github-actions-scale-preflight.yml', githubActionsPreflightTemplate())
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/pre-push-scale-preflight.sh', prePushPreflightTemplate())
   writeTracked(result, lockFiles, projectDir, 'docs/worklog/metrics.md', metricsTemplate())
+  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.ps1', productSmokePowerShellScript())
+  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.sh', productSmokeShellScript())
   writeTracked(result, lockFiles, projectDir, '.scale/verification.json', verificationMatrixTemplate(mode, {
     services,
     exclude,
@@ -99,6 +103,7 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/output-policy.json', outputPolicyTemplate())
+  writeTracked(result, lockFiles, projectDir, '.scale/product-smoke.json', productSmokeConfigTemplate(mode))
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards-baseline.json', engineeringStandardsBaselineTemplate())
   writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate())
@@ -135,6 +140,7 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
     case 'security-review.md': return securityReviewTemplate()
     case 'db-change-plan.md': return dbChangePlanTemplate()
     case 'e2e-plan.md': return e2ePlanTemplate()
+    case 'product-smoke.md': return productSmokeTemplate()
     case 'plan.md': return planTemplate()
     case 'verification.md': return verificationTemplate()
     case 'review.md': return reviewTemplate()
@@ -267,6 +273,7 @@ scale verify <task-id> --service <service-name>
 scale verify <task-id> --artifact-gate warn
 scale verify <task-id> --artifact-gate block
 scale verify <task-id> --require-installed-skills
+scale verify <task-id> --profile productSmoke
 scale task-artifacts check --dir docs/worklog/tasks/<task-dir> --level L
 scale artifact render --task-id <task-dir> --type release-report
 scale artifact doctor --task-id <task-dir>
@@ -369,6 +376,8 @@ Default policy:
 - \`.scale/engineering-standards.json > allowedFindingPatterns\` allows narrow rule/path/evidence exceptions without hiding unrelated findings in the same file.
 - \`.scale/engineering-standards-baseline.json\` may hold known legacy findings during rollout, but normal task gates should prefer \`--changed\` or \`--changed-files\` so new work is blocked without forcing a whole-repo cleanup.
 - \`.scale/verification.json > policy.engineeringStandardsGate\` controls whether preflight and task verification treat standards as \`off\`, \`warn\`, or \`block\`.
+- \`.scale/product-smoke.json\` defines real product-path probes. Use it to prove a routed user/business flow, not only build, unit tests, or \`/health\`.
+- \`.scale/verification.json > policy.productSmokeGate\` controls whether missing or failed product smoke evidence warns or blocks M/L/CRITICAL delivery.
 - Full standards scans are for release readiness, scheduled remediation, and architecture cleanup. Changed-file scans are the default for day-to-day feature and bug branches.
 - Use \`scale standards baseline --write\` only during an explicit rollout or remediation planning task. It writes the machine-readable baseline and a \`standards-legacy-debt.md\` classification report for staged cleanup.
 
@@ -816,6 +825,60 @@ TBD
 `
 }
 
+function productSmokeTemplate(): string {
+  return `# Product Smoke
+
+## Real Product Path
+
+Describe the smallest end-to-end path that proves the change works through the real product boundary.
+
+Example:
+
+\`\`\`text
+UI or client -> gateway/router -> service -> database/storage/queue -> observable result
+\`\`\`
+
+Do not use a green health endpoint as the only proof when the user-facing path depends on routing, authentication, storage, async tasks, browser behavior, or third-party integration.
+
+## Setup
+
+- Base URL:
+- Test user or tenant:
+- Required fixtures:
+- Services that must be running:
+
+## Smoke Commands
+
+| Command | Expected Result | Evidence Artifact |
+| --- | --- | --- |
+| TBD | TBD | TBD |
+
+## Runtime Evidence
+
+Record at least one runtime evidence item:
+
+\`\`\`bash
+scale runtime record \\
+  --kind command \\
+  --title "Product smoke: <flow>" \\
+  --status passed \\
+  --command "<exact smoke command>" \\
+  --exit-code 0 \\
+  --summary "<business result, task id, status, or observable output>" \\
+  --artifacts ".agent/logs/<service>/<smoke>.json"
+\`\`\`
+
+## Assertions
+
+- [ ] Request crossed the real product boundary, not only an isolated unit.
+- [ ] Authentication or user identity path was exercised when relevant.
+- [ ] Persistence/storage/queue side effect was verified when relevant.
+- [ ] Async task or eventual state was polled to terminal status when relevant.
+- [ ] Failure output is specific enough to diagnose the failing layer.
+- [ ] Runtime artifacts are ignored or deliberately promoted according to resource governance.
+`
+}
+
 function planTemplate(): string {
   return `# Plan
 
@@ -951,6 +1014,12 @@ function verificationMatrixTemplate(
         commands: {},
         services: options.services?.filter(service => service.required !== false).map(service => service.name) ?? [],
       },
+      productSmoke: {
+        commands: {
+          smoke: 'powershell -ExecutionPolicy Bypass -File scripts/qa/product-smoke.ps1',
+        },
+        services: options.services?.filter(service => service.required !== false).map(service => service.name) ?? [],
+      },
     },
     services: options.services ?? [],
     exclude: options.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor'],
@@ -960,8 +1029,167 @@ function verificationMatrixTemplate(
       artifactGate: options.artifactGate ?? (mode === 'critical' ? 'block' : 'warn'),
       artifactGateLevels: ['M', 'L', 'CRITICAL'],
       engineeringStandardsGate: mode === 'minimal' ? 'warn' : 'block',
+      productSmokeGate: mode === 'critical' ? 'block' : 'warn',
     },
   }, null, 2) + '\n'
+}
+
+function productSmokeConfigTemplate(mode: GovernanceMode): string {
+  return JSON.stringify({
+    version: 1,
+    gate: mode === 'critical' ? 'block' : 'warn',
+    requiredForLevels: ['M', 'L', 'CRITICAL'],
+    emptyProbeBehavior: 'warn',
+    runtimeEvidence: {
+      requiredKind: 'command',
+      requiredStatus: 'passed',
+      requireArtifacts: true,
+    },
+    probes: [
+      {
+        id: 'example-business-flow',
+        enabled: false,
+        description: 'Replace with a real user/product path such as UI -> gateway -> service -> database/storage.',
+        command: 'curl -fsS http://127.0.0.1:3000/health',
+        expected: {
+          exitCode: 0,
+          evidenceArtifact: '.agent/logs/product-smoke.json',
+        },
+      },
+    ],
+  }, null, 2) + '\n'
+}
+
+function productSmokePowerShellScript(): string {
+  return `# Product smoke probe runner generated by scale-engine.
+$ErrorActionPreference = "Stop"
+
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
+$ConfigPath = Join-Path $Root ".scale\\product-smoke.json"
+$LogDir = Join-Path $Root ".agent\\logs"
+$LogPath = Join-Path $LogDir "product-smoke.json"
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+$NodeProgram = @'
+${productSmokeNodeProgram()}
+'@
+
+$TempFile = [System.IO.Path]::GetTempFileName() + ".js"
+Set-Content -Path $TempFile -Value $NodeProgram -Encoding UTF8
+try {
+  node $TempFile $ConfigPath $LogPath
+  exit $LASTEXITCODE
+} finally {
+  Remove-Item -Force $TempFile -ErrorAction SilentlyContinue
+}
+`
+}
+
+function productSmokeShellScript(): string {
+  return `#!/usr/bin/env sh
+set -eu
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+CONFIG_PATH="$ROOT/.scale/product-smoke.json"
+LOG_DIR="$ROOT/.agent/logs"
+LOG_PATH="$LOG_DIR/product-smoke.json"
+
+mkdir -p "$LOG_DIR"
+
+node - "$CONFIG_PATH" "$LOG_PATH" <<'NODE'
+${productSmokeNodeProgram()}
+NODE
+`
+}
+
+function productSmokeNodeProgram(): string {
+  return `const fs = require('fs');
+const cp = require('child_process');
+const path = require('path');
+
+const configPath = process.argv[2];
+const logPath = process.argv[3];
+
+function writeReport(report) {
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.writeFileSync(logPath, JSON.stringify(report, null, 2) + '\\n', 'utf8');
+  process.stdout.write(JSON.stringify(report, null, 2) + '\\n');
+}
+
+if (!fs.existsSync(configPath)) {
+  writeReport({
+    version: 1,
+    status: 'failed',
+    verifiedAt: new Date().toISOString(),
+    message: 'Missing .scale/product-smoke.json',
+    results: []
+  });
+  process.exit(1);
+}
+
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const probes = Array.isArray(config.probes) ? config.probes.filter(probe => probe && probe.enabled === true) : [];
+
+if (probes.length === 0) {
+  const status = config.emptyProbeBehavior === 'block' ? 'failed' : 'skipped';
+  writeReport({
+    version: 1,
+    status,
+    verifiedAt: new Date().toISOString(),
+    message: 'No enabled product smoke probes. Enable probes in .scale/product-smoke.json after defining the real product path.',
+    results: []
+  });
+  process.exit(status === 'failed' ? 1 : 0);
+}
+
+const results = probes.map((probe) => {
+  const startedAt = new Date().toISOString();
+  const expectedExitCode = Number.isInteger(probe.expected && probe.expected.exitCode) ? probe.expected.exitCode : 0;
+  const command = String(probe.command || '');
+  if (!command.trim()) {
+    return {
+      id: String(probe.id || 'unnamed-probe'),
+      description: String(probe.description || ''),
+      command,
+      expectedExitCode,
+      exitCode: 1,
+      status: 'failed',
+      startedAt,
+      endedAt: new Date().toISOString(),
+      outputTail: 'Probe command is empty'
+    };
+  }
+  const result = cp.spawnSync(command, {
+    cwd: process.cwd(),
+    shell: true,
+    encoding: 'utf8',
+    timeout: Number(config.timeoutMs || 180000)
+  });
+  const output = String(result.stdout || '') + String(result.stderr || '') + String(result.error ? result.error.message : '');
+  const exitCode = typeof result.status === 'number' ? result.status : 1;
+  return {
+    id: String(probe.id || 'unnamed-probe'),
+    description: String(probe.description || ''),
+    command,
+    expectedExitCode,
+    exitCode,
+    status: exitCode === expectedExitCode ? 'passed' : 'failed',
+    startedAt,
+    endedAt: new Date().toISOString(),
+    outputTail: output.length > 2000 ? output.slice(-2000) : output
+  };
+});
+
+const failed = results.filter(result => result.status !== 'passed');
+writeReport({
+  version: 1,
+  status: failed.length === 0 ? 'passed' : 'failed',
+  verifiedAt: new Date().toISOString(),
+  results
+});
+process.exit(failed.length === 0 ? 0 : 1);
+`
 }
 
 function packageVersion(): string {
