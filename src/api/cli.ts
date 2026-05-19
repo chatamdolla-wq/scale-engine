@@ -248,6 +248,17 @@ function evaluateEngineeringStandardsGate(options: {
   }
 }
 
+function skippedEngineeringStandardsGate(reason: string, policy: VerificationPolicy): EngineeringStandardsGateStatus {
+  void reason
+  return {
+    mode: normalizeEngineeringStandardsGateMode(policy.engineeringStandardsGate),
+    checked: false,
+    blocked: false,
+    ok: true,
+    findings: [],
+  }
+}
+
 function normalizeEngineeringStandardsGateMode(value: unknown): VerificationEngineeringStandardsGateMode {
   return value === 'off' || value === 'block' ? value : 'warn'
 }
@@ -1538,6 +1549,62 @@ function normalizeWorkspaceTopologyKind(value: unknown): WorkspaceTopologyKind {
   return 'moe'
 }
 
+interface PreflightWorkspaceSafety {
+  checked: boolean
+  gitRepository: boolean
+  blocked: boolean
+  conflicts: string[]
+  message: string
+}
+
+function inspectPreflightWorkspaceSafety(projectDir: string): PreflightWorkspaceSafety {
+  try {
+    execFileSync('git', ['-C', projectDir, 'rev-parse', '--show-toplevel'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
+  } catch {
+    return {
+      checked: true,
+      gitRepository: false,
+      blocked: false,
+      conflicts: [],
+      message: 'Project directory is not a git repository; workspace conflict check skipped.',
+    }
+  }
+
+  try {
+    const porcelain = execFileSync('git', ['-C', projectDir, 'status', '--porcelain=v1', '--untracked-files=no'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    const conflicts = porcelain
+      .split(/\r?\n/)
+      .map(line => line.trimEnd())
+      .filter(Boolean)
+      .filter(line => isUnmergedPorcelainStatus(line.slice(0, 2)))
+      .map(line => line.slice(3).trim())
+    return {
+      checked: true,
+      gitRepository: true,
+      blocked: conflicts.length > 0,
+      conflicts,
+      message: conflicts.length > 0
+        ? `Unresolved git conflicts: ${conflicts.join(', ')}`
+        : 'No unresolved git conflicts detected.',
+    }
+  } catch (error) {
+    return {
+      checked: true,
+      gitRepository: true,
+      blocked: true,
+      conflicts: [],
+      message: `Git workspace conflict check failed: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
+function isUnmergedPorcelainStatus(status: string): boolean {
+  return ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'].includes(status)
+}
+
 const preflight = defineCommand({
   meta: { name: 'preflight', description: 'Run service-aware verification without a task artifact' },
   args: {
@@ -1572,11 +1639,14 @@ const preflight = defineCommand({
     if (commandTargetsSkipped) {
       resolved.warnings.push('No verification services or profile commands configured; command gates skipped for this governance-only project.')
     }
-    const engineeringStandards = evaluateEngineeringStandardsGate({
-      policy: resolved.policy,
-      projectDir,
-      scaleDir,
-    })
+    const workspaceSafety = inspectPreflightWorkspaceSafety(projectDir)
+    const engineeringStandards = workspaceSafety.blocked
+      ? skippedEngineeringStandardsGate('Workspace has unresolved git conflicts; resolve them before standards scanning.', resolved.policy)
+      : evaluateEngineeringStandardsGate({
+          policy: resolved.policy,
+          projectDir,
+          scaleDir,
+        })
 
     const targetResults: Array<{
       service?: string
@@ -1591,6 +1661,9 @@ const preflight = defineCommand({
       console.log(`  Profile: ${resolved.profileName}`)
       console.log(`  Preflight profile: ${preflightProfile}`)
       console.log(`  Gates: ${gateStages.join(', ')}`)
+      if (workspaceSafety.blocked) {
+        console.log(`  Workspace safety: BLOCKED - ${workspaceSafety.message}`)
+      }
       if (engineeringStandards.checked) {
         const status = engineeringStandards.blocked ? 'BLOCKED' : engineeringStandards.ok ? 'OK' : 'WARN'
         console.log(`  Engineering standards: ${status} (${engineeringStandards.mode})`)
@@ -1599,7 +1672,7 @@ const preflight = defineCommand({
       }
     }
 
-    for (const target of commandTargetsSkipped ? [] : resolved.targets) {
+    for (const target of commandTargetsSkipped || workspaceSafety.blocked ? [] : resolved.targets) {
       if (!args.json) {
         const label = target.service ? `${target.service.name} (${target.service.path})` : 'root'
         console.log(`\n  Target: ${label}`)
@@ -1637,6 +1710,7 @@ const preflight = defineCommand({
     }
 
     const passed = (targetResults.length === 0 || targetResults.every(target => target.passed)) &&
+      !workspaceSafety.blocked &&
       !engineeringStandards.blocked
     const result = {
       phase: 'PREFLIGHT',
@@ -1645,6 +1719,7 @@ const preflight = defineCommand({
       gates: gateStages,
       services: targetResults.map(target => target.service).filter(Boolean),
       policy: resolved.policy,
+      workspaceSafety,
       engineeringStandards,
       targets: targetResults,
       commandTargetsSkipped,

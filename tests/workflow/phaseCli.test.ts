@@ -487,6 +487,46 @@ export function login(token: string) {
     expect(result.services).toEqual([])
   }, 120_000)
 
+  it('blocks preflight when the root git repository has unresolved merge conflicts', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    await execa('git', ['config', 'user.email', 'scale-test@example.com'], { cwd: projectDir })
+    await execa('git', ['config', 'user.name', 'SCALE Test'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'conflict.txt'), 'base\n', 'utf-8')
+    await execa('git', ['add', 'conflict.txt'], { cwd: projectDir })
+    await execa('git', ['commit', '-m', 'base'], { cwd: projectDir })
+    await execa('git', ['checkout', '-b', 'left'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'conflict.txt'), 'left\n', 'utf-8')
+    await execa('git', ['commit', '-am', 'left'], { cwd: projectDir })
+    await execa('git', ['checkout', '-b', 'right', 'HEAD~1'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'conflict.txt'), 'right\n', 'utf-8')
+    await execa('git', ['commit', '-am', 'right'], { cwd: projectDir })
+    await execa('git', ['merge', 'left'], { cwd: projectDir, reject: false })
+
+    const preflight = await runScale([
+      'preflight',
+      '--dir',
+      projectDir,
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(preflight.exitCode).toBe(1)
+    const result = parseJson<{
+      passed: boolean
+      workspaceSafety: { blocked: boolean; conflicts: string[] }
+      engineeringStandards: { checked: boolean }
+      targets: unknown[]
+    }>(preflight.stdout)
+    expect(result.passed).toBe(false)
+    expect(result.workspaceSafety).toMatchObject({
+      blocked: true,
+      conflicts: ['conflict.txt'],
+    })
+    expect(result.engineeringStandards.checked).toBe(false)
+    expect(result.targets).toEqual([])
+  }, 120_000)
+
   it('uses a quick preflight profile by default without requiring coverage', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
