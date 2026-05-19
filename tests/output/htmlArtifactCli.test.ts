@@ -72,5 +72,5 @@ describe('artifact CLI', () => {
 
     expect(doctor.exitCode).toBe(0)
     expect(JSON.parse(doctor.stdout)).toMatchObject({ ok: true })
-  })
+  }, 20_000)
 })

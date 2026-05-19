@@ -1,3 +1,34 @@
+## 0.19.0 - 2026-05-19
+
+### Runtime evidence and product smoke gates
+
+- Added product smoke governance gates that can auto-record passed runtime evidence for real product-path checks.
+- Blocked final M/L delivery claims when `productSmokeGate=block` and no passed product smoke evidence exists.
+- Rejected skipped product smoke reports so placeholder smoke scripts cannot be treated as passing verification.
+- Added setup guidance to generated `.scale/product-smoke.json` and init next steps so projects are prompted to replace skipped probes with real user-path checks.
+
+### Memory and learning loop
+
+- Added runtime-evidence-backed memory learning settlement so completed tasks can produce reviewable learning candidates without promoting unverified claims.
+- Added compact memory context pack support that combines task scope, runtime evidence, knowledge, and graph status within a token budget.
+
+### Workspace safety
+
+- Added a shared Git workspace safety check for unresolved merge conflicts.
+- Made `scale preflight` block early when the root workspace has unresolved conflicts, skipping service targets and engineering standards scans.
+- Made `scale doctor` surface unresolved Git conflicts as a core failure and skip noisy standards scans until the workspace is resolved.
+
+### Release readiness and demos
+
+- Added release-readiness demo smoke coverage and an official governance demo path through runtime evidence, memory settlement, and HTML artifact checks.
+- Fixed scaffold/project preflight directory handling so generated demo projects run checks against the intended project root.
+
+### Verification
+
+- Added tests for product smoke evidence recording, skipped smoke rejection, runtime final checks, memory learning settlement, workspace conflict blocking, and release-readiness demo flows.
+
+---
+
 ## 0.18.0 - 2026-05-18
 
 ### Governed HTML artifacts
