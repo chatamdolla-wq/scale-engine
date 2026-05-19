@@ -23,6 +23,9 @@ export type GovernanceArtifactTemplateName =
   | 'mini-prd.md'
   | 'skill-plan.md'
   | 'skill-evidence.md'
+  | 'runtime.md'
+  | 'reality-check.md'
+  | 'resource-cleanup.md'
   | 'ui-spec.md'
   | 'visual-review.md'
   | 'api-contract.md'
@@ -73,6 +76,9 @@ export function writeGovernanceTemplates(
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-evidence.md', governanceTemplateContent('skill-evidence.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/runtime.md', governanceTemplateContent('runtime.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/reality-check.md', governanceTemplateContent('reality-check.md'))
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-cleanup.md', governanceTemplateContent('resource-cleanup.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/ui-spec.md', governanceTemplateContent('ui-spec.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'))
@@ -130,6 +136,9 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
     case 'mini-prd.md': return miniPrdTemplate()
     case 'skill-plan.md': return skillPlanTemplate()
     case 'skill-evidence.md': return skillEvidenceTemplate()
+    case 'runtime.md': return runtimeTemplate()
+    case 'reality-check.md': return realityCheckTemplate()
+    case 'resource-cleanup.md': return resourceCleanupTemplate()
     case 'ui-spec.md': return uiSpecTemplate()
     case 'visual-review.md': return visualReviewTemplate()
     case 'api-contract.md': return apiContractTemplate()
@@ -248,10 +257,13 @@ Governance pack: ${packId}
 ## Standard Task Directory
 
 \`\`\`text
-docs/worklog/tasks/<yyyy-mm-dd>-<task-slug>/
+.planning/tasks/<yyyy-mm-dd>-<task-slug>/
 ├── explore.md
 ├── mini-prd.md
 ├── plan.md
+├── runtime.md
+├── reality-check.md
+├── resource-cleanup.md
 ├── verification.md
 ├── review.md
 ├── summary.md
@@ -274,7 +286,7 @@ scale verify <task-id> --artifact-gate warn
 scale verify <task-id> --artifact-gate block
 scale verify <task-id> --require-installed-skills
 scale verify <task-id> --profile productSmoke
-scale task-artifacts check --dir docs/worklog/tasks/<task-dir> --level L
+scale task-artifacts check --dir .planning/tasks/<task-dir> --level L
 scale artifact render --task-id <task-dir> --type release-report
 scale artifact doctor --task-id <task-dir>
 \`\`\`
@@ -363,13 +375,13 @@ Use asset scanning before committing generated reports, media, temporary scripts
 \`\`\`bash
 scale assets scan --json
 scale assets doctor --json
-scale assets settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-dir>
+scale assets settle --task-id <task-id> --artifact-dir .planning/tasks/<task-dir>
 \`\`\`
 
 Default policy:
 
 - maintained module docs, standards, contracts, ADRs, reusable scripts: commit and keep current.
-- task worklog artifacts: review before commit; promote final truth to maintained docs when useful.
+- task planning, verification, runtime-contract, reality-check, and cleanup artifacts: keep in \`.planning/tasks\`; promote final truth to maintained docs when useful.
 - screenshots, videos, E2E reports, coverage, temporary scripts, and runtime logs: keep out of Git unless explicitly promoted.
 - large media: use Git LFS or external artifact storage instead of normal Git history.
 
@@ -382,8 +394,8 @@ scale standards scan --json
 scale standards doctor --json
 scale standards doctor --changed --json
 scale standards doctor --changed-files src/example.ts,src/example.test.ts --json
-scale standards baseline --write --artifact-dir docs/worklog/tasks/<task-dir> --task-id <task-id> --json
-scale standards settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task-dir>
+scale standards baseline --write --artifact-dir .planning/tasks/<task-dir> --task-id <task-id> --json
+scale standards settle --task-id <task-id> --artifact-dir .planning/tasks/<task-dir>
 scale preflight --preflight-profile full --json
 scale verify <task-id> --json
 \`\`\`
@@ -565,6 +577,78 @@ TBD
 | Skill | Reason | Fallback Evidence |
 | --- | --- | --- |
 | skill-id | why it could not run | manual review, alternate command, or explicit risk |
+`
+}
+
+function runtimeTemplate(): string {
+  return `# Runtime Contract
+
+## Configuration Source
+
+- Source: TBD
+- Environment/profile: TBD
+- Runtime overrides: TBD
+- Secrets boundary: TBD
+
+## Service Topology
+
+| Service | URL Or Command | Config Source | Auth Mode | Status |
+| --- | --- | --- | --- | --- |
+| TBD | TBD | TBD | TBD | Not checked |
+
+## Verification Boundary
+
+- Confirmed:
+- Not covered:
+- Credential-gated:
+- Environment-gated:
+`
+}
+
+function realityCheckTemplate(): string {
+  return `# Reality Check
+
+## Confirmed
+
+- TBD
+
+## Not Verified
+
+- TBD
+
+## Stub / Fake / Partial
+
+- TBD
+
+## Credential-Gated
+
+- TBD
+
+## Environment-Gated
+
+- TBD
+
+## User-Visible Risk
+
+- TBD
+`
+}
+
+function resourceCleanupTemplate(): string {
+  return `# Resource Cleanup
+
+## New Resources
+
+| Resource | Location | Keep / Move / Delete | Reason |
+| --- | --- | --- | --- |
+| TBD | TBD | TBD | TBD |
+
+## Docs Promotion
+
+- Promote to docs:
+- Keep in planning:
+- Keep local/runtime only:
+- Delete before handoff:
 `
 }
 
@@ -936,6 +1020,12 @@ TBD
 ## Rollback Plan
 
 TBD
+
+## Human Confirmation
+
+- Required for L/CRITICAL tasks:
+- Confirmation source:
+- Execution boundary approved:
 
 ## Test Strategy
 TBD

@@ -1,3 +1,14 @@
+## 0.21.1 - 2026-05-19
+
+### Workflow governance
+
+- Changed new task artifact scaffolding to use `.planning/tasks/<task>` by default instead of `docs/worklog/tasks/<task>`, while retaining legacy recognition for existing worklog artifacts.
+- Added first-class `runtime.md`, `reality-check.md`, and `resource-cleanup.md` task artifacts so runtime truth, unverified claims, credential-gated paths, and cleanup decisions are explicit.
+- Hardened task artifact completeness checks so L/CRITICAL plans must record human confirmation and reality checks must contain the required evidence sections.
+- Updated generated workflow/resource guidance and tests for the new task artifact boundary.
+
+---
+
 ## 0.21.0 - 2026-05-19
 
 ### Upgrade management

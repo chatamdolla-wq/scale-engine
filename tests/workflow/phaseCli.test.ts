@@ -758,7 +758,7 @@ export function leaky(token: string) {
       workflowGuidance: { items: Array<{ id: string; command: string; required: boolean }> }
     }>(build.stdout)
     const taskId = buildResult.task.id
-    expect(buildResult.artifactDir).toContain('docs/worklog/tasks/')
+    expect(buildResult.artifactDir).toContain('.planning/tasks/')
     expect(buildResult.workflowGuidance.items.map(item => item.id)).toEqual([
       'context-grill',
       'diagnostic-loop',

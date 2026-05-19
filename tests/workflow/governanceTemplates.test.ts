@@ -29,6 +29,9 @@ describe('writeGovernanceTemplates', () => {
       join(dir, 'docs', 'workflow', 'templates', 'mini-prd.md'),
       join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'),
       join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'runtime.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'reality-check.md'),
+      join(dir, 'docs', 'workflow', 'templates', 'resource-cleanup.md'),
       join(dir, 'docs', 'workflow', 'templates', 'ui-spec.md'),
       join(dir, 'docs', 'workflow', 'templates', 'docs-impact.md'),
       join(dir, 'docs', 'workflow', 'templates', 'resource-impact.md'),
@@ -56,8 +59,10 @@ describe('writeGovernanceTemplates', () => {
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Tool orchestration is part of the workflow contract')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('## Workflow Upgrade')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('## HTML Artifacts')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('.planning/tasks/<yyyy-mm-dd>-<task-slug>/')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'), 'utf-8')).toContain('## Tool Orchestration')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'), 'utf-8')).toContain('## Browser Or Web Evidence')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'reality-check.md'), 'utf-8')).toContain('## Credential-Gated')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('## Real Product Path')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('## Quick Setup')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('scale preflight --profile productSmoke --json')
@@ -226,6 +231,9 @@ describe('writeGovernanceTemplates', () => {
       'mini-prd.md',
       'skill-plan.md',
       'skill-evidence.md',
+      'runtime.md',
+      'reality-check.md',
+      'resource-cleanup.md',
       'ui-spec.md',
       'visual-review.md',
       'docs-impact.md',

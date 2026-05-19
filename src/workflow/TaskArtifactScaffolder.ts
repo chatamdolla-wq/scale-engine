@@ -80,6 +80,9 @@ const TASK_ARTIFACTS: GovernanceArtifactTemplateName[] = [
   'mini-prd.md',
   'skill-plan.md',
   'plan.md',
+  'runtime.md',
+  'reality-check.md',
+  'resource-cleanup.md',
   'verification.md',
   'review.md',
   'summary.md',
@@ -89,7 +92,7 @@ export function scaffoldTaskArtifacts(options: TaskArtifactScaffoldOptions): Tas
   if (options.level === 'S') return { created: [], skipped: [] }
 
   const projectDir = resolve(options.projectDir ?? process.cwd())
-  const relativeDir = join('docs', 'worklog', 'tasks', `${currentDate()}-${slugify(options.taskName || options.description || options.taskId)}`)
+  const relativeDir = join('.planning', 'tasks', `${currentDate()}-${slugify(options.taskName || options.description || options.taskId)}`)
   const dir = uniqueDirectory(projectDir, relativeDir, options.taskId)
   const result: TaskArtifactScaffoldResult = {
     relativeDir: relativePath(projectDir, dir),
@@ -212,7 +215,7 @@ export function checkTaskArtifactCompleteness(options: TaskArtifactCheckOptions)
       missing.push(file)
       continue
     }
-    const reason = incompleteReason(file, readFileSync(path, 'utf-8'))
+    const reason = incompleteReason(file, readFileSync(path, 'utf-8'), options.level)
     if (reason) incomplete.push({ file, reason })
   }
 
@@ -279,18 +282,49 @@ function readTemplate(projectDir: string, name: string): string {
 
 function requiredArtifactsForLevel(level: TaskArtifactLevel, skillRequiredArtifacts: string[] = []): string[] {
   if (level === 'S') return []
-  const required: string[] = ['explore.md', 'skill-plan.md', 'plan.md', 'verification.md', 'review.md', 'summary.md']
+  const required: string[] = [
+    'explore.md',
+    'skill-plan.md',
+    'plan.md',
+    'runtime.md',
+    'reality-check.md',
+    'resource-cleanup.md',
+    'verification.md',
+    'review.md',
+    'summary.md',
+  ]
   if (level === 'L' || level === 'CRITICAL') required.splice(1, 0, 'mini-prd.md')
   return unique([...required, ...skillRequiredArtifacts])
 }
 
-function incompleteReason(file: string, content: string): string | null {
+function incompleteReason(file: string, content: string, level: TaskArtifactLevel): string | null {
   if (file === 'verification.md' && /SCALE Verification Run|Final Status:\s*(passed|failed)|\|\s*[^|\s][^|]*\|\s*(PASS|FAIL)/i.test(content)) {
     return null
   }
+  if (file === 'reality-check.md') {
+    const requiredHeadings = [
+      '## Confirmed',
+      '## Not Verified',
+      '## Stub / Fake / Partial',
+      '## Credential-Gated',
+      '## Environment-Gated',
+      '## User-Visible Risk',
+    ]
+    const missing = requiredHeadings.filter(heading => !content.includes(heading))
+    if (missing.length > 0) return `missing reality sections: ${missing.join(', ')}`
+  }
+  if (file === 'plan.md' && (level === 'L' || level === 'CRITICAL') && !/human confirmation|review before execution|operator confirmation|执行前确认|人工确认/i.test(content)) {
+    return 'L/CRITICAL plan must record human confirmation or review-before-execution requirement'
+  }
 
   const substantive = substantiveLines(content)
-  const minimumLines = file === 'mini-prd.md' ? 3 : file === 'skill-plan.md' ? 1 : 2
+  const minimumLines = file === 'mini-prd.md'
+    ? 3
+    : file === 'skill-plan.md'
+      ? 1
+      : file === 'reality-check.md'
+        ? 6
+        : 2
   if (substantive.length < minimumLines) {
     return `contains only template placeholders (${substantive.length}/${minimumLines} substantive lines)`
   }
@@ -367,6 +401,9 @@ function isGovernanceTemplateName(name: string): name is GovernanceArtifactTempl
     'mini-prd.md',
     'skill-plan.md',
     'skill-evidence.md',
+    'runtime.md',
+    'reality-check.md',
+    'resource-cleanup.md',
     'ui-spec.md',
     'visual-review.md',
     'api-contract.md',

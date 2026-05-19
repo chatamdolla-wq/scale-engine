@@ -55,8 +55,8 @@ scale context init --name "Scale Demo"
 scale context grill --task-id 2026-05-18-oauth-hardening --task "Harden OAuth callback"
 scale diagnose plan --task-id 2026-05-18-oauth-hardening --symptom "callback returns 500 when state expires"
 scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "reject expired OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
-scale artifact render --task-id 2026-05-18-oauth-hardening --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
-scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
+scale artifact render --task-id 2026-05-18-oauth-hardening --artifact-dir .planning/tasks/2026-05-18-oauth-hardening
+scale artifact doctor --artifact-dir .planning/tasks/2026-05-18-oauth-hardening
 ```
 
 Read [Quickstart](docs/start/quickstart.md) and [Agent Governance Demo](docs/start/agent-governance-demo.md) for the complete walkthrough.

@@ -43,6 +43,7 @@ describe('ResourceGovernance', () => {
     const projectDir = makeProject()
     write(projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
     write(projectDir, 'docs/modules/auth/architecture.md', '# Auth architecture\n')
+    write(projectDir, '.planning/tasks/2026-05-15-demo/reality-check.md', '# Reality Check\n')
     write(projectDir, 'docs/worklog/tasks/2026-05-15-demo/summary.md', '# Summary\n')
     write(projectDir, 'docs/worklog/tasks/2026-05-15-demo/artifacts/release-report.html', '<!doctype html>\n')
     write(projectDir, 'docs/worklog/tasks/2026-05-15-demo/artifact-manifest.json', '{}\n')
@@ -55,7 +56,7 @@ describe('ResourceGovernance', () => {
     const report = scanResourceAssets({ projectDir })
 
     expect(report.summary.byType['canonical-doc']).toBeGreaterThanOrEqual(2)
-    expect(report.summary.byType['task-artifact']).toBe(3)
+    expect(report.summary.byType['task-artifact']).toBe(4)
     expect(report.summary.byType['evidence-report']).toBe(1)
     expect(report.summary.byType.temporary).toBe(1)
     expect(report.summary.byType['reusable-script']).toBe(1)
@@ -109,7 +110,7 @@ describe('ResourceGovernance', () => {
 
   it('writes task resource settlement evidence', () => {
     const projectDir = makeProject()
-    const artifactDir = 'docs/worklog/tasks/2026-05-15-demo'
+    const artifactDir = '.planning/tasks/2026-05-15-demo'
     write(projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
     write(projectDir, 'docs/modules/auth/architecture.md', '# Auth architecture\n')
 
@@ -120,7 +121,7 @@ describe('ResourceGovernance', () => {
     })
 
     expect(report.ok).toBe(true)
-    expect(report.resourceImpactPath).toBe(join(projectDir, 'docs', 'worklog', 'tasks', '2026-05-15-demo', 'resource-impact.md'))
+    expect(report.resourceImpactPath).toBe(join(projectDir, '.planning', 'tasks', '2026-05-15-demo', 'resource-impact.md'))
     expect(report.doctor.findings).toHaveLength(0)
   })
 

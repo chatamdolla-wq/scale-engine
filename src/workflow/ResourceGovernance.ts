@@ -181,6 +181,7 @@ const DEFAULT_OWNERS: Record<string, string> = {
   'docs/workflow': 'engineering',
   'docs/decisions': 'architecture',
   'docs/modules': 'module-owner',
+  '.planning': 'engineering',
   '.scale': 'engineering',
 }
 
@@ -530,10 +531,22 @@ function classifyPath(path: string, policy: ResolvedResourcePolicy): Classificat
     return { type: 'decision-record', lifecycle: 'immutable', gitPolicy: 'commit', reason: 'architecture decision record', sourceOfTruth: true }
   }
   if (
+    path.startsWith('.planning/tasks/') &&
+    (path.endsWith('.md') || path.endsWith('.html') || path.endsWith('/artifact-manifest.json'))
+  ) {
+    return { type: 'task-artifact', lifecycle: 'task-scoped', gitPolicy: 'review', reason: 'task planning or evidence artifact', retentionDays: 180 }
+  }
+  if (
+    path.startsWith('.planning/archive/') &&
+    (path.endsWith('.md') || path.endsWith('.html') || path.endsWith('/artifact-manifest.json'))
+  ) {
+    return { type: 'task-artifact', lifecycle: 'task-scoped', gitPolicy: 'review', reason: 'archived legacy task artifact', retentionDays: 365 }
+  }
+  if (
     path.startsWith('docs/worklog/tasks/') &&
     (path.endsWith('.md') || path.endsWith('.html') || path.endsWith('/artifact-manifest.json'))
   ) {
-    return { type: 'task-artifact', lifecycle: 'task-scoped', gitPolicy: 'review', reason: 'task evidence artifact', retentionDays: 180 }
+    return { type: 'task-artifact', lifecycle: 'task-scoped', gitPolicy: 'review', reason: 'legacy task evidence artifact; prefer .planning/tasks for new work', retentionDays: 180 }
   }
   if (path.startsWith('docs/modules/') || path.startsWith('docs/standards/') || path.startsWith('docs/architecture/') || path.startsWith('docs/workflow/') || /^docs\/[^/]+\.md$/i.test(path) || path === 'README.md' || path === 'CHANGELOG.md') {
     return { type: 'canonical-doc', lifecycle: 'maintained', gitPolicy: 'commit', reason: 'maintained project documentation', sourceOfTruth: true }

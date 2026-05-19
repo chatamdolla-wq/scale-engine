@@ -58,7 +58,7 @@ Declared source-of-truth assets are checked by `assets doctor`; if the file disa
 ```bash
 scale assets scan --json
 scale assets doctor --json
-scale assets settle --task-id <task-id> --artifact-dir docs/worklog/tasks/<task>
+scale assets settle --task-id <task-id> --artifact-dir .planning/tasks/<task>
 scale init --governance-pack resource-governance
 ```
 
@@ -71,8 +71,22 @@ scale init --governance-pack resource-governance
 Before finishing M/L/CRITICAL work:
 
 1. Promote final product, API, or architecture truth into maintained docs.
-2. Keep raw reports, logs, screenshots, videos, and scratch scripts out of Git unless deliberately promoted.
+2. Keep task-scoped planning, runtime contracts, reality checks, cleanup notes, raw reports, logs, screenshots, videos, and scratch scripts out of long-lived `docs/` unless deliberately promoted.
 3. Run `scale assets scan --json`.
 4. Run `scale assets doctor --json`.
 5. Run `scale assets settle --task-id <task-id> --artifact-dir <task-dir>`.
 6. Delete or archive temporary resources that are no longer needed.
+
+## Task Artifact Boundary
+
+New SCALE task artifacts default to `.planning/tasks/<task>/`, not `docs/worklog/tasks/<task>/`.
+
+Every M/L/CRITICAL task should keep these three evidence files alongside the normal explore/plan/verification/review/summary set:
+
+| File | Purpose |
+| --- | --- |
+| `runtime.md` | Records configuration source, topology, auth mode, and verification boundary. |
+| `reality-check.md` | Separates confirmed behavior from not verified, stub/partial, credential-gated, and environment-gated claims. |
+| `resource-cleanup.md` | Records which outputs stay task-scoped, which are promoted, and which should be deleted or archived. |
+
+`docs/worklog/tasks/` remains a legacy-recognized task-artifact location for existing projects, but generated guidance now points new work to `.planning/tasks/`.

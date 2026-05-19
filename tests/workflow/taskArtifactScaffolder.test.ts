@@ -39,9 +39,12 @@ describe('TaskArtifactScaffolder', () => {
       }),
     })
 
-    expect(result.relativeDir).toContain('docs/worklog/tasks/')
+    expect(result.relativeDir).toContain('.planning/tasks/')
     expect(result.created).toEqual(expect.arrayContaining([
       join(result.dir!, 'skill-plan.md'),
+      join(result.dir!, 'runtime.md'),
+      join(result.dir!, 'reality-check.md'),
+      join(result.dir!, 'resource-cleanup.md'),
       join(result.dir!, 'skill-evidence.md'),
       join(result.dir!, 'ui-spec.md'),
       join(result.dir!, 'visual-review.md'),
@@ -157,7 +160,10 @@ describe('TaskArtifactScaffolder', () => {
     writeFileSync(join(result.dir!, 'explore.md'), '# Explore\n\ncurrent behavior documented\nmain conflict documented\n', 'utf-8')
     writeFileSync(join(result.dir!, 'mini-prd.md'), '# Mini-PRD\n\nuser goal\nexception one\nacceptance criteria\n', 'utf-8')
     writeFileSync(join(result.dir!, 'skill-plan.md'), '# Skill Plan\n\n## Detected Intents\n\n## Required Skills\n\n- none\n', 'utf-8')
-    writeFileSync(join(result.dir!, 'plan.md'), '# Plan\n\napproach\nrollback plan\n', 'utf-8')
+    writeFileSync(join(result.dir!, 'plan.md'), '# Plan\n\napproach\nrollback plan\nhuman confirmation recorded before execution\n', 'utf-8')
+    writeFileSync(join(result.dir!, 'runtime.md'), '# Runtime Contract\n\nconfiguration source documented\nservice topology documented\n', 'utf-8')
+    writeFileSync(join(result.dir!, 'reality-check.md'), '# Reality Check\n\n## Confirmed\n\n- tested behavior\n\n## Not Verified\n\n- provider callback\n\n## Stub / Fake / Partial\n\n- no stubs\n\n## Credential-Gated\n\n- OAuth success\n\n## Environment-Gated\n\n- cloud test env\n\n## User-Visible Risk\n\n- incomplete provider coverage\n', 'utf-8')
+    writeFileSync(join(result.dir!, 'resource-cleanup.md'), '# Resource Cleanup\n\nnew resources classified\ndocs promotion none\n', 'utf-8')
     writeFileSync(join(result.dir!, 'review.md'), '# Review\n\ncode review passed\nresidual risk none\n', 'utf-8')
     writeFileSync(join(result.dir!, 'summary.md'), '# Summary\n\ndelivered changes\nremaining risk none\n', 'utf-8')
     appendVerificationArtifact({
@@ -197,7 +203,7 @@ describe('TaskArtifactScaffolder', () => {
     })
 
     expect(second.created).toHaveLength(0)
-    expect(second.skipped).toHaveLength(7)
+    expect(second.skipped).toHaveLength(10)
     expect(readFileSync(join(first.dir!, 'review.md'), 'utf-8')).toBe('custom review')
   })
 })
