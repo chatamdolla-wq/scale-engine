@@ -9,6 +9,7 @@ import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import { doctorEngineeringStandards } from '../workflow/EngineeringStandards.js'
 import { doctorResourceAssets } from '../workflow/ResourceGovernance.js'
 import { doctorRuntimeEvidence } from '../runtime/RuntimeDoctor.js'
+import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
 
 export interface DiagnosticResult {
   name: string
@@ -49,13 +50,17 @@ export class Doctor {
     checks.push(this.checkNodeVersion())
     checks.push(this.checkDiskUsage())
     checks.push(this.checkGitignore())
+    const gitWorkspaceCheck = this.checkGitWorkspace()
+    checks.push(gitWorkspaceCheck)
 
     const governanceTemplatesCheck = this.checkGovernanceTemplates()
     const verificationMatrixCheck = this.checkVerificationMatrix()
     const skillRoutingPolicyCheck = this.checkSkillRoutingPolicy()
     const toolPolicyCheck = this.checkToolPolicy()
     const resourcePolicyCheck = this.checkResourcePolicy()
-    const engineeringStandardsCheck = this.checkEngineeringStandards()
+    const engineeringStandardsCheck = gitWorkspaceCheck.status === 'fail'
+      ? this.skippedEngineeringStandardsForWorkspaceConflict()
+      : this.checkEngineeringStandards()
     const governanceDriftCheck = this.checkGovernanceDrift()
     governanceTemplatesCheck.optional = true
     verificationMatrixCheck.optional = true
@@ -262,6 +267,30 @@ export class Doctor {
       return { name: '.scale/.gitignore', status: 'warn', message: 'Missing — runtime data may be committed', fix: 'Run: scale init' }
     }
     return { name: '.scale/.gitignore', status: 'ok', message: 'Present' }
+  }
+
+  private checkGitWorkspace(): DiagnosticResult {
+    const safety = inspectWorkspaceSafety(this.projectDir)
+    if (!safety.gitRepository) {
+      return {
+        name: 'Git workspace',
+        status: 'ok',
+        message: safety.message,
+      }
+    }
+    if (safety.blocked) {
+      return {
+        name: 'Git workspace',
+        status: 'fail',
+        message: safety.message,
+        fix: 'Resolve merge conflicts first, then rerun: scale doctor && scale preflight --json',
+      }
+    }
+    return {
+      name: 'Git workspace',
+      status: 'ok',
+      message: safety.message,
+    }
   }
 
   private checkGovernanceTemplates(): DiagnosticResult {
@@ -492,6 +521,15 @@ export class Doctor {
         message: '.scale/engineering-standards.json is invalid or standards scan failed',
         fix: 'Fix JSON syntax or regenerate with scale init',
       }
+    }
+  }
+
+  private skippedEngineeringStandardsForWorkspaceConflict(): DiagnosticResult {
+    return {
+      name: 'Engineering standards',
+      status: 'warn',
+      message: 'Skipped because the git workspace has unresolved conflicts',
+      fix: 'Resolve merge conflicts first, then rerun: scale standards doctor --json',
     }
   }
 

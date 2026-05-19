@@ -5,6 +5,7 @@ import { ClaudeCodeAdapter } from '../../src/adapters/ClaudeCodeAdapter.js'
 import { writeGovernanceTemplates } from '../../src/workflow/GovernanceTemplates.js'
 import { rmSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execa } from 'execa'
 
 const TMP = './tmp/test-doctor'
 
@@ -163,6 +164,38 @@ describe('Doctor', () => {
       category: 'governance',
     })
   })
+
+  it('fails when the git workspace has unresolved merge conflicts', async () => {
+    const adapter = new ClaudeCodeAdapter()
+    await adapter.init({ projectDir: TMP })
+    writeGovernanceTemplates(TMP, { mode: 'standard', projectName: 'Doctor Test' })
+    await execa('git', ['init'], { cwd: TMP })
+    await execa('git', ['config', 'user.email', 'scale-test@example.com'], { cwd: TMP })
+    await execa('git', ['config', 'user.name', 'SCALE Test'], { cwd: TMP })
+    writeFileSync(join(TMP, 'conflict.txt'), 'base\n', 'utf-8')
+    await execa('git', ['add', 'conflict.txt'], { cwd: TMP })
+    await execa('git', ['commit', '-m', 'base'], { cwd: TMP })
+    await execa('git', ['checkout', '-b', 'left'], { cwd: TMP })
+    writeFileSync(join(TMP, 'conflict.txt'), 'left\n', 'utf-8')
+    await execa('git', ['commit', '-am', 'left'], { cwd: TMP })
+    await execa('git', ['checkout', '-b', 'right', 'HEAD~1'], { cwd: TMP })
+    writeFileSync(join(TMP, 'conflict.txt'), 'right\n', 'utf-8')
+    await execa('git', ['commit', '-am', 'right'], { cwd: TMP })
+    await execa('git', ['merge', 'left'], { cwd: TMP, reject: false })
+
+    const doc = new Doctor(TMP)
+    const report = await doc.diagnose()
+
+    expect(report.overall).toBe('broken')
+    expect(report.checks.find((c) => c.name === 'Git workspace')).toMatchObject({
+      status: 'fail',
+      message: expect.stringContaining('conflict.txt'),
+    })
+    expect(report.checks.find((c) => c.name === 'Engineering standards')).toMatchObject({
+      status: 'warn',
+      message: expect.stringContaining('Skipped because the git workspace has unresolved conflicts'),
+    })
+  }, 120_000)
 
   it('rules and hooks check on fresh install', async () => {
     const adapter = new ClaudeCodeAdapter()
