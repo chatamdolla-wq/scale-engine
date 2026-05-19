@@ -28,6 +28,7 @@
 | [UPGRADE_MANAGEMENT.md](UPGRADE_MANAGEMENT.md) | SCALE CLI、governance pack、skills、MCP 和 CLI 工具的安全升级流程 |
 | [GOVERNANCE_DASHBOARD.md](GOVERNANCE_DASHBOARD.md) | Runtime、eval、memory、resource、HTML artifact 的统一治理面板 |
 | [RELEASE_READINESS.md](RELEASE_READINESS.md) | 发版前质量门槛、官方 demo 和真实项目落地验收 |
+| [GITLAB_FLOW.md](GITLAB_FLOW.md) | GitLab Flow 分支、发版、tag 和临时 worktree 生命周期规范 |
 | [SKILL-REPOSITORY.md](SKILL-REPOSITORY.md) | 受治理 skill repository 和安装安全策略 |
 | [VIBE-TEMPLATES.md](VIBE-TEMPLATES.md) | 可复制的 Vibe Coding 提示词模板 |
 | [LEADERSHIP-PRESETS.md](LEADERSHIP-PRESETS.md) | CEO、CTO、PM、Architect 等内置领导者角色预设 |

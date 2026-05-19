@@ -139,6 +139,47 @@ describe('WorkspaceLifecycle', () => {
     expect(result.finish.nextActions).toContain('Safe to remove linked worktree after branch is pushed, merged, or intentionally discarded')
   }, GIT_TEST_TIMEOUT)
 
+  it('classifies the integration branch and blocks direct governed shipping there', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    await git(root, ['checkout', '-b', 'dev'])
+
+    const result = await inspectWorkspaceLifecycle({ projectDir: root })
+
+    expect(result.branchPolicy).toMatchObject({
+      branch: 'dev',
+      role: 'integration',
+      shipAllowed: false,
+    })
+    expect(result.branchPolicy.shipBlockers.join('\n')).toContain('Direct ship on integration branch dev is blocked')
+    expect(result.finish.blockers).not.toContain('Direct ship on integration branch dev is blocked')
+  }, GIT_TEST_TIMEOUT)
+
+  it('blocks linked worktree cleanup when a local feature branch has unpublished commits', async () => {
+    const root = makeDir()
+    await initRepo(root)
+    await git(root, ['branch', 'dev'])
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n', 'utf-8')
+    await git(root, ['add', '.gitignore'])
+    await git(root, ['commit', '-m', 'ignore worktrees'])
+    const worktree = join(root, '.worktrees', 'feature-unpublished')
+    await git(root, ['worktree', 'add', worktree, '-b', 'feat/unpublished', 'dev'])
+    writeFileSync(join(worktree, 'feature.txt'), 'feature\n', 'utf-8')
+    await git(worktree, ['add', 'feature.txt'])
+    await git(worktree, ['commit', '-m', 'feat: unpublished work'])
+
+    const result = await inspectWorkspaceLifecycle({ projectDir: worktree })
+
+    expect(result.root.isLinkedWorktree).toBe(true)
+    expect(result.branchPolicy).toMatchObject({
+      branch: 'feat/unpublished',
+      role: 'feature',
+      shipAllowed: true,
+    })
+    expect(result.finish.canCleanup).toBe(false)
+    expect(result.finish.blockers.join('\n')).toContain('Local branch feat/unpublished has commits that are not pushed or merged into dev/master')
+  }, GIT_TEST_TIMEOUT)
+
   it('dry-runs linked worktree cleanup without deleting it', async () => {
     const root = makeDir()
     await initRepo(root)

@@ -15,8 +15,13 @@ export interface WorkspaceRepositoryConfig {
 }
 
 export interface WorkspaceBranchPolicy {
+  mode?: 'gitlab-flow'
+  integrationBranch?: string
+  productionBranch?: string
   protectedBranches?: string[]
   featurePrefixes?: string[]
+  releasePrefixes?: string[]
+  hotfixPrefixes?: string[]
   requireAuthorScopeDate?: boolean
 }
 
@@ -39,6 +44,7 @@ export interface ResolvedWorkspaceTopology extends WorkspaceTopologyConfig {
   version: number
   configured: boolean
   configPath: string
+  branchPolicy: Required<WorkspaceBranchPolicy>
   finishPolicy: Required<WorkspaceFinishPolicy>
   warnings: string[]
 }
@@ -119,11 +125,7 @@ export function workspaceTopologyTemplate(options: WorkspaceTopologyTemplateOpti
         services: ['example'],
       },
     ],
-    branchPolicy: {
-      protectedBranches: ['main', 'master'],
-      featurePrefixes: ['feature/', 'fix/', 'docs/', 'codex/'],
-      requireAuthorScopeDate: true,
-    },
+    branchPolicy: defaultBranchPolicy(),
     finishPolicy: defaultFinishPolicy(topology),
   }
   return `${JSON.stringify(config, null, 2)}\n`
@@ -145,7 +147,10 @@ function normalizeWorkspaceTopology(
     version: raw.version ?? 1,
     topology,
     repositories,
-    branchPolicy: raw.branchPolicy,
+    branchPolicy: {
+      ...defaultBranchPolicy(),
+      ...(raw.branchPolicy ?? {}),
+    },
     finishPolicy: {
       ...defaultFinishPolicy(topology),
       ...(raw.finishPolicy ?? {}),
@@ -193,6 +198,19 @@ function defaultFinishPolicy(topology: WorkspaceTopologyKind): Required<Workspac
     requirePushedBranches: true,
     requireRootPointerUpdate: topology === 'moe' || topology === 'submodule-workspace',
     requireReviewArtifacts: topology === 'moe',
+  }
+}
+
+function defaultBranchPolicy(): Required<WorkspaceBranchPolicy> {
+  return {
+    mode: 'gitlab-flow',
+    integrationBranch: 'dev',
+    productionBranch: 'master',
+    protectedBranches: ['dev', 'master', 'main'],
+    featurePrefixes: ['feature/', 'feat/', 'fix/', 'chore/', 'docs/', 'codex/'],
+    releasePrefixes: ['release/'],
+    hotfixPrefixes: ['hotfix/'],
+    requireAuthorScopeDate: true,
   }
 }
 

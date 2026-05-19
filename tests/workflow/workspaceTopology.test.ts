@@ -32,6 +32,15 @@ describe('WorkspaceTopology', () => {
       expect.objectContaining({ name: 'root', path: '.', role: 'root', required: true }),
     ])
     expect(topology.finishPolicy.requireCleanRepositories).toBe(true)
+    expect(topology.branchPolicy).toMatchObject({
+      mode: 'gitlab-flow',
+      integrationBranch: 'dev',
+      productionBranch: 'master',
+      protectedBranches: expect.arrayContaining(['dev', 'master']),
+      featurePrefixes: expect.arrayContaining(['feature/', 'feat/', 'fix/', 'chore/', 'docs/', 'codex/']),
+      releasePrefixes: ['release/'],
+      hotfixPrefixes: ['hotfix/'],
+    })
   })
 
   it('loads MOE topology repositories, service bindings, and finish policy', () => {
@@ -72,6 +81,14 @@ describe('WorkspaceTopology', () => {
       requireCleanRepositories: true,
       requirePushedBranches: true,
       requireRootPointerUpdate: true,
+    })
+    expect(template.branchPolicy).toMatchObject({
+      mode: 'gitlab-flow',
+      integrationBranch: 'dev',
+      productionBranch: 'master',
+      protectedBranches: expect.arrayContaining(['dev', 'master']),
+      releasePrefixes: ['release/'],
+      hotfixPrefixes: ['hotfix/'],
     })
   })
 })

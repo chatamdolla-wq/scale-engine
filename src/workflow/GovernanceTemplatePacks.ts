@@ -222,7 +222,7 @@ Before deleting an agent worktree or reporting a task complete:
 4. Review whether the root repository needs a submodule pointer, lock file, integration metadata, or documentation update.
 5. Run service-aware verification for every touched service.
 
-\`scale ship <task-id>\` performs the same child-repository boundary check before creating a root commit. Dirty or unpushed child repositories block shipping; raw \`git add .\` bypasses this protection and is not allowed for governed MOE workspaces.
+\`scale ship <task-id>\` performs the same child-repository boundary check before creating a root commit. Dirty or unpushed child repositories block shipping. The default branch policy follows GitLab Flow: short branches merge to \`dev\`, verified production changes land on \`master\`, and release publishing is triggered by user-created \`vX.Y.Z\` tags. Direct governed commits on \`dev\`, \`master\`, \`main\`, or detached HEAD are blocked. Raw \`git add .\` bypasses this protection and is not allowed for governed MOE workspaces.
 
 ## Branch Naming
 
@@ -234,7 +234,7 @@ fix/zpei-claude-upload-retry-0515
 codex/moe-workspace-governance-0515
 \`\`\`
 
-Protected branches such as \`main\` and \`master\` require explicit human authorization before direct pushes.
+Protected branches such as \`dev\`, \`main\`, and \`master\` require explicit human authorization before direct pushes.
 `
 }
 

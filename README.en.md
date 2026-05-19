@@ -182,6 +182,8 @@ SCALE Engine uses multiple enforcement layers:
 
 The `ship` command no longer stages the whole workspace. It stages only files covered by passing review records and blocks if new reviewable files appear after review.
 
+Git branch governance follows a GitLab Flow variant: short branches merge into `dev`, verified releases land on `master`, and production publishing is triggered by user-created `vX.Y.Z` tags on `master`. `scale ship` blocks direct governed commits on `dev`, `master`, `main`, or detached HEAD, and temporary worktree cleanup is blocked when the branch still has unpushed or unmerged commits. See [docs/GITLAB_FLOW.md](docs/GITLAB_FLOW.md).
+
 G7 `SecurityGate` includes a lightweight built-in scan for hardcoded secrets, private keys, disabled TLS verification, `eval`/`Function`, raw HTML injection, dangerous shell commands, shell execution, and empty `catch` blocks. Compatibility mode blocks CRITICAL findings; strict mode also blocks HIGH findings.
 
 ## Supported Platforms

@@ -1,3 +1,14 @@
+## Unreleased
+
+### Git workflow governance
+
+- Added GitLab Flow branch policy defaults for `dev` integration, `master` production, short work branches, `release/*`, and `hotfix/*`.
+- Made workspace lifecycle reports classify the current branch and block temporary worktree cleanup when local branch commits are neither pushed nor merged into `dev`/`master`.
+- Made `scale ship` block direct governed commits on `dev`, `master`, `main`, and detached HEAD while preserving reviewed-file-only staging.
+- Added GitLab Flow branch/worktree documentation and package inclusion for `docs/GITLAB_FLOW.md`.
+
+---
+
 ## 0.21.1 - 2026-05-19
 
 ### Workflow governance

@@ -1907,9 +1907,13 @@ function printWorkspaceLifecycle(report: WorkspaceLifecycleReport): void {
   console.log(`  Branch: ${report.root.branch ?? '(detached)'}`)
   console.log(`  Linked worktree: ${report.root.isLinkedWorktree ? 'yes' : 'no'}`)
   console.log(`  Root status: ${report.root.clean ? 'clean' : 'dirty'}`)
+  console.log(`  Branch policy: ${report.branchPolicy.mode} role=${report.branchPolicy.role} ship=${report.branchPolicy.shipAllowed ? 'allowed' : 'blocked'}`)
+  console.log(`    Integration: ${report.branchPolicy.integrationBranch}`)
+  console.log(`    Production: ${report.branchPolicy.productionBranch}`)
   if (!report.root.clean) {
     console.log(`    staged=${report.root.staged} unstaged=${report.root.unstaged} untracked=${report.root.untracked}`)
   }
+  for (const blocker of report.branchPolicy.shipBlockers) console.log(`  [SHIP BLOCKER] ${blocker}`)
 
   if (report.childRepositories.length) {
     console.log('\n  Child repositories:')
@@ -1951,6 +1955,7 @@ function printWorkspaceSummary(report: WorkspaceLifecycleReport): void {
   console.log(`  Status: ${status}`)
   console.log(`  Topology: ${report.topology.topology}${report.topology.configured ? '' : ' (default)'}`)
   console.log(`  Root: ${rootStatus}`)
+  console.log(`  Branch: ${report.root.branch ?? '(detached)'} (${report.branchPolicy.role}, ship ${report.branchPolicy.shipAllowed ? 'allowed' : 'blocked'})`)
   console.log(`  Children: ${report.childRepositories.length} total, ${dirtyChildren.length} dirty, ${unpushedChildren.length} unpushed, ${noUpstreamChildren.length} no upstream`)
 
   if (dirtyChildren.length > 0) console.log(`  Dirty child repositories: ${compactList(dirtyChildren)}`)
@@ -2066,6 +2071,7 @@ const workspaceFinish = defineCommand({
       root: report.root,
       childRepositories: report.childRepositories,
       topology: report.topology,
+      branchPolicy: report.branchPolicy,
       finish: report.finish,
     }
 

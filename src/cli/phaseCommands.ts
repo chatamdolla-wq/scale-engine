@@ -1506,6 +1506,8 @@ async function validateWorkspaceShipBoundary(): Promise<WorkspaceShipBoundaryRes
     const warnings = [...report.topology.warnings]
     const policy = report.topology.finishPolicy
     const rootChanges = await getReviewableGitChanges()
+    blockers.push(...report.branchPolicy.shipBlockers)
+    warnings.push(...report.branchPolicy.warnings)
 
     if (!report.topology.configured && report.childRepositories.length > 0) {
       const changedChildRepositories = report.childRepositories
@@ -1992,6 +1994,7 @@ export const phaseShip = defineCommand({
       workspaceBoundary: workspaceBoundary ? {
         topology: workspaceBoundary.report?.topology.topology ?? null,
         configured: workspaceBoundary.report?.topology.configured ?? false,
+        branchPolicy: workspaceBoundary.report?.branchPolicy ?? null,
         childRepositories: workspaceBoundary.report?.childRepositories.length ?? 0,
         blockers: workspaceBoundary.blockers,
         warnings: workspaceBoundary.warnings,

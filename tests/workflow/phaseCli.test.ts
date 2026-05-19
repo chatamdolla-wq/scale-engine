@@ -1217,6 +1217,7 @@ export function leaky(token: string) {
     writeFileSync(join(projectDir, 'README.md'), 'fixture\n', 'utf-8')
     await execa('git', ['add', 'README.md'], { cwd: projectDir })
     await execa('git', ['-c', 'user.email=scale-test@example.com', '-c', 'user.name=Scale Test', 'commit', '-m', 'test fixture'], { cwd: projectDir })
+    await execa('git', ['checkout', '-b', 'feat/scoped-ship-regression'], { cwd: projectDir })
     const define = await runScale([
       'define',
       'Scoped Ship Feature',
@@ -1294,6 +1295,79 @@ export function leaky(token: string) {
     expect(headAfter.stdout).toBe(headBefore.stdout)
   }, 120_000)
 
+  it('blocks governed commits directly on the integration branch', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'README.md'), 'fixture\n', 'utf-8')
+    await execa('git', ['add', 'README.md'], { cwd: projectDir })
+    await execa('git', ['-c', 'user.email=scale-test@example.com', '-c', 'user.name=Scale Test', 'commit', '-m', 'test fixture'], { cwd: projectDir })
+    await execa('git', ['checkout', '-b', 'dev'], { cwd: projectDir })
+
+    const define = await runScale([
+      'define',
+      'Integration Branch Ship Boundary',
+      '--description',
+      'Implement a TypeScript CLI workflow that accepts task input arguments, persists review evidence output, enforces rollback constraints, includes lint and typecheck quality standards, and verifies with test acceptance evidence so direct commits on the integration branch cannot bypass merge request review today.',
+      '--success-criteria',
+      'verification evidence is persisted,review evidence is persisted,direct dev branch ship is blocked',
+      '--goal',
+      'Prevent governed ship from creating direct commits on the integration branch.',
+      '--constraint',
+      'GitLab Flow requires short feature, fix, chore, release, or hotfix branches for governed commits.',
+      '--acceptance',
+      'Ship exits non-zero on dev before staging reviewed files and HEAD remains unchanged.',
+      '--context',
+      'The regression fixture has a clean repository on the dev branch and one reviewed root documentation change.',
+      '--risk',
+      'Without this check dev can become a direct-commit dumping ground and release selection becomes unreliable.',
+      '--priority',
+      'Protect branch lifecycle before creating release-bound commits.',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete temporary test artifacts', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'Integration branch ship boundary', '--level', 'S', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
+
+    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const verify = await runScale([
+      'verify',
+      taskId,
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--coverage-cmd',
+      coverageCommand,
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+
+    mkdirSync(join(projectDir, 'docs'), { recursive: true })
+    writeFileSync(join(projectDir, 'docs', 'direct-dev.md'), 'reviewed dev branch change\n', 'utf-8')
+    const review = await runScale(['review', taskId, '--json'], scaleDir, projectDir)
+    expect(review.exitCode).toBe(0)
+    expect(parseJson<{ passed: boolean }>(review.stdout).passed).toBe(true)
+
+    const headBefore = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
+    const ship = await runScale(['ship', taskId, '--message', 'test: direct dev branch ship', '--json'], scaleDir, projectDir)
+    const headAfter = await execa('git', ['rev-parse', 'HEAD'], { cwd: projectDir })
+
+    expect(ship.exitCode).not.toBe(0)
+    expect(ship.stderr).toContain('Workspace boundary check failed')
+    expect(ship.stderr).toContain('Direct ship on integration branch dev is blocked')
+    expect(headAfter.stdout).toBe(headBefore.stdout)
+  }, 120_000)
+
   it('blocks ship when a configured MOE child repository has uncommitted changes', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
@@ -1328,6 +1402,7 @@ export function leaky(token: string) {
     writeFileSync(join(projectDir, 'README.md'), 'root\n', 'utf-8')
     await execa('git', ['add', 'README.md', '.gitignore', '.scale/workspace.json'], { cwd: projectDir })
     await execa('git', ['commit', '-m', 'init root'], { cwd: projectDir })
+    await execa('git', ['checkout', '-b', 'feat/moe-ship-boundary'], { cwd: projectDir })
 
     const define = await runScale([
       'define',

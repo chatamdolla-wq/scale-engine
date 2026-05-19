@@ -366,7 +366,7 @@ scale workspace cleanup --dir <temporary-worktree> --apply --confirm <branch-or-
 
 Do not remove a temporary worktree while any submodule or nested repository has uncommitted or unpushed work. Child repositories must be committed and reviewed in their own remotes, then the root repository can record any required pointer or governance updates. Cleanup defaults to dry-run. Applying cleanup requires the reported confirmation token, normally the temporary branch name.
 
-Use \`scale ship <task-id>\` for governed commits. It checks MOE/submodule child repository state before staging reviewed root files, so dirty or unpushed child work cannot be hidden inside a root commit. Raw \`git add .\` is outside the governed path and must not be used for MOE releases.
+Use \`scale ship <task-id>\` for governed commits. It checks MOE/submodule child repository state before staging reviewed root files, so dirty or unpushed child work cannot be hidden inside a root commit. It also enforces the GitLab Flow branch lifecycle: work happens on short branches, merges target \`dev\`, production lands on \`master\`, and release publishing is triggered by user-created \`vX.Y.Z\` tags. Direct governed commits on \`dev\`, \`master\`, \`main\`, or detached HEAD are blocked. Raw \`git add .\` is outside the governed path and must not be used for MOE releases.
 
 ## Resource Governance
 

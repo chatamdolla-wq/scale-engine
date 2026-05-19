@@ -369,6 +369,8 @@ scale evolution hooks <session-id> --json
 
 `ship` 不再执行 `git add .`。它只会暂存已通过 review 记录覆盖的文件；如果 review 后出现新的可 review 变更，`ship` 会阻断并要求重新 review。
 
+Git 分支采用 GitLab Flow 变体：短分支合入 `dev`，验证后进入 `master`，生产发布由 `master` 上的 `vX.Y.Z` tag 触发。`scale ship` 会阻断在 `dev`、`master`、`main` 或 detached HEAD 上直接创建治理提交，并在临时 worktree 存在未推送或未合并提交时阻断清理。完整规则见 [docs/GITLAB_FLOW.md](docs/GITLAB_FLOW.md)。
+
 G7 `SecurityGate` 内置轻量安全扫描，覆盖硬编码密钥、私钥、TLS 校验关闭、`eval`/`Function`、原始 HTML 注入、危险 shell 命令、shell 执行和空 `catch` 等模式。兼容模式只阻断 CRITICAL；严格模式会同时阻断 HIGH。
 
 ## 支持的平台与角色

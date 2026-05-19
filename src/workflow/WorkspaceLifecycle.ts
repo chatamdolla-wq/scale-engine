@@ -4,6 +4,7 @@ import { execa } from 'execa'
 import {
   resolveWorkspaceTopology,
   type ResolvedWorkspaceTopology,
+  type WorkspaceBranchPolicy,
   type WorkspaceRepositoryConfig,
 } from './WorkspaceTopology.js'
 
@@ -36,10 +37,30 @@ export interface WorkspaceFinishDecision {
   nextActions: string[]
 }
 
+export type WorkspaceBranchRole = 'production' | 'integration' | 'feature' | 'release' | 'hotfix' | 'other' | 'detached'
+
+export interface WorkspaceBranchPolicyDecision {
+  mode: WorkspaceBranchPolicy['mode']
+  branch: string | null
+  role: WorkspaceBranchRole
+  integrationBranch: string
+  productionBranch: string
+  protectedBranches: string[]
+  featurePrefixes: string[]
+  releasePrefixes: string[]
+  hotfixPrefixes: string[]
+  shipAllowed: boolean
+  shipBlockers: string[]
+  cleanupBlockers: string[]
+  warnings: string[]
+  nextActions: string[]
+}
+
 export interface WorkspaceLifecycleReport {
   root: WorkspaceRepositoryStatus
   childRepositories: WorkspaceRepositoryStatus[]
   topology: ResolvedWorkspaceTopology
+  branchPolicy: WorkspaceBranchPolicyDecision
   finish: WorkspaceFinishDecision
 }
 
@@ -72,9 +93,10 @@ export async function inspectWorkspaceLifecycle(
   const root = await inspectRepository(rootTopLevel, rootTopLevel, 'root')
   const topology = resolveWorkspaceTopology({ projectDir: rootTopLevel })
   const childRepositories = await inspectChildRepositories(rootTopLevel, topology)
-  const finish = decideFinish(root, childRepositories, topology)
+  const branchPolicy = await inspectBranchPolicy(rootTopLevel, root, topology)
+  const finish = decideFinish(root, childRepositories, topology, branchPolicy)
 
-  return { root, childRepositories, topology, finish }
+  return { root, childRepositories, topology, branchPolicy, finish }
 }
 
 export async function cleanupWorkspaceLifecycle(
@@ -226,6 +248,7 @@ function decideFinish(
   root: WorkspaceRepositoryStatus,
   childRepositories: WorkspaceRepositoryStatus[],
   topology: ResolvedWorkspaceTopology,
+  branchPolicy: WorkspaceBranchPolicyDecision,
 ): WorkspaceFinishDecision {
   const blockers: string[] = []
   const warnings: string[] = []
@@ -236,6 +259,8 @@ function decideFinish(
   if (policy.requireCleanRepositories && !root.clean) blockers.push('Root repository has uncommitted changes')
   if (root.upstream && root.ahead > 0) warnings.push(`Root branch ${root.branch ?? '(detached)'} is ${root.ahead} commit(s) ahead of ${root.upstream}`)
   if (!root.upstream && root.branch) warnings.push(`Root branch ${root.branch} has no upstream`)
+  blockers.push(...branchPolicy.cleanupBlockers)
+  warnings.push(...branchPolicy.warnings)
 
   for (const child of childRepositories) {
     if (policy.requireCleanRepositories && !child.clean) blockers.push(`Child repository ${child.relativePath} has uncommitted changes`)
@@ -258,6 +283,7 @@ function decideFinish(
     nextActions.push('Commit or stash child repository changes before removing the temporary worktree')
     nextActions.push('If child repositories changed, push or review them in their own remotes before root cleanup')
   }
+  nextActions.push(...branchPolicy.nextActions)
 
   return {
     canCleanup: blockers.length === 0 && root.isLinkedWorktree,
@@ -265,6 +291,116 @@ function decideFinish(
     warnings,
     nextActions,
   }
+}
+
+async function inspectBranchPolicy(
+  rootDir: string,
+  root: WorkspaceRepositoryStatus,
+  topology: ResolvedWorkspaceTopology,
+): Promise<WorkspaceBranchPolicyDecision> {
+  const policy = topology.branchPolicy
+  const branch = root.branch
+  const role = classifyBranch(branch, policy)
+  const shipBlockers: string[] = []
+  const cleanupBlockers: string[] = []
+  const warnings: string[] = []
+  const nextActions: string[] = []
+
+  if (!branch) {
+    shipBlockers.push('Detached HEAD cannot be shipped; create a named GitLab Flow branch first')
+  } else if (role === 'production') {
+    shipBlockers.push(`Direct ship on production branch ${branch} is blocked; merge a verified release/hotfix branch and tag from ${policy.productionBranch}`)
+  } else if (role === 'integration') {
+    shipBlockers.push(`Direct ship on integration branch ${branch} is blocked; create a short feat/*, fix/*, chore/*, docs/*, release/*, or hotfix/* branch`)
+  } else if (policy.protectedBranches.includes(branch)) {
+    shipBlockers.push(`Direct ship on protected branch ${branch} is blocked by branch policy`)
+  } else if (role === 'other') {
+    const allowedPrefixes = [
+      ...policy.featurePrefixes,
+      ...policy.releasePrefixes,
+      ...policy.hotfixPrefixes,
+    ]
+    shipBlockers.push(`Branch ${branch} does not match allowed GitLab Flow prefixes: ${allowedPrefixes.join(', ')}`)
+  }
+
+  if (root.isLinkedWorktree && branch) {
+    const mergedOrEmpty = await isMergedOrEmptyAgainstPolicyBranches(rootDir, policy)
+    if (root.upstream && root.ahead > 0) {
+      cleanupBlockers.push(`Local branch ${branch} has ${root.ahead} unpushed commit(s); push, merge, or intentionally discard before worktree cleanup`)
+    } else if (!root.upstream && !mergedOrEmpty) {
+      cleanupBlockers.push(`Local branch ${branch} has commits that are not pushed or merged into ${policy.integrationBranch}/${policy.productionBranch}`)
+    }
+  }
+
+  if (role === 'integration') {
+    nextActions.push(`Create short branches from ${policy.integrationBranch}; merge reviewed work back to ${policy.integrationBranch}`)
+  } else if (role === 'production') {
+    nextActions.push(`Keep ${policy.productionBranch} production-only; publish from user-created vX.Y.Z tags on ${policy.productionBranch}`)
+  } else if (role === 'feature') {
+    nextActions.push(`Merge this branch to ${policy.integrationBranch}, verify there, then delete the branch`)
+  } else if (role === 'release') {
+    nextActions.push(`Release branch should contain only selected release changes; merge to ${policy.productionBranch}, tag, publish, then sync ${policy.productionBranch} back to ${policy.integrationBranch}`)
+  } else if (role === 'hotfix') {
+    nextActions.push(`Fix forward on ${policy.integrationBranch} first when possible, cherry-pick to hotfix/${policy.productionBranch}, tag, then sync back`)
+  } else if (role === 'other') {
+    nextActions.push('Rename the branch to an allowed prefix or update .scale/workspace.json branchPolicy deliberately')
+  }
+
+  return {
+    mode: policy.mode,
+    branch,
+    role,
+    integrationBranch: policy.integrationBranch,
+    productionBranch: policy.productionBranch,
+    protectedBranches: policy.protectedBranches,
+    featurePrefixes: policy.featurePrefixes,
+    releasePrefixes: policy.releasePrefixes,
+    hotfixPrefixes: policy.hotfixPrefixes,
+    shipAllowed: shipBlockers.length === 0,
+    shipBlockers,
+    cleanupBlockers,
+    warnings,
+    nextActions,
+  }
+}
+
+function classifyBranch(branch: string | null, policy: Required<WorkspaceBranchPolicy>): WorkspaceBranchRole {
+  if (!branch) return 'detached'
+  if (branch === policy.productionBranch || branch === 'main' && policy.productionBranch === 'master') return 'production'
+  if (branch === policy.integrationBranch) return 'integration'
+  if (policy.releasePrefixes.some(prefix => branch.startsWith(prefix))) return 'release'
+  if (policy.hotfixPrefixes.some(prefix => branch.startsWith(prefix))) return 'hotfix'
+  if (policy.featurePrefixes.some(prefix => branch.startsWith(prefix))) return 'feature'
+  return 'other'
+}
+
+async function isMergedOrEmptyAgainstPolicyBranches(
+  repoDir: string,
+  policy: Required<WorkspaceBranchPolicy>,
+): Promise<boolean> {
+  const candidateRefs = [
+    policy.integrationBranch,
+    `origin/${policy.integrationBranch}`,
+    policy.productionBranch,
+    `origin/${policy.productionBranch}`,
+    'main',
+    'origin/main',
+  ]
+  for (const ref of candidateRefs) {
+    if (!await refExists(repoDir, ref)) continue
+    if (await isHeadMergedInto(repoDir, ref)) return true
+  }
+  return false
+}
+
+async function refExists(repoDir: string, ref: string): Promise<boolean> {
+  const result = await execa('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoDir, reject: false })
+  return result.exitCode === 0
+}
+
+async function isHeadMergedInto(repoDir: string, ref: string): Promise<boolean> {
+  const result = await execa('git', ['merge-base', '--is-ancestor', 'HEAD', ref], { cwd: repoDir, reject: false })
+  return result.exitCode === 0
 }
 
 function kindForConfiguredRepository(repo: WorkspaceRepositoryConfig): WorkspaceRepositoryKind {
