@@ -1,3 +1,29 @@
+## 0.21.0 - 2026-05-19
+
+### Upgrade management
+
+- Added guarded `scale upgrade check` and `scale upgrade plan` flows that read `.scale/governance.lock.json`, detect missing generated files, local template edits, SCALE version drift, and governance pack status.
+- Added `scale upgrade apply --confirm` for the safe subset of upgrades: restore missing generated governance files, refresh the governance lock, and write `.scale/backups/upgrade-*` rollback evidence before changing files.
+- Added `scale upgrade rollback` to restore the latest SCALE-managed safe apply without guessing Git history or touching unrelated manual changes.
+- Added HTML upgrade plan output so teams can review update impact before applying changes.
+
+### Tool and skill update governance
+
+- Added `scale tools outdated` and `scale skill outdated` as check-only update surfaces for skills, MCP servers, browser tooling, desktop automation, and external CLI dependencies.
+- Kept third-party updates explicit and non-installing by default, with trust level, source, update policy, and safety notes surfaced for review.
+
+### Documentation and generated templates
+
+- Added upgrade-management documentation and wired the guarded update flow into generated workflow guidance.
+- Updated README quickstart guidance so users can check, plan, safely apply, and roll back workflow template updates.
+
+### Verification
+
+- Added unit and CLI coverage for upgrade check, plan, safe apply, rollback, and third-party outdated surfaces.
+- Verified the release candidate with build, full Vitest suite, npm pack dry-run, and Git diff checks.
+
+---
+
 ## 0.20.0 - 2026-05-19
 
 ### Agent Engineering OS governance
