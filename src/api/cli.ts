@@ -71,9 +71,11 @@ import {
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import {
+  applyUpgradePlan,
   createThirdPartyUpdateReport,
   createUpgradeCheckReport,
   createUpgradePlanReport,
+  rollbackLatestUpgrade,
   writeUpgradePlanHtml,
 } from '../workflow/UpgradeManager.js'
 import { createGovernanceRoiReport } from '../governance/GovernanceRoi.js'
@@ -2778,23 +2780,22 @@ const upgradeApply = defineCommand({
     json: { type: 'boolean', default: false, description: 'Print JSON output' },
   },
   run({ args }) {
-    const plan = createUpgradePlanReport({ projectDir: args.dir })
-    const result = {
-      ok: false,
-      applied: false,
-      reason: args.confirm
-        ? 'Automatic apply is not enabled yet; use the plan to update clean/missing files explicitly.'
-        : 'Run scale upgrade plan first, review the impact, then rerun with --confirm when automatic apply is enabled.',
-      plan,
-    }
+    const result = applyUpgradePlan({
+      projectDir: args.dir,
+      confirm: isTruthyFlag(args.confirm),
+    })
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
+      if (!result.ok) process.exitCode = 1
       return
     }
     console.log('SCALE Upgrade Apply')
     console.log(`  Applied: ${result.applied}`)
     console.log(`  Reason: ${result.reason}`)
-    console.log(`  Apply mode: ${plan.applyMode}`)
+    console.log(`  Apply mode: ${result.plan.applyMode}`)
+    if (result.backup) console.log(`  Backup: ${result.backup.manifestPath}`)
+    for (const path of result.changedFiles) console.log(`  changed: ${path}`)
+    if (!result.ok) process.exitCode = 1
   },
 })
 
@@ -2805,21 +2806,18 @@ const upgradeRollback = defineCommand({
     json: { type: 'boolean', default: false, description: 'Print JSON output' },
   },
   run({ args }) {
-    const result = {
-      ok: true,
-      projectDir: resolve(String(args.dir ?? PROJECT_DIR)),
-      available: false,
-      reason: 'No automatic upgrade apply has been enabled in this version, so no SCALE-managed rollback point exists.',
-      recommendedRollback: 'Use git status/diff to review local changes, or restore from your VCS if you manually applied an upgrade.',
-    }
+    const result = rollbackLatestUpgrade({ projectDir: args.dir })
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
+      if (!result.ok) process.exitCode = 1
       return
     }
     console.log('SCALE Upgrade Rollback')
-    console.log(`  Available: ${result.available}`)
+    console.log(`  Applied: ${result.applied}`)
     console.log(`  Reason: ${result.reason}`)
-    console.log(`  Recommendation: ${result.recommendedRollback}`)
+    if (result.backup) console.log(`  Backup: ${result.backup.manifestPath}`)
+    for (const path of result.restoredFiles) console.log(`  restored: ${path}`)
+    if (!result.ok) process.exitCode = 1
   },
 })
 

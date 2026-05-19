@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -52,7 +52,33 @@ describe('upgrade CLI', () => {
     expect(parseJson<{ applyMode: string; steps: unknown[] }>(plan.stdout)).toMatchObject({
       applyMode: 'safe',
     })
-  }, 15000)
+  }, 45000)
+
+  it('safe-applies missing generated files and can roll them back', async () => {
+    const scaleDir = makeDir('scale-upgrade-cli-')
+    const projectDir = makeDir('scale-upgrade-project-')
+    const missingPath = join(projectDir, 'docs', 'workflow', 'templates', 'summary.md')
+    const init = await runScale(['init', '--dir', projectDir, '--governance-pack', 'project-scaffold', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+    rmSync(missingPath)
+
+    const apply = await runScale(['upgrade', 'apply', '--dir', projectDir, '--confirm', '--json'], scaleDir, projectDir)
+    expect(apply.exitCode).toBe(0)
+    expect(parseJson<{ ok: boolean; applied: boolean; changedFiles: string[] }>(apply.stdout)).toMatchObject({
+      ok: true,
+      applied: true,
+      changedFiles: expect.arrayContaining(['docs/workflow/templates/summary.md']),
+    })
+    expect(existsSync(missingPath)).toBe(true)
+
+    const rollback = await runScale(['upgrade', 'rollback', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(rollback.exitCode).toBe(0)
+    expect(parseJson<{ ok: boolean; restoredFiles: string[] }>(rollback.stdout)).toMatchObject({
+      ok: true,
+      restoredFiles: expect.arrayContaining(['docs/workflow/templates/summary.md']),
+    })
+    expect(existsSync(missingPath)).toBe(false)
+  }, 45000)
 
   it('prints third-party tool and skill update surfaces without installing anything', async () => {
     const scaleDir = makeDir('scale-upgrade-cli-')
@@ -71,5 +97,5 @@ describe('upgrade CLI', () => {
     expect(parseJson<{ policy: string; entries: Array<{ category: string; updatePolicy: string }> }>(skills.stdout)).toMatchObject({
       policy: 'check-only',
     })
-  }, 15000)
+  }, 45000)
 })

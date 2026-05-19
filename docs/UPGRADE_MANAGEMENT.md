@@ -20,6 +20,7 @@ SCALE 的升级对象不只有 CLI 包本身，还包括已经生成到业务项
 ```bash
 scale upgrade check --dir .
 scale upgrade plan --dir . --html
+scale upgrade apply --dir . --confirm
 scale tools outdated --dir .
 scale skill outdated --dir .
 scale preflight --preflight-profile quick
@@ -94,15 +95,34 @@ scale skill outdated --dir .
 | 外部 CLI | 只检测版本和来源，不自动改 PATH 或全局包 |
 | 桌面自动化/CUA | 高权限，默认阻断自动升级 |
 
-## 当前边界
+## 安全应用
 
-当前版本已经支持安全检查和计划生成，但自动 `apply` 仍保持保守：
+`apply` 只处理没有 blocker 的安全变更，并且必须显式确认：
 
 ```bash
-scale upgrade apply --dir .
+scale upgrade apply --dir . --confirm
 ```
 
-会提示先审阅计划，不会静默改写项目文件。后续版本可以在三方合并和回滚点稳定后，再开放 `--confirm` 自动应用缺失文件或干净生成文件。
+当前安全应用范围：
+
+- 恢复 `.scale/governance.lock.json` 中记录但本地缺失的生成文件。
+- 刷新 `.scale/governance.lock.json` 中的 SCALE 版本和生成文件哈希。
+- 在 `.scale/backups/upgrade-*/manifest.json` 写入回滚点。
+
+当前不会自动做的事：
+
+- 不覆盖用户改过的生成文件。
+- 不自动合并本地模板改动。
+- 不自动安装或升级第三方 skills、MCP、CLI、浏览器工具或桌面自动化工具。
+- governance pack 版本变化仍需要人工 review。
+
+如果需要撤回最近一次 SCALE 管理的安全应用：
+
+```bash
+scale upgrade rollback --dir .
+```
+
+rollback 只依据 `.scale/backups/upgrade-*/manifest.json` 操作，不会猜测 Git 历史，也不会回滚非 SCALE 管理的手工修改。
 
 ## 给业务项目的规则
 

@@ -296,6 +296,8 @@ Use the guarded upgrade flow:
 \`\`\`bash
 scale upgrade check --dir .
 scale upgrade plan --dir . --html
+scale upgrade apply --dir . --confirm
+scale upgrade rollback --dir .
 scale tools outdated --dir .
 scale skill outdated --dir .
 scale preflight --preflight-profile quick
@@ -306,6 +308,8 @@ Rules:
 - \`.scale/governance.lock.json\` records generated file hashes and pack versions.
 - Clean or missing generated files can be planned safely.
 - Locally changed generated files require manual review before replacement or merge.
+- \`scale upgrade apply --confirm\` only restores missing generated files and refreshes the lock after writing \`.scale/backups/upgrade-*/manifest.json\`.
+- \`scale upgrade rollback\` only rolls back the latest SCALE-managed safe apply.
 - Third-party skills, MCP servers, browser tools, desktop automation, and external CLI tools are never auto-installed by the upgrade flow.
 - Community sources require source, install script, permission, and changelog review. Desktop automation is treated as high risk.
 

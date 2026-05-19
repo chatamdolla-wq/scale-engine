@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { TOOL_CAPABILITY_CATALOG, type ToolCapabilityCategory } from '../tools/ToolCapabilityRegistry.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 import { computeGovernanceDrift, readGovernanceLock, type GovernanceDriftReport } from './GovernanceLock.js'
 import { listGovernanceTemplatePacks, resolveGovernanceTemplatePack, type GovernancePackId } from './GovernanceTemplatePacks.js'
+import { writeGovernanceTemplates } from './GovernanceTemplates.js'
 
 export type UpgradeStatus = 'missing-lock' | 'clean' | 'updates-available' | 'local-changes'
 export type UpgradeApplyMode = 'safe' | 'manual-review'
@@ -14,6 +15,10 @@ export type ThirdPartyUpdatePolicy = 'check-only' | 'manual-review' | 'blocked'
 export interface UpgradeManagerOptions {
   projectDir?: string
   targetScaleVersion?: string
+}
+
+export interface UpgradeApplyOptions extends UpgradeManagerOptions {
+  confirm?: boolean
 }
 
 export interface UpgradeCheckReport {
@@ -103,6 +108,49 @@ export interface UpgradePlanStep {
   risk: UpgradeRisk
   reason: string
   command?: string
+}
+
+export interface UpgradeBackupManifest {
+  version: 1
+  id: string
+  createdAt: string
+  projectDir: string
+  files: UpgradeBackupEntry[]
+}
+
+export interface UpgradeBackupEntry {
+  path: string
+  existed: boolean
+  backupPath?: string
+}
+
+export interface UpgradeApplyReport {
+  version: 1
+  projectDir: string
+  ok: boolean
+  applied: boolean
+  reason: string
+  changedFiles: string[]
+  backup?: {
+    id: string
+    dir: string
+    manifestPath: string
+  }
+  plan: UpgradePlanReport
+}
+
+export interface UpgradeRollbackReport {
+  version: 1
+  projectDir: string
+  ok: boolean
+  applied: boolean
+  reason: string
+  backup?: {
+    id: string
+    dir: string
+    manifestPath: string
+  }
+  restoredFiles: string[]
 }
 
 export function createUpgradeCheckReport(options: UpgradeManagerOptions = {}): UpgradeCheckReport {
@@ -250,6 +298,91 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
   }
 }
 
+export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeApplyReport {
+  const projectDir = resolve(options.projectDir ?? process.cwd())
+  const plan = createUpgradePlanReport(options)
+  if (!options.confirm) {
+    return upgradeApplyResult(projectDir, plan, false, false, 'Review scale upgrade plan first, then rerun with --confirm.', [])
+  }
+  if (plan.applyMode !== 'safe') {
+    return upgradeApplyResult(projectDir, plan, false, false, 'Upgrade requires manual review because generated files have local changes or the lock is missing.', [])
+  }
+  if (!plan.check.governanceLock.exists || !plan.check.governancePack.id) {
+    return upgradeApplyResult(projectDir, plan, false, false, 'Cannot apply without a governance lock and pack id.', [])
+  }
+  if (!plan.check.governancePack.upToDate) {
+    return upgradeApplyResult(projectDir, plan, false, false, 'Governance pack version changes require manual review before automatic apply.', [])
+  }
+
+  const missingFiles = plan.check.drift.missing.map(entry => entry.path)
+  const shouldRefreshLock = !plan.check.scaleEngine.upToDate || missingFiles.length > 0
+  if (!shouldRefreshLock) {
+    return upgradeApplyResult(projectDir, plan, true, false, 'No safe upgrade changes were needed.', [])
+  }
+
+  const backup = createUpgradeBackup(projectDir, uniqueStrings([...missingFiles, '.scale/governance.lock.json']))
+  const result = writeGovernanceTemplates(projectDir, { pack: plan.check.governancePack.id })
+  const createdFiles = result.created
+    .map(path => normalizeProjectRelativePath(projectDir, path))
+    .filter((path): path is string => Boolean(path))
+  mergeCreatedFilesIntoBackup(backup.manifestPath, createdFiles)
+
+  const changedFiles = uniqueStrings([
+    ...missingFiles.filter(path => existsSync(join(projectDir, path))),
+    ...createdFiles,
+    '.scale/governance.lock.json',
+  ])
+
+  return {
+    version: 1,
+    projectDir,
+    ok: true,
+    applied: changedFiles.length > 0,
+    reason: changedFiles.length > 0 ? 'Safe upgrade changes were applied.' : 'No safe upgrade changes were needed.',
+    changedFiles,
+    backup,
+    plan: createUpgradePlanReport(options),
+  }
+}
+
+export function rollbackLatestUpgrade(options: UpgradeManagerOptions = {}): UpgradeRollbackReport {
+  const projectDir = resolve(options.projectDir ?? process.cwd())
+  const backup = latestUpgradeBackup(projectDir)
+  if (!backup) {
+    return {
+      version: 1,
+      projectDir,
+      ok: false,
+      applied: false,
+      reason: 'No SCALE-managed upgrade backup was found.',
+      restoredFiles: [],
+    }
+  }
+
+  const manifest = JSON.parse(readFileSync(backup.manifestPath, 'utf-8')) as UpgradeBackupManifest
+  const restoredFiles: string[] = []
+  for (const entry of manifest.files) {
+    const target = join(projectDir, entry.path)
+    if (entry.existed && entry.backupPath) {
+      mkdirSync(dirname(target), { recursive: true })
+      copyFileSync(join(backup.dir, entry.backupPath), target)
+    } else {
+      rmSync(target, { force: true, recursive: true })
+    }
+    restoredFiles.push(entry.path)
+  }
+
+  return {
+    version: 1,
+    projectDir,
+    ok: true,
+    applied: true,
+    reason: 'Latest SCALE-managed upgrade backup was rolled back.',
+    backup,
+    restoredFiles: uniqueStrings(restoredFiles),
+  }
+}
+
 export function createThirdPartyUpdateReport(category?: ToolCapabilityCategory | ToolCapabilityCategory[]): ThirdPartyUpdateReport {
   const selectedCategories = Array.isArray(category) ? new Set(category) : category ? new Set([category]) : undefined
   const entries = TOOL_CAPABILITY_CATALOG
@@ -288,6 +421,88 @@ export function createThirdPartyUpdateReport(category?: ToolCapabilityCategory |
     reviewRequired,
     entries,
   }
+}
+
+function upgradeApplyResult(
+  projectDir: string,
+  plan: UpgradePlanReport,
+  ok: boolean,
+  applied: boolean,
+  reason: string,
+  changedFiles: string[],
+): UpgradeApplyReport {
+  return {
+    version: 1,
+    projectDir,
+    ok,
+    applied,
+    reason,
+    changedFiles,
+    plan,
+  }
+}
+
+function createUpgradeBackup(projectDir: string, relativePaths: string[]): { id: string; dir: string; manifestPath: string } {
+  const id = `upgrade-${new Date().toISOString().replace(/[:.]/g, '-')}`
+  const dir = join(projectDir, '.scale', 'backups', id)
+  const filesDir = join(dir, 'files')
+  mkdirSync(filesDir, { recursive: true })
+  const manifest: UpgradeBackupManifest = {
+    version: 1,
+    id,
+    createdAt: new Date().toISOString(),
+    projectDir,
+    files: uniqueStrings(relativePaths).map(path => {
+      const target = join(projectDir, path)
+      if (!existsSync(target)) return { path, existed: false }
+      const backupPath = join('files', path.replace(/^[\\/]+/, '').replace(/\\/g, '/'))
+      const backupTarget = join(dir, backupPath)
+      mkdirSync(dirname(backupTarget), { recursive: true })
+      copyFileSync(target, backupTarget)
+      return { path, existed: true, backupPath }
+    }),
+  }
+  const manifestPath = join(dir, 'manifest.json')
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
+  return { id, dir, manifestPath }
+}
+
+function mergeCreatedFilesIntoBackup(manifestPath: string, createdFiles: string[]): void {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as UpgradeBackupManifest
+  const existing = new Set(manifest.files.map(file => file.path))
+  for (const path of createdFiles) {
+    if (!existing.has(path)) {
+      manifest.files.push({ path, existed: false })
+      existing.add(path)
+    }
+  }
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
+}
+
+function latestUpgradeBackup(projectDir: string): { id: string; dir: string; manifestPath: string } | null {
+  const backupsDir = join(projectDir, '.scale', 'backups')
+  if (!existsSync(backupsDir)) return null
+  const candidates = readdirSync(backupsDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name.startsWith('upgrade-'))
+    .map(entry => ({
+      id: entry.name,
+      dir: join(backupsDir, entry.name),
+      manifestPath: join(backupsDir, entry.name, 'manifest.json'),
+    }))
+    .filter(entry => existsSync(entry.manifestPath))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  return candidates.at(-1) ?? null
+}
+
+function normalizeProjectRelativePath(projectDir: string, path: string): string | null {
+  const normalizedProject = resolve(projectDir).replace(/\\/g, '/')
+  const normalizedPath = resolve(path).replace(/\\/g, '/')
+  if (!normalizedPath.startsWith(`${normalizedProject}/`)) return null
+  return normalizedPath.slice(normalizedProject.length + 1)
+}
+
+function uniqueStrings(items: string[]): string[] {
+  return [...new Set(items)]
 }
 
 export function writeUpgradePlanHtml(report: UpgradePlanReport, outputPath?: string): string {
