@@ -44,3 +44,7 @@
 | 文档、报告、截图、脚本混乱 | `scale init --governance-pack resource-governance` |
 | 工作流或第三方能力要升级 | `scale upgrade check && scale upgrade plan --html` |
 
+
+## 工作流升级短路径
+
+已有项目先看 [SCALE workflow upgrade guide](workflow-upgrade.md)。它说明 `scale init --interactive`、`scale upgrade check/plan/apply/rollback`、仓库本地 `make workflow-upgrade-*` 入口，以及生成文件更新和项目级验证之间的边界。

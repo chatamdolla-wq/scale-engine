@@ -123,6 +123,8 @@ scale skill outdated --dir .
 
 详细说明见 [升级管理](docs/UPGRADE_MANAGEMENT.md)。
 
+新用户和项目维护者可先看 [SCALE workflow upgrade guide](docs/start/workflow-upgrade.md)，它把 `scale init --interactive`、`scale upgrade check/plan/apply/rollback` 和仓库本地 `make workflow-upgrade-*` 入口放在一条可执行路径里。
+
 ## Governance Pack
 
 在已有项目中安装治理工作流：
