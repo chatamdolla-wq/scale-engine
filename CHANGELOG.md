@@ -1,4 +1,4 @@
-## Unreleased
+## 0.21.2 - 2026-05-19
 
 ### Git workflow governance
 
