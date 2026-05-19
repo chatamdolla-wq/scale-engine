@@ -56,6 +56,21 @@ export interface QuickStartResult {
   nextSteps: string[]
 }
 
+export function governanceNextSteps(options: { includeAgentInit?: boolean } = {}): string[] {
+  const steps: string[] = []
+  if (options.includeAgentInit) {
+    steps.push('scale init --agent <platform>  # optional: add agent-specific hooks later')
+  }
+  steps.push(
+    'scale doctor',
+    'scale create Spec "<feature>"',
+    'edit .scale/product-smoke.json and enable a real product-path probe',
+    'scale preflight --profile productSmoke --json',
+    'scale runtime final-check --level M --json',
+  )
+  return steps
+}
+
 export async function quickStart(projectDir: string = '.', options?: { installKnowledgeGraph?: boolean; governancePack?: string }): Promise<QuickStartResult> {
   const result: QuickStartResult = {
     success: false, platform: null, created: [], skipped: [],
@@ -96,9 +111,7 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
   }
 
   result.success = true
-  if (!detection.platform) result.nextSteps.push('scale init --agent <platform>  # optional: add agent-specific hooks later')
-  result.nextSteps.push('scale doctor')
-  result.nextSteps.push('scale create Spec "<feature>"')
+  result.nextSteps.push(...governanceNextSteps({ includeAgentInit: !detection.platform }))
   return result
 }
 

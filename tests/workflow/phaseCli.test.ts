@@ -126,8 +126,13 @@ describe('phase CLI workflow', () => {
     ], scaleDir, projectDir)
 
     expect(init.exitCode).toBe(0)
-    const result = parseJson<{ ok: boolean; mode: string; agent: string; created: string[] }>(init.stdout)
+    const result = parseJson<{ ok: boolean; mode: string; agent: string; created: string[]; nextSteps: string[] }>(init.stdout)
     expect(result).toMatchObject({ ok: true, mode: 'quick-agent', agent: 'codex' })
+    expect(result.nextSteps).toEqual(expect.arrayContaining([
+      'edit .scale/product-smoke.json and enable a real product-path probe',
+      'scale preflight --profile productSmoke --json',
+      'scale runtime final-check --level M --json',
+    ]))
     expect(existsSync(join(projectDir, '.codex', 'hooks.json'))).toBe(true)
     expect(existsSync(join(projectDir, '.scale', 'governance.lock.json'))).toBe(true)
   }, 120_000)

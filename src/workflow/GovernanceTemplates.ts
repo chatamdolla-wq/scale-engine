@@ -840,6 +840,16 @@ UI or client -> gateway/router -> service -> database/storage/queue -> observabl
 
 Do not use a green health endpoint as the only proof when the user-facing path depends on routing, authentication, storage, async tasks, browser behavior, or third-party integration.
 
+## Quick Setup
+
+1. Open \`.scale/product-smoke.json\`.
+2. Replace the example command with one real product path command.
+3. Set that probe's \`enabled\` field to \`true\`.
+4. Run \`scale preflight --profile productSmoke --json\`.
+5. Run \`scale runtime final-check --level M --json\`.
+
+\`status: "skipped"\` means no real product path was exercised. It does not count as completion evidence.
+
 ## Setup
 
 - Base URL:
@@ -1040,7 +1050,13 @@ function productSmokeConfigTemplate(mode: GovernanceMode): string {
     version: 1,
     gate: mode === 'critical' ? 'block' : 'warn',
     requiredForLevels: ['M', 'L', 'CRITICAL'],
-    emptyProbeBehavior: 'warn',
+    emptyProbeBehavior: 'block',
+    setupGuide: [
+      'Set probes[].enabled=true only after replacing the example command with a real product path.',
+      'Use a command that crosses the real boundary: client/UI -> gateway/router -> service -> persistence or observable result.',
+      'Run: scale preflight --profile productSmoke --json',
+      'Run: scale runtime final-check --level M --json',
+    ],
     runtimeEvidence: {
       requiredKind: 'command',
       requiredStatus: 'passed',

@@ -58,6 +58,8 @@ describe('writeGovernanceTemplates', () => {
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-plan.md'), 'utf-8')).toContain('## Tool Orchestration')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'skill-evidence.md'), 'utf-8')).toContain('## Browser Or Web Evidence')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('## Real Product Path')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('## Quick Setup')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('scale preflight --profile productSmoke --json')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'templates', 'product-smoke.md'), 'utf-8')).toContain('"productSmoke":true')
     expect(readFileSync(join(dir, 'scripts', 'qa', 'product-smoke.ps1'), 'utf-8')).toContain('$ConfigPath = Join-Path $Root ".scale\\product-smoke.json"')
     expect(readFileSync(join(dir, 'scripts', 'qa', 'product-smoke.sh'), 'utf-8')).toContain('CONFIG_PATH="$ROOT/.scale/product-smoke.json"')
@@ -74,6 +76,9 @@ describe('writeGovernanceTemplates', () => {
     expect(JSON.parse(readFileSync(join(dir, '.scale', 'product-smoke.json'), 'utf-8'))).toMatchObject({
       version: 1,
       gate: 'block',
+      setupGuide: expect.arrayContaining([
+        'Set probes[].enabled=true only after replacing the example command with a real product path.',
+      ]),
       runtimeEvidence: {
         requiredKind: 'command',
       },

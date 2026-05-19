@@ -22,7 +22,7 @@ import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, skillPlanMa
 import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
 import { Doctor } from './doctor.js'
-import { quickStart, detectPlatform } from './quickstart.js'
+import { quickStart, detectPlatform, governanceNextSteps } from './quickstart.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
 import {
@@ -1895,8 +1895,7 @@ const init = defineCommand({
       console.log(`   Scenario:      ${scenarioMode}`)
 
       console.log(`\n📋 Next steps:`)
-      console.log(`   → scale doctor`)
-      console.log(`   → scale create Spec "<feature name>"`)
+      for (const step of governanceNextSteps()) console.log(`   → ${step}`)
       return
     }
 
@@ -1965,7 +1964,7 @@ const init = defineCommand({
         scaleDir: result.scaleDir,
         created: result.created,
         skipped: result.skipped,
-        nextSteps: ['scale doctor', 'scale create Spec "<feature name>"'],
+        nextSteps: governanceNextSteps(),
       }, null, 2))
       return
     }
@@ -1980,8 +1979,7 @@ const init = defineCommand({
     console.log(`\n📖 Knowledge: ${result.knowledgeDocPath}`)
     console.log(`\n📂 Data dir:  ${result.scaleDir}`)
     console.log(`\n📋 Next steps:`)
-    console.log(`   → scale doctor`)
-    console.log(`   → scale create Spec "<feature name>"`)
+    for (const step of governanceNextSteps()) console.log(`   → ${step}`)
   },
 })
 
