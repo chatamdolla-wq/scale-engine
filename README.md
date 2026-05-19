@@ -17,6 +17,20 @@ SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探
 npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 语言：[中文](README.md) | [English](README.en.md)
 
+## 先怎么学
+
+如果你第一次接触 SCALE，不要从完整命令列表开始读。按这个顺序更容易掌握：
+
+| 目标 | 入口 | 你应该学会什么 |
+| --- | --- | --- |
+| 先跑起来 | [3 分钟快速开始](docs/start/quickstart.md) | 安装 CLI、初始化治理文件、运行 preflight |
+| 看完整闭环 | [官方 Demo Walkthrough](docs/start/agent-governance-demo.md) | 任务上下文、诊断、TDD、artifact 和验证证据如何串起来 |
+| 接入已有项目 | [SCALE 工作流升级指南](docs/start/workflow-upgrade.md) | `init`、`upgrade check/plan/apply`、本地 `make` 包装入口怎么用 |
+| 选择治理包 | 本文的 Governance Pack 章节 | 不同项目形态应该选哪个 pack |
+| 维护或扩展 SCALE | [docs/README.md](docs/README.md) | 文档地图、内部模块和长期维护资料 |
+
+一句话理解：SCALE 不是让 Agent 多写文档，而是让“做了什么、验证了什么、没验证什么”可追踪。
+
 ## 社区与推广
 
 ### 链接

@@ -2,6 +2,14 @@
 
 本文是已有仓库安装、更新、适配 SCALE 工作流资产的短路径。
 
+适合三类人：
+
+| 角色 | 关注点 |
+| --- | --- |
+| 项目维护者 | 如何把 SCALE 接入已有仓库，并避免覆盖本地规则 |
+| 普通开发者 | 拉取仓库后如何检查或安装正确的 SCALE 版本 |
+| Agent 使用者 | 哪些步骤可以命令化，哪些必须人工或 Agent 审阅 |
+
 ## 哪些可以自动化
 
 SCALE 把更新分成三层：
@@ -88,6 +96,30 @@ scale upgrade rollback --dir .
 - Repository wrappers such as `Makefile` and `scripts/workflow/verify.ps1`.
 
 对 `netdisk-project` 这类多服务产品，不能把 `/health` 当作充分验证。验证必须覆盖本次变更影响的真实产品路径，例如 gateway 路由、`/api/v1/*` 请求、OAuth callback、存储驱动、UI 调用和数据持久化。
+
+## Agent 本地产物忽略规则
+
+工作流资产和团队协作规则可以提交；Agent 平台的本地状态、临时 worktree、缓存、日志和会话产物不应提交。已有项目接入或升级 SCALE 时，检查根 `.gitignore` 是否至少覆盖这些本地产物：
+
+```gitignore
+.claude/worktrees/
+.claude/tmp/
+.claude/local/
+.codex/worktrees/
+.codex/tmp/
+.codex-tmp/
+.cursor/tmp/
+.continue/
+.aider*
+.gemini/tmp/
+.omc/
+.roo/tmp/
+.cline/tmp/
+.windsurf/
+.playwright-mcp/
+```
+
+不要为了省事直接忽略所有协作配置目录。像 `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/`、团队共享的 `.claude/settings.json`、`.scale/governance.lock.json` 这类稳定规则可以进入版本库。
 
 ## 推荐仓库封装
 

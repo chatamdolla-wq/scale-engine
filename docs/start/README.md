@@ -1,6 +1,6 @@
 # SCALE Engine 入门路径
 
-这个目录只放面向新用户的上手内容。目标是让用户先跑通，再理解完整体系。
+这个目录面向新用户。目标是先跑通一条最小路径，再理解完整体系，不要求一开始掌握所有命令。
 
 ## 推荐阅读顺序
 
@@ -18,6 +18,25 @@
 
 5. 查看 [文档地图](../README.md)
    区分哪些文档是用户指南、哪些是参考资料、哪些是历史规划和过程记录。
+
+## 15 分钟学习路径
+
+```bash
+npm install -g @hongmaple0820/scale-engine
+scale --version
+mkdir scale-demo && cd scale-demo
+scale init --governance-pack standard
+scale preflight --preflight-profile quick
+scale status
+```
+
+跑完后先回答三个问题：
+
+- `.scale/verification.json` 里定义了哪些验证 profile？
+- `docs/workflow/templates/` 里有哪些任务产物模板？
+- `scale status` 建议下一步做什么？
+
+如果这三个问题答不上来，先不要继续看高级命令。
 
 ## 你应该先看到什么
 
