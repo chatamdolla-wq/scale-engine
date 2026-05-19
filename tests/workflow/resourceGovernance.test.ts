@@ -71,6 +71,20 @@ describe('ResourceGovernance', () => {
     })
   })
 
+  it('classifies Python bytecode caches as temporary ignored resources', () => {
+    const projectDir = makeProject()
+    write(projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
+    write(projectDir, 'scripts/lib/__pycache__/workflow_state.cpython-313.pyc', 'bytecode\n')
+
+    const report = scanResourceAssets({ projectDir })
+
+    expect(report.assets.find(asset => asset.path === 'scripts/lib/__pycache__/workflow_state.cpython-313.pyc')).toMatchObject({
+      type: 'temporary',
+      lifecycle: 'temporary',
+      gitPolicy: 'ignore',
+    })
+  })
+
   it('reports tracked runtime outputs and large tracked files', () => {
     const projectDir = makeProject()
     write(projectDir, '.scale/resource-policy.json', JSON.stringify({

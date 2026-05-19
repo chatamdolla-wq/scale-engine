@@ -64,7 +64,9 @@ export function doctorRuntimeEvidence(options: RuntimeDoctorOptions = {}): Runti
     checks.push({
       name: 'Runtime failed evidence',
       status: 'ok',
-      message: 'No failed runtime evidence records',
+      message: evidence.expectedRed > 0
+        ? `No unresolved failed runtime evidence records; ${evidence.expectedRed} expected red reproduction record(s)`
+        : 'No failed runtime evidence records',
     })
   }
 

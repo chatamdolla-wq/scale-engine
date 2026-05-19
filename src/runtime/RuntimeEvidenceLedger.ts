@@ -47,6 +47,7 @@ export interface RuntimeEvidenceSummary {
   passed: number
   failed: number
   skipped: number
+  expectedRed: number
   ok: boolean
   latestFailure?: RuntimeEvidenceRecord
 }
@@ -118,17 +119,26 @@ export class RuntimeEvidenceLedger {
   summary(query: RuntimeEvidenceQuery = {}): RuntimeEvidenceSummary {
     const records = this.list({ ...query, limit: query.limit ?? Number.MAX_SAFE_INTEGER })
     const passed = records.filter(record => record.status === 'passed').length
-    const failed = records.filter(record => record.status === 'failed').length
+    const expectedRed = records.filter(isExpectedRedEvidence).length
+    const failedRecords = records.filter(record => record.status === 'failed' && !isExpectedRedEvidence(record))
+    const failed = failedRecords.length
     const skipped = records.filter(record => record.status === 'skipped').length
     return {
       total: records.length,
       passed,
       failed,
       skipped,
+      expectedRed,
       ok: failed === 0,
-      latestFailure: records.find(record => record.status === 'failed'),
+      latestFailure: failedRecords[0],
     }
   }
+}
+
+function isExpectedRedEvidence(record: RuntimeEvidenceRecord): boolean {
+  if (record.status !== 'failed') return false
+  const metadata = record.metadata ?? {}
+  return metadata.expectedRed === true || metadata.expectedFailure === true
 }
 
 function readRuntimeEvidence(file: string): RuntimeEvidenceRecord | null {

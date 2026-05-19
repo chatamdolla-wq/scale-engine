@@ -76,4 +76,45 @@ describe('runtime doctor', () => {
       blocked: false,
     })
   })
+
+  it('does not block final readiness for expected red reproduction evidence after later success', () => {
+    const projectDir = makeProject()
+    const ledger = new RuntimeEvidenceLedger({ projectDir })
+    new SessionLedger({ projectDir }).start({ sessionId: 'SESSION-RED', taskId: 'TASK-RED', level: 'M' })
+    ledger.record({
+      taskId: 'TASK-RED',
+      sessionId: 'SESSION-RED',
+      kind: 'command',
+      title: 'red reproduction',
+      status: 'failed',
+      exitCode: 1,
+      summary: 'expected failing test reproduced the bug',
+      metadata: {
+        expectedRed: true,
+        phase: 'reproduce',
+      },
+    })
+    ledger.record({
+      taskId: 'TASK-RED',
+      sessionId: 'SESSION-RED',
+      kind: 'command',
+      title: 'green regression',
+      status: 'passed',
+      exitCode: 0,
+      summary: 'regression passed after fix',
+    })
+
+    const report = doctorRuntimeEvidence({ projectDir, taskId: 'TASK-RED', sessionId: 'SESSION-RED', level: 'M' })
+    expect(report.blocked).toBe(false)
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'Runtime failed evidence',
+        status: 'ok',
+      }),
+    ]))
+    expect(evaluateFinalReportReadiness({ projectDir, taskId: 'TASK-RED', sessionId: 'SESSION-RED', level: 'M' })).toMatchObject({
+      ready: true,
+      blocked: false,
+    })
+  })
 })

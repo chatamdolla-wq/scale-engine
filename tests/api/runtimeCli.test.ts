@@ -108,4 +108,83 @@ describe('runtime CLI', () => {
     expect(output.ready).toBe(false)
     expect(output.reasons.join('\n')).toContain('No passed evidence')
   }, 120_000)
+
+  it('allows expected red reproduction evidence when later passed evidence exists', async () => {
+    const scaleDir = makeDir('scale-runtime-cli-scale-')
+    const projectDir = makeDir('scale-runtime-cli-project-')
+
+    await runScale([
+      'runtime',
+      'start',
+      '--session-id',
+      'SESSION-RED',
+      '--task-id',
+      'TASK-RED',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const red = await runScale([
+      'runtime',
+      'record',
+      '--task-id',
+      'TASK-RED',
+      '--session-id',
+      'SESSION-RED',
+      '--title',
+      'red reproduction',
+      '--status',
+      'failed',
+      '--exit-code',
+      '1',
+      '--summary',
+      'expected red reproduced bug',
+      '--metadata-json',
+      '{"expectedRed":true,"phase":"reproduce"}',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(red.exitCode).toBe(0)
+
+    const green = await runScale([
+      'runtime',
+      'record',
+      '--task-id',
+      'TASK-RED',
+      '--session-id',
+      'SESSION-RED',
+      '--title',
+      'green regression',
+      '--status',
+      'passed',
+      '--exit-code',
+      '0',
+      '--summary',
+      'regression passed',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(green.exitCode).toBe(0)
+
+    const finalCheck = await runScale([
+      'runtime',
+      'final-check',
+      '--task-id',
+      'TASK-RED',
+      '--session-id',
+      'SESSION-RED',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(finalCheck.exitCode).toBe(0)
+    expect(parseJson<{ ready: boolean; report: { evidence: { expectedRed: number; failed: number } } }>(finalCheck.stdout)).toMatchObject({
+      ready: true,
+      report: {
+        evidence: {
+          expectedRed: 1,
+          failed: 0,
+        },
+      },
+    })
+  }, 120_000)
 })
