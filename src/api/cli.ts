@@ -103,6 +103,7 @@ import {
   renderDiagnosticLoopMarkdown,
   validateDiagnosticLoop,
 } from '../workflow/DiagnosticLoop.js'
+import { BackgroundHunter, HuntFindingStore } from '../workflow/autonomous/BackgroundHunter.js'
 import {
   createTddSlice,
   evaluateTddSlice,
@@ -1858,6 +1859,147 @@ const diagnose = defineCommand({
   meta: { name: 'diagnose', description: 'Evidence-first debugging workflows' },
   subCommands: { plan: diagnosePlanCommand },
 })
+
+// ============================================================================
+// hunt command - readonly proactive governance scan
+// ============================================================================
+
+function createBackgroundHunter(args: { dir?: string }): BackgroundHunter {
+  return new BackgroundHunter({ projectDir: args.dir ? String(args.dir) : PROJECT_DIR })
+}
+
+const huntScanCommand = defineCommand({
+  meta: { name: 'scan', description: 'Run a readonly proactive governance scan' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = createBackgroundHunter(args).scan({
+      changedFiles: resolveChangedFilesArg(args),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    printHuntReport(report)
+  },
+})
+
+const huntReportCommand = defineCommand({
+  meta: { name: 'report', description: 'Print open and ignored hunt findings' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = createBackgroundHunter(args).scan({
+      changedFiles: resolveChangedFilesArg(args),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    printHuntReport(report)
+  },
+})
+
+const huntDiagnoseCommand = defineCommand({
+  meta: { name: 'diagnose', description: 'Create a diagnostic loop from a hunt finding' },
+  args: {
+    id: { type: 'positional', required: true, description: 'Hunt finding id' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = createBackgroundHunter(args).scan({
+      changedFiles: resolveChangedFilesArg(args),
+    })
+    const finding = report.findings.find(item => item.id === String(args.id))
+    if (!finding) {
+      console.error(`Hunt finding not found: ${String(args.id)}`)
+      process.exitCode = 1
+      return
+    }
+    const loop = createDiagnosticLoop(finding.diagnosticInput)
+    const validation = validateDiagnosticLoop(loop)
+    if (args.json) {
+      console.log(JSON.stringify({ finding, loop, validation }, null, 2))
+      return
+    }
+    console.log(renderDiagnosticLoopMarkdown(loop))
+    if (!validation.ready) {
+      console.log('\nBlockers:')
+      for (const blocker of validation.blockers) console.log(`  - ${blocker}`)
+    }
+  },
+})
+
+const huntIgnoreCommand = defineCommand({
+  meta: { name: 'ignore', description: 'Ignore a stable hunt finding fingerprint' },
+  args: {
+    id: { type: 'positional', required: true, description: 'Hunt finding id' },
+    reason: { type: 'string', description: 'Why this finding is accepted or deferred' },
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    changed: { type: 'boolean', default: false, description: 'Scan changed Git files only' },
+    'changed-files': { type: 'string', description: 'Comma or newline separated file list to scan' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = args.dir ? String(args.dir) : PROJECT_DIR
+    const report = new BackgroundHunter({ projectDir }).scan({
+      changedFiles: resolveChangedFilesArg(args),
+    })
+    const finding = report.findings.find(item => item.id === String(args.id))
+    if (!finding) {
+      console.error(`Hunt finding not found: ${String(args.id)}`)
+      process.exitCode = 1
+      return
+    }
+    const ignored = new HuntFindingStore({ projectDir }).ignore({
+      id: finding.id,
+      fingerprint: finding.fingerprint,
+      reason: args.reason ? String(args.reason) : undefined,
+      ignoredAt: new Date().toISOString(),
+    })
+    if (args.json) {
+      console.log(JSON.stringify({ ignored }, null, 2))
+      return
+    }
+    console.log(`Ignored hunt finding: ${ignored.id}`)
+    if (ignored.reason) console.log(`  Reason: ${ignored.reason}`)
+  },
+})
+
+const hunt = defineCommand({
+  meta: { name: 'hunt', description: 'Readonly proactive governance scans' },
+  subCommands: {
+    scan: huntScanCommand,
+    report: huntReportCommand,
+    diagnose: huntDiagnoseCommand,
+    ignore: huntIgnoreCommand,
+  },
+})
+
+function printHuntReport(report: ReturnType<BackgroundHunter['scan']>): void {
+  console.log('SCALE Hunt Report')
+  console.log(`  Project: ${report.projectDir}`)
+  console.log(`  Open findings: ${report.summary.open}`)
+  console.log(`  Ignored findings: ${report.summary.ignored}`)
+  console.log(`  Blocking findings: ${report.summary.blocking}`)
+  for (const finding of report.findings.slice(0, 20)) {
+    const line = finding.line ? `:${finding.line}` : ''
+    const status = finding.status === 'ignored' ? 'IGNORED' : finding.severity.toUpperCase()
+    console.log(`  [${status}] ${finding.id} ${finding.ruleId} ${finding.path ?? 'project'}${line}: ${finding.message}`)
+  }
+  if (report.findings.length > 20) console.log(`  ... ${report.findings.length - 20} more finding(s)`)
+}
 
 // ============================================================================
 // tdd command - vertical slice RED/GREEN/REFACTOR loop
@@ -5316,6 +5458,7 @@ const main = defineCommand({
     runtime,
     memory,
     diagnose,
+    hunt,
     tdd,
     tool,
     tools: tool,
