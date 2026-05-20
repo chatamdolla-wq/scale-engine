@@ -35,6 +35,14 @@
 | [VIBE-TEMPLATES.md](VIBE-TEMPLATES.md) | 可复制的 Vibe Coding 提示词模板 |
 | [LEADERSHIP-PRESETS.md](LEADERSHIP-PRESETS.md) | CEO、CTO、PM、Architect 等内置领导者角色预设 |
 
+## 当前规划与执行蓝图
+
+这些文档描述计划中的架构演进，不代表当前 CLI 已全部实现。进入实现前应按文档中的验收标准和红线逐项拆分任务。
+
+| 文档 | 说明 |
+| --- | --- |
+| [plans/2026-05-20-scale-engine-v2-final-architecture-plan.md](plans/2026-05-20-scale-engine-v2-final-architecture-plan.md) | SCALE Engine V2.0 最终架构落地方案：Prompt Cache、Dashboard 聚合、Background Hunter、供应链门禁、动态/视觉验证和 Evolution Shadow Mode |
+
 ## 架构与参考
 
 | 文档 | 说明 |
