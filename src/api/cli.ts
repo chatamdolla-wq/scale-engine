@@ -69,6 +69,7 @@ import {
   type VerificationPolicy,
 } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
+import { getProfile as getConfigProfile, generateConfigForProfile, listProfiles as listConfigProfiles } from '../config/profiles.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import {
   applyUpgradePlan,
@@ -176,6 +177,19 @@ function governanceModeFromScenario(scenario: string): GovernanceMode {
   if (scenario === 'critical') return 'critical'
   if (scenario === 'sandbox') return 'minimal'
   return 'standard'
+}
+
+function profileFromScenario(scenario: string): string {
+  if (scenario === 'sandbox') return 'minimal'
+  if (scenario === 'critical') return 'advanced'
+  return 'standard'
+}
+
+function writeConfigYaml(projectDir: string, profileId: string, projectName: string, agents: string[]): string {
+  const configPath = join(projectDir, '.scale', 'config.yaml')
+  const content = generateConfigForProfile(profileId, { name: projectName, agents })
+  writeFileSync(configPath, content, 'utf-8')
+  return configPath
 }
 
 function ensureDir(dir: string) {
@@ -478,6 +492,65 @@ const gateBeforeStop = defineCommand({
 const gate = defineCommand({
   meta: { name: 'gate', description: 'Guardrail gate commands' },
   subCommands: { 'pre-tool': gatePreTool, 'post-tool': gatePostTool, 'before-stop': gateBeforeStop },
+})
+
+// ============================================================================
+// meta-governance — 元治理门禁 (G9-G15)
+// ============================================================================
+
+const metaGovernance = defineCommand({
+  meta: { name: 'meta-governance', description: 'Run meta-governance gates (G9-G15) — check if governance capabilities are actually used' },
+  args: {
+    'scale-dir': { type: 'string', default: '.scale' },
+    json: { type: 'boolean', default: false, description: 'Output as JSON' },
+  },
+  async run({ args }) {
+    const { eventBus } = getEngine()
+    const { GateSystem } = await import('../workflow/gates/GateSystem.js')
+    const gateSystem = new GateSystem(eventBus)
+    const results = await gateSystem.executeMetaGovernance(args['scale-dir'])
+
+    if (args.json) {
+      console.log(JSON.stringify(results, null, 2))
+      return
+    }
+
+    const stageNames: Record<string, string> = {
+      G9: 'Knowledge Utilization',
+      G10: 'Evolution Effectiveness',
+      G11: 'Guardrail Effectiveness',
+      G12: 'Workflow Thoroughness',
+      G13: 'Multi-Agent Coordination',
+      G14: 'Skill Utilization',
+      G15: 'Self-Improvement',
+    }
+
+    let allPassed = true
+    for (const result of results) {
+      const icon = result.passed ? '✅' : '❌'
+      const name = stageNames[result.gate] ?? result.gate
+      console.log(`${icon} ${result.gate} ${name}`)
+      if (result.evidence) {
+        for (const line of result.evidence.split('\n')) {
+          console.log(`   ${line}`)
+        }
+      }
+      if (!result.passed) {
+        allPassed = false
+        for (const blocker of result.blockers) {
+          console.log(`   ⛔ ${blocker}`)
+        }
+      }
+      console.log()
+    }
+
+    if (!allPassed) {
+      console.log('❌ Meta-governance check FAILED — some capabilities are not being effectively used')
+      process.exit(1)
+    } else {
+      console.log('✅ All meta-governance gates passed')
+    }
+  },
 })
 
 // ============================================================================
@@ -2422,6 +2495,7 @@ const init = defineCommand({
     },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
     interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },
+    profile: { type: 'string', default: '', description: 'Configuration profile (minimal/standard/advanced). Auto-mapped from scenario if not specified' },
     'coverage-threshold': { type: 'string', default: '80', description: 'Coverage threshold (default 80%)' },
     'retry-threshold': { type: 'string', default: '3', description: 'Brute retry threshold (default 3)' },
     'block-severity': { type: 'string', default: 'CRITICAL', description: 'Block severity level (CRITICAL/HIGH/MEDIUM)' },
@@ -2494,7 +2568,12 @@ const init = defineCommand({
       result.created.push(...governance.created)
       result.skipped.push(...governance.skipped)
 
-      console.log(`\n✅ SCALE Engine initialized for ${agentType} (interactive mode)`)
+      // Generate config.yaml from profile
+      const profileId = args.profile || profileFromScenario(scenarioMode)
+      const configPath = writeConfigYaml(args.dir, profileId, projectName, [agentType])
+      result.created.push(configPath)
+
+      console.log(`\n✅ SCALE Engine initialized for ${agentType} (interactive mode, profile: ${profileId})`)
       console.log(`\n📁 Created:`)
       for (const f of result.created) console.log(`   + ${f}`)
       if (result.skipped.length > 0) {
@@ -2506,8 +2585,10 @@ const init = defineCommand({
       console.log(`   Settings:      ${result.settingsPath}`)
       console.log(`   Knowledge:     ${result.knowledgeDocPath}`)
       console.log(`   Thresholds:    ${thresholdsPath}`)
+      console.log(`   Config:        ${configPath}`)
       console.log(`   Data dir:      ${result.scaleDir}`)
       console.log(`   Scenario:      ${scenarioMode}`)
+      console.log(`   Profile:       ${profileId}`)
 
       console.log(`\n📋 Next steps:`)
       for (const step of governanceNextSteps()) console.log(`   → ${step}`)
@@ -2517,6 +2598,16 @@ const init = defineCommand({
     // One-click quick start mode
     if (!args.agent) {
       const qsResult = await quickStart(args.dir, { governancePack: args['governance-pack'] })
+
+      // Generate config.yaml from profile
+      if (qsResult.success) {
+        const profileId = args.profile || profileFromScenario(args.scenario)
+        const projectName = args.dir.split(/[/\\]/).pop() || 'Project'
+        const detectedAgent = qsResult.platform ? [qsResult.platform] : []
+        const configPath = writeConfigYaml(args.dir, profileId, projectName, detectedAgent)
+        qsResult.created.push(configPath)
+      }
+
       if (args.json) {
         const detection = qsResult.success ? undefined : detectPlatform(args.dir)
         console.log(JSON.stringify({
@@ -2567,15 +2658,23 @@ const init = defineCommand({
     })
     result.created.push(...governance.created)
     result.skipped.push(...governance.skipped)
+
+    // Generate config.yaml from profile
+    const profileId = args.profile || profileFromScenario(args.scenario)
+    const configPath = writeConfigYaml(args.dir, profileId, projectName, [args.agent])
+    result.created.push(configPath)
+
     if (args.json) {
       console.log(JSON.stringify({
         ok: true,
         mode: args.quick ? 'quick-agent' : 'manual',
         agent: args.agent,
         scenario: args.scenario,
+        profile: profileId,
         governancePack: args['governance-pack'],
         settingsPath: result.settingsPath,
         knowledgeDocPath: result.knowledgeDocPath,
+        configPath,
         scaleDir: result.scaleDir,
         created: result.created,
         skipped: result.skipped,
@@ -2583,7 +2682,7 @@ const init = defineCommand({
       }, null, 2))
       return
     }
-    console.log(`\n✅ SCALE Engine initialized for ${args.agent} (scenario: ${args.scenario})`)
+    console.log(`\n✅ SCALE Engine initialized for ${args.agent} (scenario: ${args.scenario}, profile: ${profileId})`)
     console.log(`\n📁 Created:`)
     for (const f of result.created) console.log(`   + ${f}`)
     if (result.skipped.length > 0) {
@@ -2592,6 +2691,7 @@ const init = defineCommand({
     }
     console.log(`\n🔧 Settings: ${result.settingsPath}`)
     console.log(`\n📖 Knowledge: ${result.knowledgeDocPath}`)
+    console.log(`\n📄 Config:    ${configPath}`)
     console.log(`\n📂 Data dir:  ${result.scaleDir}`)
     console.log(`\n📋 Next steps:`)
     for (const step of governanceNextSteps()) console.log(`   → ${step}`)
@@ -2599,8 +2699,75 @@ const init = defineCommand({
 })
 
 // ============================================================================
-// governance command — Generated governance asset tooling
+// config command — Configuration profile management
 // ============================================================================
+
+const configProfile = defineCommand({
+  meta: { name: 'profile', description: 'View or switch configuration profile' },
+  args: {
+    set: { type: 'string', default: '', description: 'Switch to profile (minimal/standard/advanced)' },
+    list: { type: 'boolean', default: false, description: 'List all available profiles' },
+    json: { type: 'boolean', default: false, description: 'Output as JSON' },
+  },
+  async run({ args }) {
+    if (args.list) {
+      const profiles = listConfigProfiles()
+      if (args.json) {
+        console.log(JSON.stringify(profiles, null, 2))
+        return
+      }
+      console.log('\nAvailable profiles:\n')
+      for (const p of profiles) {
+        console.log(`  ${p.id.padEnd(12)} ${p.name} — ${p.description}`)
+      }
+      console.log(`\nUse: scale config profile --set <id>`)
+      return
+    }
+
+    if (args.set) {
+      const profile = getConfigProfile(args.set)
+      if (profile.id !== args.set) {
+        console.log(`\n⚠️  Profile "${args.set}" not found. Available: minimal, standard, advanced`)
+        return
+      }
+      // Update config.yaml
+      const configPath = join('.scale', 'config.yaml')
+      const projectName = process.cwd().split(/[/\\]/).pop() || 'Project'
+      const content = generateConfigForProfile(args.set, { name: projectName })
+      ensureDir('.scale')
+      writeFileSync(configPath, content, 'utf-8')
+      console.log(`\n✅ Profile switched to: ${profile.name}`)
+      console.log(`   ${profile.description}`)
+      console.log(`\n📄 Config updated: ${configPath}`)
+      return
+    }
+
+    // Show current profile
+    const configPath = join('.scale', 'config.yaml')
+    if (!existsSync(configPath)) {
+      console.log('\n⚠️  No config.yaml found. Run: scale init')
+      return
+    }
+    const content = readFileSync(configPath, 'utf-8')
+    const match = content.match(/^profile:\s*(.+)$/m)
+    const currentProfile = match?.[1]?.trim() || 'standard'
+    const profile = getConfigProfile(currentProfile)
+
+    if (args.json) {
+      console.log(JSON.stringify({ profile: profile.id, name: profile.name, description: profile.description, sections: profile.sections }, null, 2))
+      return
+    }
+    console.log(`\nCurrent profile: ${profile.name} (${profile.id})`)
+    console.log(`  ${profile.description}`)
+    console.log(`\nSections: ${profile.sections.join(', ')}`)
+    console.log(`\nUse: scale config profile --set <id> to switch`)
+  },
+})
+
+const config = defineCommand({
+  meta: { name: 'config', description: 'Configuration management' },
+  subCommands: { profile: configProfile },
+})
 
 const governanceDiff = defineCommand({
   meta: { name: 'diff', description: 'Check generated governance files for drift' },
@@ -4955,6 +5122,7 @@ const team = defineCommand({
 // ============================================================================
 
 import * as phaseCommands from '../cli/phaseCommands.js'
+import { runCommand } from '../cli/runCommand.js'
 import * as liteCommands from '../cli/liteCommands.js'
 import * as vibeCommands from '../cli/vibeCommands.js'
 
@@ -4976,12 +5144,14 @@ const main = defineCommand({
     verify: phaseCommands.phaseVerify,
     review: phaseCommands.phaseReview,
     ship: phaseCommands.phaseShip,
+    run: runCommand,
 
     // Original commands (preserved)
     init,
     doctor,
     session,
     gate,
+    'meta-governance': metaGovernance,
     create,
     list,
     show,
@@ -5018,6 +5188,7 @@ const main = defineCommand({
     team,
     'create-prd': createPRD,
     'out-of-scope': outOfScope,
+    config,
   },
 })
 

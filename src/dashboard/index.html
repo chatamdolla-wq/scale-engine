@@ -55,6 +55,26 @@
     .defect-meta { font-size: 0.75rem; color: oklch(60% 0.01 270); }
     .count-bar { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
     .count-bar-fill { height: 1rem; border-radius: 0.25rem; }
+    .actions { display: flex; gap: 0.25rem; margin-top: 0.25rem; flex-wrap: wrap; }
+    .btn {
+      padding: 0.2rem 0.5rem; border-radius: 0.25rem; border: none; cursor: pointer;
+      font-size: 0.7rem; font-weight: 600; transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-transition { background: oklch(55% 0.15 250); color: oklch(95% 0.01 250); }
+    .btn-approve { background: oklch(55% 0.15 150); color: oklch(95% 0.01 150); }
+    .btn-reject { background: oklch(55% 0.15 25); color: oklch(95% 0.01 25); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .toast {
+      position: fixed; bottom: 1rem; right: 1rem; padding: 0.75rem 1.25rem;
+      border-radius: 0.5rem; font-size: 0.85rem; z-index: 1000;
+      animation: fadeInOut 3s ease-in-out;
+    }
+    .toast-success { background: oklch(40% 0.15 150); color: oklch(95% 0.01 150); }
+    .toast-error { background: oklch(40% 0.15 25); color: oklch(95% 0.01 25); }
+    @keyframes fadeInOut { 0%{opacity:0} 10%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+    .lesson-item { padding: 0.75rem; border-bottom: 1px solid oklch(30% 0.01 270); }
+    .lesson-meta { font-size: 0.75rem; color: oklch(60% 0.01 270); margin-top: 0.25rem; }
   </style>
 </head>
 <body>
@@ -75,64 +95,27 @@
         document.getElementById('content').innerHTML = '<p>Error loading dashboard: ' + e.message + '</p>';
       }
     }
-    function renderDashboard(data) {
-      const html = `
-        <div class="section">
-          <h2>Evolution Metrics</h2>
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-value">${data.evolutionMetrics?.overallScore?.toFixed(1) ?? 'N/A'}</div>
-              <div class="metric-label">Overall Score</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">${data.evolutionMetrics?.lessonMetrics?.count ?? 0}</div>
-              <div class="metric-label">Lessons</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">${data.evolutionMetrics?.ruleMetrics?.count ?? 0}</div>
-              <div class="metric-label">Rules</div>
-            </div>
-            <div class="metric-card">
-              <div class="metric-value">${data.detectorStats.length}</div>
-              <div class="metric-label">Active Detectors</div>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <h2>Artifact Tree</h2>
-          ${renderArtifacts(data.artifacts)}
-        </div>
-        <div class="section">
-          <h2>Detector Statistics</h2>
-          ${renderDetectors(data.detectorStats)}
-        </div>
-        <div class="section">
-          <h2>AutoDefect Statistics</h2>
-          ${renderAutoDefects(data.autoDefectStats)}
-        </div>
-        <div class="section">
-          <h2>Recent Events</h2>
-          <div class="event-list">
-            ${renderEvents(data.recentEvents)}
-          </div>
-        </div>
-      `;
-      document.getElementById('content').innerHTML = html;
-    }
     function renderArtifacts(nodes) {
       if (!nodes || nodes.length === 0) return '<p>No artifacts</p>';
-      return nodes.map(n => `
-        <div class="artifact-node root">
+      return nodes.map(n => renderArtifactNode(n, true)).join('');
+    }
+    function renderArtifactNode(n, isRoot) {
+      const gateHtml = n.gates && n.gates.length > 0 ? `
+        <div style="margin-top: 0.25rem; font-size: 0.7rem;">
+          ${n.gates.map(g => `<span style="color: ${g.passed ? 'oklch(70% 0.15 150)' : g.required ? 'oklch(70% 0.15 25)' : 'oklch(60% 0.01 270)'}">${g.required ? (g.passed ? '✓' : '✗') : '·'} ${g.name}</span>`).join(' ')}
+        </div>` : '';
+      return `
+        <div class="artifact-node ${isRoot ? 'root' : ''}">
           <strong>${n.id}</strong>: ${n.title}
           <span class="status status-${n.status}">${n.status}</span>
-          ${n.children?.length > 0 ? n.children.map(c => `
-            <div class="artifact-node">
-              <strong>${c.id}</strong>: ${c.title}
-              <span class="status status-${c.status}">${c.status}</span>
-            </div>
-          `).join('') : ''}
+          ${gateHtml}
+          <div class="actions">
+            <button class="btn btn-transition" onclick="fetchActions('${n.id}', this)">Actions</button>
+          </div>
+          <div id="actions-${n.id}" style="display:none; margin-top: 0.25rem;"></div>
+          ${n.children?.length > 0 ? n.children.map(c => renderArtifactNode(c, false)).join('') : ''}
         </div>
-      `).join('');
+      `;
     }
     function renderDetectors(stats) {
       if (!stats || stats.length === 0) return '<p>No detector stats</p>';
@@ -214,6 +197,183 @@
         </div>
       `;
     }
+    // ── Interaction Functions ──────────────────────────────────────────
+
+    function showToast(msg, isError) {
+      const el = document.createElement('div');
+      el.className = 'toast ' + (isError ? 'toast-error' : 'toast-success');
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    async function fetchActions(id, btn) {
+      const container = document.getElementById('actions-' + id);
+      if (container.style.display !== 'none') {
+        container.style.display = 'none';
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/artifacts/' + id + '/actions');
+        const data = await res.json();
+        if (!res.ok || !data.actions || data.actions.length === 0) {
+          container.innerHTML = '<span style="font-size:0.7rem; color:oklch(60% 0.01 270)">No available actions</span>';
+        } else {
+          container.innerHTML = data.actions.map(a =>
+            '<button class="btn btn-transition" onclick="doTransition(\'' + id + '\', \'' + a + '\', this)">' + a + '</button>'
+          ).join('');
+        }
+        container.style.display = 'block';
+      } catch (e) {
+        showToast('Failed to load actions: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function doTransition(id, action, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/artifacts/' + id + '/transition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, reason: 'Dashboard: ' + action }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(action + ' succeeded for ' + id, false);
+          loadDashboard();
+        } else {
+          const blocked = data.blockedBy?.map(b => b.guard + ': ' + b.message).join('; ') || data.error;
+          showToast('Blocked: ' + blocked, true);
+        }
+      } catch (e) {
+        showToast('Error: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function approveLesson(id, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/lessons/' + id + '/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Approved via dashboard' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('Lesson ' + id + ' approved', false);
+          loadDashboard();
+        } else {
+          showToast('Failed: ' + (data.error || 'Unknown error'), true);
+        }
+      } catch (e) {
+        showToast('Error: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function rejectLesson(id, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/lessons/' + id + '/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Rejected via dashboard' }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('Lesson ' + id + ' rejected', false);
+          loadDashboard();
+        } else {
+          showToast('Failed: ' + (data.error || 'Unknown error'), true);
+        }
+      } catch (e) {
+        showToast('Error: ' + e.message, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── Enhanced renderDashboard with Lessons ─────────────────────────
+
+    function renderDashboard(data) {
+      const lessons = data.artifacts.flatMap ? flattenArtifacts(data.artifacts).filter(a => a.type === 'Lesson') : [];
+      const html = `
+        <div class="section">
+          <h2>Evolution Metrics</h2>
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-value">${data.evolutionMetrics?.overallScore?.toFixed(1) ?? 'N/A'}</div>
+              <div class="metric-label">Overall Score</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${data.evolutionMetrics?.lessonMetrics?.count ?? 0}</div>
+              <div class="metric-label">Lessons</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${data.evolutionMetrics?.ruleMetrics?.count ?? 0}</div>
+              <div class="metric-label">Rules</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value">${data.detectorStats.length}</div>
+              <div class="metric-label">Active Detectors</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <h2>Artifact Tree</h2>
+          ${renderArtifacts(data.artifacts)}
+        </div>
+        ${lessons.length > 0 ? `
+        <div class="section">
+          <h2>Lessons</h2>
+          ${lessons.map(l => `
+            <div class="lesson-item">
+              <strong>${l.id}</strong>: ${l.title}
+              <span class="status status-${l.status}">${l.status}</span>
+              ${l.status === 'PROPOSED' ? `
+                <div class="actions" style="margin-top:0.5rem">
+                  <button class="btn btn-approve" onclick="approveLesson('${l.id}', this)">Approve</button>
+                  <button class="btn btn-reject" onclick="rejectLesson('${l.id}', this)">Reject</button>
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>` : ''}
+        <div class="section">
+          <h2>Detector Statistics</h2>
+          ${renderDetectors(data.detectorStats)}
+        </div>
+        <div class="section">
+          <h2>AutoDefect Statistics</h2>
+          ${renderAutoDefects(data.autoDefectStats)}
+        </div>
+        <div class="section">
+          <h2>Recent Events</h2>
+          <div class="event-list">
+            ${renderEvents(data.recentEvents)}
+          </div>
+        </div>
+      `;
+      document.getElementById('content').innerHTML = html;
+    }
+
+    function flattenArtifacts(nodes) {
+      const result = [];
+      for (const n of nodes) {
+        result.push(n);
+        if (n.children && n.children.length > 0) {
+          result.push(...flattenArtifacts(n.children));
+        }
+      }
+      return result;
+    }
+
     loadDashboard();
   </script>
 </body>

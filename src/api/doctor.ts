@@ -3,6 +3,7 @@
 // Usage: scale doctor
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
+import { getProfile } from '../config/profiles.js'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
@@ -88,6 +89,11 @@ export class Doctor {
     runtimeEvidenceCheck.optional = true
     runtimeEvidenceCheck.category = 'runtime'
     checks.push(runtimeEvidenceCheck)
+
+    const configHealthCheck = this.checkConfigHealth()
+    configHealthCheck.optional = true
+    configHealthCheck.category = 'governance'
+    checks.push(configHealthCheck)
 
     // Optional knowledge graph checks (non-blocking)
     const pythonCheck = this.checkPython()
@@ -639,6 +645,87 @@ export class Doctor {
         status: 'warn',
         message: 'Runtime evidence doctor could not inspect local state',
         fix: 'Run: scale runtime doctor --json',
+      }
+    }
+  }
+
+  private checkConfigHealth(): DiagnosticResult {
+    const configPath = join(this.projectDir, this.scaleDir, 'config.yaml')
+    if (!existsSync(configPath)) {
+      return {
+        name: 'Config health',
+        status: 'warn',
+        message: 'No config.yaml found',
+        fix: 'Run: scale init (or scale config profile --set standard)',
+      }
+    }
+
+    try {
+      const content = readFileSync(configPath, 'utf-8')
+      const issues: string[] = []
+      const recommendations: string[] = []
+
+      // Check profile
+      const profileMatch = content.match(/^profile:\s*(.+)$/m)
+      const profileId = profileMatch?.[1]?.trim() || 'standard'
+      const profile = getProfile(profileId)
+
+      if (profile.id !== profileId) {
+        issues.push(`Unknown profile "${profileId}", falling back to standard`)
+      }
+
+      // Check vector search config without Qdrant
+      if (content.includes('backend: qdrant')) {
+        try {
+          execSync('curl -s http://localhost:6333/readyz', { timeout: 3000, stdio: 'pipe' })
+        } catch {
+          issues.push('Vector search configured with Qdrant, but Qdrant is not reachable at localhost:6333')
+        }
+      }
+
+      // Check evolution enabled without eval setup
+      if (content.includes('evolution:') && content.includes('enabled: true')) {
+        const evalPath = join(this.projectDir, this.scaleDir, 'eval')
+        if (!existsSync(evalPath)) {
+          recommendations.push('Evolution enabled but no .scale/eval/ directory — run: scale eval init')
+        }
+      }
+
+      // Check profile-scenario mismatch
+      const thresholdsPath = join(this.projectDir, this.scaleDir, 'thresholds.json')
+      if (existsSync(thresholdsPath)) {
+        try {
+          const thresholds = JSON.parse(readFileSync(thresholdsPath, 'utf-8'))
+          const scenario = thresholds.gates?.G7_security?.required ? 'critical' : thresholds.gates?.G3_build?.required ? 'standard' : 'sandbox'
+          const expectedProfile = scenario === 'sandbox' ? 'minimal' : scenario === 'critical' ? 'advanced' : 'standard'
+          if (profileId !== expectedProfile) {
+            recommendations.push(`Profile "${profileId}" may not match scenario "${scenario}" (suggest: ${expectedProfile})`)
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      if (issues.length > 0) {
+        return {
+          name: 'Config health',
+          status: 'warn',
+          message: issues.join('; '),
+          fix: recommendations.length > 0 ? recommendations.join('; ') : 'Run: scale config profile --set standard',
+        }
+      }
+
+      const summary = `profile=${profile.name}`
+      const recSuffix = recommendations.length > 0 ? ` — ${recommendations.join('; ')}` : ''
+      return {
+        name: 'Config health',
+        status: recommendations.length > 0 ? 'warn' : 'ok',
+        message: `${summary}${recSuffix}`,
+      }
+    } catch {
+      return {
+        name: 'Config health',
+        status: 'fail',
+        message: 'config.yaml exists but could not be parsed',
+        fix: 'Run: scale config profile --set standard to regenerate',
       }
     }
   }

@@ -28,6 +28,7 @@ import { doctorEngineeringStandards, settleEngineeringStandards, type Engineerin
 import { analyzeReview, parseChangedFiles, shouldReviewFile, summarizeFindings, analyzeSpecConformance, type ChangedFile, type VerificationEvidenceSummary, type SpecFinding } from '../workflow/ReviewAnalyzer.js'
 import { inspectWorkspaceLifecycle, type WorkspaceLifecycleReport } from '../workflow/WorkspaceLifecycle.js'
 import { evaluateToolEvidenceGate, type ToolEvidenceGateResult } from '../tools/ToolEvidenceGate.js'
+import { TaskLevelDetector, type TaskLevel } from '../workflow/TaskLevelDetector.js'
 import { ToolEvidenceStore } from '../tools/ToolEvidenceStore.js'
 import { ToolOrchestrator } from '../tools/ToolOrchestrator.js'
 import { loadToolPolicy, type ResolvedToolPolicy, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
@@ -799,7 +800,7 @@ export const phaseBuild = defineCommand({
   args: {
     'plan-id': { type: 'positional', required: true },
     description: { type: 'string', alias: 'd', description: 'Task description' },
-    level: { type: 'string', default: 'M', description: 'Workflow task level: S, M, L, or CRITICAL' },
+    level: { type: 'string', default: '', description: 'Workflow task level: S, M, L, or CRITICAL (auto-detected if omitted)' },
     service: { type: 'string', description: 'Comma-separated service names touched by this task' },
     'residual-risk': { type: 'string', description: 'Known residual risk statement for metrics' },
     json: { type: 'boolean', default: false },
@@ -815,11 +816,25 @@ export const phaseBuild = defineCommand({
     }
 
     let workflowLevel: WorkflowTaskLevel
-    try {
-      workflowLevel = normalizeWorkflowLevel(args.level)
-    } catch (e) {
-      console.error(`\n${(e as Error).message}\n`)
-      process.exit(1)
+    if (args.level) {
+      try {
+        workflowLevel = normalizeWorkflowLevel(args.level)
+      } catch (e) {
+        console.error(`\n${(e as Error).message}\n`)
+        process.exit(1)
+      }
+    } else {
+      // Auto-detect task level from git diff
+      const detector = new TaskLevelDetector()
+      const detection = await detector.detectFromGitDiff()
+      workflowLevel = detection.level
+      if (!args.json) {
+        console.log(`\nAuto-detected level: ${detection.level} (confidence: ${detection.confidence})`)
+        for (const reason of detection.reasons) {
+          console.log(`  - ${reason}`)
+        }
+        console.log()
+      }
     }
 
     // Create TaskPayload

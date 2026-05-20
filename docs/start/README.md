@@ -7,10 +7,13 @@
 1. [3 分钟快速开始](quickstart.md)
    从空目录初始化治理工作流，看到 `.scale`、模板、验证 profile 和状态输出。
 
-2. [官方 Demo Walkthrough](agent-governance-demo.md)
+2. [Artifact 生命周期](artifact-lifecycle.md)
+   完整走一遍 Need → Spec → Plan → Task → Change → Evidence → Release，理解 FSM 和 Guard 如何用物理约束替代提示词建议。
+
+3. [官方 Demo Walkthrough](agent-governance-demo.md)
    用一个 OAuth state 加固任务演示：上下文对齐、诊断计划、TDD 切片、HTML artifact、资源治理和工程规范扫描。
 
-3. 回到根目录 [README](../../README.md)
+4. 回到根目录 [README](../../README.md)
    理解 SCALE Engine 的核心能力和 governance pack 选择。
 
 4. [升级管理](../UPGRADE_MANAGEMENT.md)

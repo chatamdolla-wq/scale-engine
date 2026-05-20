@@ -59,12 +59,12 @@ describe('workflow hooks', () => {
 
     const result = manager.deployDefaultWorkflowHooks(join(dir, 'hooks'), settingsPath)
 
-    expect(result.deployed).toBe(8)
+    expect(result.deployed).toBe(9)
     const settings = JSON.parse(readFileSync(settingsPath, 'utf-8')) as {
       hooks: Record<string, Array<{ command: string; description?: string }>>
     }
     expect(settings.hooks.PreToolUse).toHaveLength(4)
-    expect(settings.hooks.PostToolUse).toHaveLength(1)
+    expect(settings.hooks.PostToolUse).toHaveLength(2)
     expect(settings.hooks.Stop).toHaveLength(3)
     expect(settings.hooks.PreToolUse.some(h => h.description?.includes('tmpl-hardcoded-secret-guard'))).toBe(true)
   })

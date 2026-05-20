@@ -6,6 +6,7 @@ import type { GateStage, GateResult, GateStatus, GateEvidence } from '../types.j
 import { EvidenceStore } from '../EvidenceStore.js'
 import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig, type VerificationRuntimeEvidenceConfig } from '../VerificationCommands.js'
+import { registerMetaGovernanceGates } from './MetaGovernanceGates.js'
 import { execa } from 'execa'
 import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
@@ -214,6 +215,21 @@ export class GateSystem {
         this.eventBus.emit('gate.blocked', { stage, blockers: result.blockers })
         break
       }
+    }
+    return results
+  }
+
+  registerMetaGates(scaleDir: string = '.scale'): void {
+    registerMetaGovernanceGates(this, scaleDir)
+  }
+
+  async executeMetaGovernance(scaleDir: string = '.scale'): Promise<GateResult[]> {
+    this.registerMetaGates(scaleDir)
+    const metaStages: GateStage[] = ['G9', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15']
+    const results: GateResult[] = []
+    for (const stage of metaStages) {
+      const result = await this.executeGate(stage)
+      results.push(result)
     }
     return results
   }

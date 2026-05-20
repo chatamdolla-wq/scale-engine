@@ -54,6 +54,12 @@ const WORKFLOW_PRESETS: WorkflowHookPreset[] = [
     description: 'Stop reminder — shows remaining SCALE phases and next command',
     templates: ['tmpl-next-step-reminder'],
     enabled: true
+  },
+  {
+    name: 'doc-standards',
+    description: 'Document standards check (G8) — validates markdown files on write',
+    templates: ['tmpl-doc-standards-check'],
+    enabled: true
   }
 ]
 

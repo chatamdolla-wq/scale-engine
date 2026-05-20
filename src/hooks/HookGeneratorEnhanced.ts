@@ -182,6 +182,34 @@ const BUILTIN_TEMPLATES: HookTemplate[] = [
     description: 'Remind AI of the next workflow step when stopping',
     templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const phases = ["DEFINE", "PLAN", "EXECUTE", "VERIFY", "REVIEW", "SHIP"]; const phaseMap = {DEFINE:"define",PLAN:"plan",EXECUTE:"build",VERIFY:"verify",REVIEW:"review",SHIP:"ship"}; const missing = []; for (const phase of phases) { const marker = path.join(scaleDir, "phases", ".phase-" + phase.toLowerCase()); if (!fs.existsSync(marker)) { missing.push(phase); } } const stateFile = path.join(scaleDir, "state", "explore.json"); const hasExplore = fs.existsSync(stateFile); if (missing.length > 0) { const next = missing[0]; const cmd = phaseMap[next] || next.toLowerCase(); console.log("[NEXT] Remaining: " + missing.join(" -> ")); console.log("[NEXT] Next step: scale " + cmd); } else { console.log("[DONE] All phases complete"); } process.exit(0);`,
     variables: []
+  },
+  // ========== Document Standards Check (G8) ==========
+  {
+    id: 'tmpl-doc-standards-check',
+    name: 'Document Standards Check (G8)',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Check markdown files comply with DOCUMENT_STANDARDS.md',
+    templateBody: String.raw`
+const input = JSON.parse(process.argv[2] || "{}");
+const filePath = input.tool_input?.file_path || "";
+if (!filePath.endsWith(".md")) { console.log("[PASS]"); process.exit(0); }
+const content = input.tool_input?.content || "";
+const issues = [];
+// Check version header
+if (!content.includes("Version:")) { issues.push("Missing version header"); }
+// Check localhost links
+if (/localhost[:\\/]/.test(content)) { issues.push("Contains localhost links"); }
+// Check hardcoded secrets
+if (/(password|secret|token|api_key)\\s*[:=]\\s*['"][^'"]{8,}/i.test(content)) { issues.push("Possible hardcoded secret"); }
+// Check code blocks without language
+const codeBlockPattern = /\`\`\`\\s*$/gm;
+const matches = content.match(codeBlockPattern);
+if (matches && matches.length > 0) { issues.push("Code blocks without language annotation"); }
+if (issues.length > 0) { console.error("[WARN] G8-DocStandards: " + issues.join("; ")); }
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
   }
 ]
 

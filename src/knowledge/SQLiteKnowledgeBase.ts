@@ -6,6 +6,7 @@ import Database from 'better-sqlite3'
 import type { KnowledgeEntry, KnowledgeQuery } from '../artifact/types.js'
 import type { IEventBus } from '../core/eventBus.js'
 import type { IKnowledgeBase } from './KnowledgeBase.js'
+import { TfidfIndex } from './TfidfIndex.js'
 import { logger } from '../core/logger.js'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -54,6 +55,7 @@ interface KBRow {
 export class SQLiteKnowledgeBase implements IKnowledgeBase {
   private db: Database.Database
   private seq = 0
+  private tfidfIndex: TfidfIndex | null = null
 
   constructor(
     private eventBus: IEventBus,
@@ -112,6 +114,13 @@ export class SQLiteKnowledgeBase implements IKnowledgeBase {
     )
 
     this.eventBus.emit('lesson.proposed', { lessonId: entry.id }, { artifactId: input.sourceArtifact })
+
+    // Update TF-IDF index
+    if (this.tfidfIndex) {
+      const text = [entry.title, JSON.stringify(entry.tags), entry.contentRef].filter(Boolean).join(' ')
+      this.tfidfIndex.upsert(entry.id, text)
+    }
+
     return entry
   }
 
@@ -150,9 +159,33 @@ export class SQLiteKnowledgeBase implements IKnowledgeBase {
   }
 
   async recallByVector(text: string, topK: number): Promise<KnowledgeEntry[]> {
-    // Qdrant integration placeholder — falls back to recall
-    logger.debug({ text, topK }, 'recallByVector (SQLite fallback to recall)')
-    return this.recall({ verifiedOnly: true, limit: topK })
+    // Build TF-IDF index if not already built
+    if (!this.tfidfIndex) {
+      this.tfidfIndex = new TfidfIndex()
+      const rows = this.db.prepare('SELECT id, title, tags, content_ref FROM knowledge_entries').all() as KBRow[]
+      this.tfidfIndex.buildFromRows(rows)
+      logger.debug({ docCount: rows.length }, 'TF-IDF index built')
+    }
+
+    const results = this.tfidfIndex.search(text, topK)
+    if (results.length === 0) {
+      logger.debug({ text, topK }, 'recallByVector: no matches found')
+      return this.recall({ verifiedOnly: true, limit: topK })
+    }
+
+    const entries: KnowledgeEntry[] = []
+    for (const { id, score } of results) {
+      const row = this.db.prepare('SELECT * FROM knowledge_entries WHERE id = ?').get(id) as KBRow | undefined
+      if (row) {
+        const entry = this.fromRow(row)
+        // Boost relevance by similarity score
+        entry.relevance = Math.min(1, entry.relevance * (1 + score))
+        entries.push(entry)
+      }
+    }
+
+    logger.debug({ text, topK, matches: entries.length }, 'recallByVector (TF-IDF)')
+    return entries
   }
 
   async markHelpful(id: string, sessionId: string): Promise<void> {

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import type { EventBus } from '../core/eventBus.js'
 import type { Gate } from '../artifact/types.js'
 import type { IArtifactStore } from '../artifact/store.js'
+import type { IFSM } from '../artifact/fsm.js'
 import type { IEvolutionEvaluator, EvolutionMetrics } from '../evolution/EvolutionEvaluator.js'
 import type { DetectorStatisticsTracker } from '../guardrails/DetectorEnhanced.js'
 
@@ -82,6 +83,7 @@ export class DashboardServer {
   private app: Hono
   private bus: EventBus
   private store: IArtifactStore | null = null
+  private fsm: IFSM | null = null
   private evaluator: IEvolutionEvaluator | null = null
   private detectorTracker: DetectorStatisticsTracker | null = null
   private port: number
@@ -91,6 +93,7 @@ export class DashboardServer {
     options: {
       port?: number
       store?: IArtifactStore
+      fsm?: IFSM
       evaluator?: IEvolutionEvaluator
       detectorTracker?: DetectorStatisticsTracker
     } = {}
@@ -98,6 +101,7 @@ export class DashboardServer {
     this.app = new Hono()
     this.bus = bus
     this.store = options.store ?? null
+    this.fsm = options.fsm ?? null
     this.evaluator = options.evaluator ?? null
     this.detectorTracker = options.detectorTracker ?? null
     this.port = options.port ?? 3000
@@ -150,6 +154,122 @@ export class DashboardServer {
     this.app.get('/api/auto-defects', async (c) => {
       const stats = await this.getAutoDefectStats()
       return c.json(stats)
+    })
+
+    // ── Write Operations ──────────────────────────────────────────────
+
+    // Artifact transition
+    this.app.post('/api/artifacts/:id/transition', async (c) => {
+      if (!this.fsm || !this.store) {
+        return c.json({ error: 'FSM or store not available' }, 503)
+      }
+      const id = c.req.param('id')
+      const body = await c.req.json<{ action: string; reason?: string }>()
+      if (!body.action) {
+        return c.json({ error: 'Missing required field: action' }, 400)
+      }
+
+      try {
+        const artifact = await this.store.get(id)
+        if (!artifact) return c.json({ error: `Artifact not found: ${id}` }, 404)
+
+        // Check available actions first
+        const available = await this.fsm.availableActions(id)
+        if (!available.includes(body.action)) {
+          return c.json({
+            error: `Action "${body.action}" not available for ${artifact.type} in state "${artifact.status}"`,
+            availableActions: available,
+          }, 400)
+        }
+
+        const result = await this.fsm.transition(id, body.action, {
+          actor: { kind: 'system', component: 'dashboard' },
+          reason: body.reason ?? `Dashboard transition: ${body.action}`,
+        })
+
+        if (!result.success) {
+          return c.json({
+            error: 'Transition blocked by guards',
+            blockedBy: result.blockedBy,
+          }, 422)
+        }
+
+        return c.json({
+          success: true,
+          artifact: result.artifact,
+          effectsExecuted: result.effectsExecuted,
+        })
+      } catch (e) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+      }
+    })
+
+    // Get available transitions for an artifact
+    this.app.get('/api/artifacts/:id/actions', async (c) => {
+      if (!this.fsm) return c.json({ error: 'FSM not available' }, 503)
+      const id = c.req.param('id')
+      try {
+        const actions = await this.fsm.availableActions(id)
+        return c.json({ id, actions })
+      } catch (e) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+      }
+    })
+
+    // Lesson approve (PROPOSED → APPROVED)
+    this.app.post('/api/lessons/:id/approve', async (c) => {
+      if (!this.fsm || !this.store) {
+        return c.json({ error: 'FSM or store not available' }, 503)
+      }
+      const id = c.req.param('id')
+      try {
+        const artifact = await this.store.get(id)
+        if (!artifact || artifact.type !== 'Lesson') {
+          return c.json({ error: `Lesson not found: ${id}` }, 404)
+        }
+        if (artifact.status !== 'PROPOSED') {
+          return c.json({ error: `Lesson is "${artifact.status}", can only approve from PROPOSED` }, 400)
+        }
+        const body: { reason?: string } = await c.req.json<{ reason?: string }>().catch(() => ({}))
+        const result = await this.fsm.transition(id, 'review', {
+          actor: { kind: 'system', component: 'dashboard' },
+          reason: body.reason ?? 'Approved via dashboard',
+        })
+        if (!result.success) {
+          return c.json({ error: 'Transition blocked', blockedBy: result.blockedBy }, 422)
+        }
+        return c.json({ success: true, artifact: result.artifact })
+      } catch (e) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+      }
+    })
+
+    // Lesson reject (PROPOSED → REJECTED)
+    this.app.post('/api/lessons/:id/reject', async (c) => {
+      if (!this.fsm || !this.store) {
+        return c.json({ error: 'FSM or store not available' }, 503)
+      }
+      const id = c.req.param('id')
+      try {
+        const artifact = await this.store.get(id)
+        if (!artifact || artifact.type !== 'Lesson') {
+          return c.json({ error: `Lesson not found: ${id}` }, 404)
+        }
+        if (artifact.status !== 'PROPOSED') {
+          return c.json({ error: `Lesson is "${artifact.status}", can only reject from PROPOSED` }, 400)
+        }
+        const body: { reason?: string } = await c.req.json<{ reason?: string }>().catch(() => ({}))
+        const result = await this.fsm.transition(id, 'reject', {
+          actor: { kind: 'system', component: 'dashboard' },
+          reason: body.reason ?? 'Rejected via dashboard',
+        })
+        if (!result.success) {
+          return c.json({ error: 'Transition blocked', blockedBy: result.blockedBy }, 422)
+        }
+        return c.json({ success: true, artifact: result.artifact })
+      } catch (e) {
+        return c.json({ error: e instanceof Error ? e.message : String(e) }, 500)
+      }
     })
 
     // Index page - serve static HTML
