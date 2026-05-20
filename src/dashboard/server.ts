@@ -80,7 +80,7 @@ export class DashboardServer {
     const artifactData = artifacts.map(a => ({ id: a.id, type: a.type, status: a.status, title: a.title, createdAt: a.createdAt }))
     const knowledge = await this.config.knowledgeBase.recall({})
     const knowledgeData = knowledge.map(k => ({ id: k.id, type: k.type, title: k.title, relevance: k.relevance }))
-    const evolution = this.config.evolutionStats?.() ?? { lessonsExtracted: 0, rulesProposed: 0, rulesApproved: 0, hooksGenerated: 0 }
+    const evolution = this.config.evolutionStats?.() ?? { lessonsExtracted: 0, rulesProposed: 0, shadowRules: 0, rulesApproved: 0, hooksGenerated: 0 }
     const agents = this.config.agentManager.listAll().map(d => ({ id: d.id, name: d.name, dispatchCount: 0, successRate: 1.0 }))
     return { artifacts: artifactData, sessions: [], knowledge: knowledgeData, evolution, agents }
   }

@@ -168,4 +168,55 @@ describe('AutoDefectCreator', () => {
     const defects = creator.getAutoDefects()
     expect(defects.length).toBe(0)
   })
+
+  it('creates a gate failure defect after three consecutive failures', async () => {
+    creator.start()
+
+    for (let i = 0; i < 3; i++) {
+      bus.emit('gate.failed', {
+        stage: 'G4',
+        status: 'FAILED',
+        blockers: ['typecheck failed'],
+        evidence: `failure ${i + 1}`,
+      }, { sessionId: 'gate-session' })
+    }
+
+    await new Promise(r => setTimeout(r, 100))
+
+    const defects = creator.getAutoDefects()
+    expect(defects).toHaveLength(1)
+    const defect = await store.get(defects[0])
+    expect(defect?.title).toContain('Gate Failure')
+    const payload = defect?.payload as any
+    expect(payload.rootCauseCategory).toBe('gate_failure')
+    expect(payload.detector).toBe('GateFailureTracker')
+    expect(payload.context.stage).toBe('G4')
+    expect(payload.context.consecutiveFailures).toBe(3)
+  })
+
+  it('resets gate failure streak after a passing gate result', async () => {
+    creator.start()
+
+    for (let i = 0; i < 2; i++) {
+      bus.emit('gate.failed', {
+        stage: 'G5',
+        status: 'FAILED',
+        blockers: ['lint failed'],
+        evidence: `failure ${i + 1}`,
+      }, { sessionId: 'gate-reset-session' })
+    }
+
+    bus.emit('gate.executed', { stage: 'G5', passed: true }, { sessionId: 'gate-reset-session' })
+
+    bus.emit('gate.failed', {
+      stage: 'G5',
+      status: 'FAILED',
+      blockers: ['lint failed again'],
+      evidence: 'new failure 1',
+    }, { sessionId: 'gate-reset-session' })
+
+    await new Promise(r => setTimeout(r, 100))
+
+    expect(creator.getAutoDefects()).toHaveLength(0)
+  })
 })

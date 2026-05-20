@@ -9,6 +9,7 @@ import type { ArtifactId, KnowledgeEntry } from '../artifact/types.js'
 import { logger } from '../core/logger.js'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { approveRuleMaturity, createShadowRuleMaturity, type RuleMaturityRecord } from './RuleMaturity.js'
 
 // ============================================================================
 // Types
@@ -24,6 +25,7 @@ export interface ProposedRule {
   createdAt: number
   approved: boolean
   approvedBy?: string
+  maturity: RuleMaturityRecord
 }
 
 export interface GeneratedHook {
@@ -38,6 +40,7 @@ export interface GeneratedHook {
 export interface EvolutionStats {
   lessonsExtracted: number
   rulesProposed: number
+  shadowRules: number
   rulesApproved: number
   hooksGenerated: number
 }
@@ -183,8 +186,9 @@ export class RuleProposer implements IRuleProposer {
       return null
     }
 
+    const ruleId = `RULE-${Date.now()}-${(++this.seq).toString().padStart(3, '0')}`
     const rule: ProposedRule = {
-      id: `RULE-${Date.now()}-${(++this.seq).toString().padStart(3, '0')}`,
+      id: ruleId,
       title: `Rule: ${lesson.title}`,
       description: `Auto-proposed from lesson ${lessonId}. Tags: ${lesson.tags.join(', ')}`,
       sourceLesson: lessonId,
@@ -192,6 +196,11 @@ export class RuleProposer implements IRuleProposer {
       enforcement: lesson.accessCount >= 5 ? 'hook' : 'prompt',
       createdAt: Date.now(),
       approved: false,
+      maturity: createShadowRuleMaturity({
+        ruleId,
+        rollback: 'Remove the generated hook and keep the rule as prompt-only guidance.',
+        defectEvidenceIds: lesson.sourceArtifact ? [lesson.sourceArtifact] : [],
+      }),
     }
 
     this.rules.set(rule.id, rule)
@@ -227,8 +236,10 @@ export class RuleProposer implements IRuleProposer {
   async approve(ruleId: string, approvedBy: string): Promise<ProposedRule> {
     const rule = this.rules.get(ruleId)
     if (!rule) throw new Error(`Rule not found: ${ruleId}`)
+    const approvedMaturity = approveRuleMaturity(rule.maturity, approvedBy)
     rule.approved = true
     rule.approvedBy = approvedBy
+    rule.maturity = approvedMaturity
 
     this.eventBus.emit('rule.enforced', { ruleId, approvedBy })
     logger.info({ ruleId, approvedBy }, 'Rule approved')
@@ -280,6 +291,10 @@ export class HookGenerator implements IHookGenerator {
   generate(rule: ProposedRule, hooksDir: string): GeneratedHook | null {
     if (!rule.approved) {
       logger.debug({ ruleId: rule.id }, 'Rule not approved — cannot generate hook')
+      return null
+    }
+    if (rule.maturity && rule.maturity.stage !== 'approved-blocking') {
+      logger.debug({ ruleId: rule.id, stage: rule.maturity.stage }, 'Rule is not approved for blocking hook generation')
       return null
     }
     if (rule.enforcement !== 'hook') {
@@ -381,6 +396,7 @@ export class EvolutionEngine {
     const stats: EvolutionStats = {
       lessonsExtracted: 0,
       rulesProposed: 0,
+      shadowRules: 0,
       rulesApproved: 0,
       hooksGenerated: 0,
     }
@@ -392,9 +408,12 @@ export class EvolutionEngine {
     // Step 2: Propose rules
     const rules = await this.proposer.scanAndPropose()
     stats.rulesProposed = rules.length
+    stats.shadowRules = this.proposer.getProposedRules().filter((r) => r.maturity.stage === 'shadow').length
 
     // Step 3: Generate hooks for approved rules
-    const approvedRules = this.proposer.getProposedRules().filter((r) => r.approved && r.enforcement === 'hook')
+    const approvedRules = this.proposer.getProposedRules().filter((r) =>
+      r.approved && r.enforcement === 'hook' && r.maturity.stage === 'approved-blocking'
+    )
     stats.rulesApproved = approvedRules.length
 
     const hooksDir = join(this.scaleDir, 'hooks')
@@ -412,6 +431,7 @@ export class EvolutionEngine {
     return {
       lessonsExtracted: 0, // Would need persistence
       rulesProposed: this.proposer.getProposedRules().length,
+      shadowRules: this.proposer.getProposedRules().filter((r) => r.maturity.stage === 'shadow').length,
       rulesApproved: this.proposer.getProposedRules().filter((r) => r.approved).length,
       hooksGenerated: this.generator.getGeneratedHooks().length,
     }

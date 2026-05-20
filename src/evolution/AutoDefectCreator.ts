@@ -3,7 +3,8 @@
 
 import type { IEventBus } from '../core/eventBus.js'
 import type { IArtifactStore, CreateArtifactInput } from '../artifact/store.js'
-import type { ArtifactId, SessionId } from '../artifact/types.js'
+import type { ArtifactId, Event, SessionId } from '../artifact/types.js'
+import type { GateStage } from '../workflow/types.js'
 import { logger } from '../core/logger.js'
 
 export interface DefectPayload {
@@ -23,14 +24,33 @@ export interface IAutoDefectCreator {
   getAutoDefects(): ArtifactId[]
 }
 
+export interface AutoDefectCreatorOptions {
+  gateFailureThreshold?: number
+}
+
+interface GateFailurePayload {
+  stage?: GateStage
+  status?: string
+  blockers?: string[]
+  evidence?: string
+  evidenceRecordId?: string
+}
+
 export class AutoDefectCreator implements IAutoDefectCreator {
   private subs: Array<{ unsubscribe(): void }> = []
   private autoDefects: ArtifactId[] = []
+  private gateFailureStreaks = new Map<string, number>()
+  private gateDefectCreated = new Set<string>()
+  private handledGateEventIds = new Set<string>()
+  private gateFailureThreshold: number
 
   constructor(
     private store: IArtifactStore,
     private eventBus: IEventBus,
-  ) {}
+    options: AutoDefectCreatorOptions = {},
+  ) {
+    this.gateFailureThreshold = options.gateFailureThreshold ?? 3
+  }
 
   start(): void {
     this.subs.push(
@@ -39,6 +59,8 @@ export class AutoDefectCreator implements IAutoDefectCreator {
       this.eventBus.on('behavior.duplicate_edit', (e) => this.onDuplicateEdit(e)),
       this.eventBus.on('behavior.brute_retry', (e) => this.onBruteRetry(e)),
       this.eventBus.on('behavior.blame_shift', (e) => this.onBlameShift(e)),
+      this.eventBus.on('gate.failed', (e) => this.onGateFailure(e as Event<GateFailurePayload>)),
+      this.eventBus.on('gate.executed', (e) => this.onGateExecuted(e as Event<{ stage?: GateStage; passed?: boolean }>)),
     )
     logger.info('AutoDefectCreator started')
   }
@@ -122,7 +144,48 @@ export class AutoDefectCreator implements IAutoDefectCreator {
     }, 'Blame Shift Detected')
   }
 
-  private async createDefect(payload: DefectPayload, title: string): Promise<void> {
+  private async onGateFailure(event: Event<GateFailurePayload>): Promise<void> {
+    if (this.handledGateEventIds.has(event.id)) return
+    this.handledGateEventIds.add(event.id)
+
+    const stage = event.payload.stage ?? 'G0'
+    const key = `${event.sessionId}:${stage}`
+    const consecutiveFailures = (this.gateFailureStreaks.get(key) ?? 0) + 1
+    this.gateFailureStreaks.set(key, consecutiveFailures)
+
+    if (consecutiveFailures < this.gateFailureThreshold || this.gateDefectCreated.has(key)) {
+      return
+    }
+
+    const blockers = event.payload.blockers ?? []
+    await this.createDefect({
+      rootCauseCategory: 'gate_failure',
+      evidence: event.payload.evidence ?? (blockers.join('\n') || `Gate ${stage} failed ${consecutiveFailures} consecutive times.`),
+      detector: 'GateFailureTracker',
+      severity: 'high',
+      autoCreated: true,
+      sessionId: event.sessionId,
+      timestamp: Date.now(),
+      context: {
+        stage,
+        status: event.payload.status,
+        blockers,
+        evidenceRecordId: event.payload.evidenceRecordId,
+        consecutiveFailures,
+      },
+    }, `Gate Failure: ${stage} failed ${consecutiveFailures} times`)
+    this.gateDefectCreated.add(key)
+  }
+
+  private onGateExecuted(event: Event<{ stage?: GateStage; passed?: boolean }>): void {
+    if (!event.payload.passed) return
+    const stage = event.payload.stage ?? 'G0'
+    const key = `${event.sessionId}:${stage}`
+    this.gateFailureStreaks.delete(key)
+    this.gateDefectCreated.delete(key)
+  }
+
+  async createDefect(payload: DefectPayload, title: string): Promise<ArtifactId | null> {
     try {
       const input: CreateArtifactInput = {
         type: 'Defect',
@@ -141,8 +204,10 @@ export class AutoDefectCreator implements IAutoDefectCreator {
         sessionId: payload.sessionId,
       })
       logger.info({ defectId: defect.id, rootCause: payload.rootCauseCategory }, 'Auto-defect created')
+      return defect.id
     } catch (err) {
       logger.error({ err, payload }, 'Failed to create auto-defect')
+      return null
     }
   }
 }

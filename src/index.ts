@@ -45,6 +45,7 @@ export { EvolutionEvaluator } from './evolution/EvolutionEvaluator.js'
 export type { IEvolutionEvaluator, EvolutionMetrics, EvolutionSnapshot } from './evolution/EvolutionEvaluator.js'
 export { AutoDefectCreator } from './evolution/AutoDefectCreator.js'
 export type { IAutoDefectCreator, DefectPayload } from './evolution/AutoDefectCreator.js'
+export * from './evolution/RuleMaturity.js'
 
 // Skills System (v0.7.0)
 export { SkillRegistry } from './skills/SkillRegistry.js'

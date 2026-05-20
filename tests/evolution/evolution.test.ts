@@ -11,6 +11,7 @@ import {
   HookGenerator,
   EvolutionEngine,
 } from '../../src/evolution/EvolutionEngine.js'
+import { recordShadowHit } from '../../src/evolution/RuleMaturity.js'
 import { rmSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 
 const TMP = './tmp/test-evolution'
@@ -126,6 +127,7 @@ describe('Evolution Layer', () => {
       expect(rule!.id).toMatch(/^RULE-/)
       expect(rule!.sourceLesson).toBe(entry.id)
       expect(rule!.approved).toBe(false)
+      expect(rule!.maturity.stage).toBe('shadow')
     })
 
     it('rejects unverified lesson', async () => {
@@ -142,15 +144,32 @@ describe('Evolution Layer', () => {
       const proposer = new RuleProposer(kb, bus)
       const entry = await kb.add({
         type: 'lesson', title: 'Check',
-        tags: ['check'], contentRef: 'a', verified: false,
+        tags: ['check'], contentRef: 'a', verified: false, sourceArtifact: 'DEFECT-1',
       })
       await kb.verify(entry.id, 'admin')
       const rule = await proposer.proposeFromLesson(entry.id)
       expect(rule!.approved).toBe(false)
+      for (let i = 0; i < 10; i++) rule!.maturity = recordShadowHit(rule!.maturity)
 
       const approved = await proposer.approve(rule!.id, 'boss')
       expect(approved.approved).toBe(true)
       expect(approved.approvedBy).toBe('boss')
+      expect(approved.maturity.stage).toBe('approved-blocking')
+    })
+
+    it('rejects blocking approval before shadow maturity is eligible', async () => {
+      const proposer = new RuleProposer(kb, bus)
+      const entry = await kb.add({
+        type: 'lesson', title: 'Check later',
+        tags: ['check'], contentRef: 'a', verified: false, sourceArtifact: 'DEFECT-1',
+      })
+      await kb.verify(entry.id, 'admin')
+      const rule = await proposer.proposeFromLesson(entry.id)
+
+      await expect(proposer.approve(rule!.id, 'boss')).rejects.toThrow('not eligible')
+      expect(rule!.approved).toBe(false)
+      expect(rule!.approvedBy).toBeUndefined()
+      expect(rule!.maturity.stage).toBe('shadow')
     })
 
     it('writeRuleFile creates markdown', async () => {
@@ -193,12 +212,13 @@ describe('Evolution Layer', () => {
       const proposer = new RuleProposer(kb, bus)
       const entry = await kb.add({
         type: 'lesson', title: 'Run tests',
-        tags: ['testing'], contentRef: 'a', verified: false,
+        tags: ['testing'], contentRef: 'a', verified: false, sourceArtifact: 'DEFECT-1',
       })
       await kb.verify(entry.id, 'admin')
       for (let i = 0; i < 6; i++) await kb.markHelpful(entry.id, 's1')
       const rule = await proposer.proposeFromLesson(entry.id)
       expect(rule!.enforcement).toBe('hook')
+      for (let i = 0; i < 10; i++) rule!.maturity = recordShadowHit(rule!.maturity)
       await proposer.approve(rule!.id, 'admin')
 
       const hooksDir = `${TMP}/hooks`
@@ -229,6 +249,34 @@ describe('Evolution Layer', () => {
         pattern: 'test', enforcement: 'prompt' as const,
         createdAt: Date.now(), approved: true, approvedBy: 'x',
       }
+      const hook = gen.generate(rule, `${TMP}/hooks`)
+      expect(hook).toBeNull()
+    })
+
+    it('rejects shadow rules even if they are configured for hook enforcement', async () => {
+      const gen = new HookGenerator(bus)
+      const rule = {
+        id: 'RULE-3',
+        title: 'R',
+        description: 'D',
+        sourceLesson: 'L',
+        pattern: 'test',
+        enforcement: 'hook' as const,
+        createdAt: Date.now(),
+        approved: false,
+        maturity: {
+          ruleId: 'RULE-3',
+          stage: 'shadow' as const,
+          shadowHits: 10,
+          defectEvidenceIds: ['DEFECT-1'],
+          falsePositiveCount: 0,
+          rollback: 'Delete generated hook.',
+          evidenceIds: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      }
+
       const hook = gen.generate(rule, `${TMP}/hooks`)
       expect(hook).toBeNull()
     })
@@ -263,6 +311,7 @@ describe('Evolution Layer', () => {
       expect(rules[0].enforcement).toBe('hook')
 
       // 5. Human approves
+      for (let i = 0; i < 10; i++) rules[0].maturity = recordShadowHit(rules[0].maturity)
       await proposer.approve(rules[0].id, 'lead')
 
       // 6. Generate hook
@@ -280,6 +329,32 @@ describe('Evolution Layer', () => {
       const stats = engine.getStats()
       expect(stats.rulesProposed).toBe(0)
       expect(stats.hooksGenerated).toBe(0)
+    })
+
+    it('runCycle proposes shadow rules without generating blocking hooks', async () => {
+      const extractor = new LessonExtractor(store, kb, bus)
+      const proposer = new RuleProposer(kb, bus)
+      const gen = new HookGenerator(bus)
+      const engine = new EvolutionEngine(extractor, proposer, gen, bus, TMP)
+
+      const entry = await kb.add({
+        type: 'lesson',
+        title: 'Repeated test failure needs a rule',
+        tags: ['test_failure'],
+        contentRef: 'a',
+        verified: false,
+        sourceArtifact: 'DEFECT-1',
+      })
+      await kb.verify(entry.id, 'admin')
+      for (let i = 0; i < 6; i++) await kb.markHelpful(entry.id, 's1')
+
+      const stats = await engine.runCycle()
+      const [rule] = proposer.getProposedRules()
+
+      expect(stats.rulesProposed).toBe(1)
+      expect(stats.shadowRules).toBe(1)
+      expect(rule.maturity.stage).toBe('shadow')
+      expect(gen.getGeneratedHooks()).toHaveLength(0)
     })
   })
 

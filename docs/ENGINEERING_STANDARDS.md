@@ -72,6 +72,8 @@ scale verify <task-id> --json
 
 `ActiveRedTeam` and `VisualGate` add optional dynamic verification for projects that can provide a runnable HTTP target and structured visual evidence. They are disabled unless explicitly configured. See [ACTIVE_SECURITY_VISUAL_GATES.md](ACTIVE_SECURITY_VISUAL_GATES.md).
 
+`Evolution Shadow Mode` turns repeated gate failures into evidence-backed defects and keeps new rules in shadow mode until they have enough hits, defect evidence, rollback, and approval. See [EVOLUTION_SHADOW_MODE.md](EVOLUTION_SHADOW_MODE.md).
+
 `scale preflight` and `scale verify` consume `.scale/verification.json`:
 
 ```json

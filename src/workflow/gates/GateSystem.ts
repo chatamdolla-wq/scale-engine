@@ -230,6 +230,15 @@ export class GateSystem {
       this.persistEvidence(result)
       this.recordCompletedGate(stage, result)
       this.eventBus.emit('gate.executed', { stage, passed: result.passed })
+      if (!result.passed) {
+        this.eventBus.emit('gate.failed', {
+          stage,
+          status: result.status,
+          blockers: result.blockers,
+          evidence: result.evidence,
+          evidenceRecordId: result.evidenceRecordId,
+        })
+      }
       return result
     } catch (e) {
       const result: GateResult = {
@@ -250,6 +259,14 @@ export class GateSystem {
       }
       this.results.set(stage, result)
       this.persistEvidence(result)
+      this.eventBus.emit('gate.executed', { stage, passed: false })
+      this.eventBus.emit('gate.failed', {
+        stage,
+        status: result.status,
+        blockers: result.blockers,
+        evidence: result.evidence,
+        evidenceRecordId: result.evidenceRecordId,
+      })
       return result
     }
   }
