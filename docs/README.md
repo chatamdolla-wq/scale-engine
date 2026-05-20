@@ -53,6 +53,7 @@
 
 | 文档 | 说明 |
 | --- | --- |
+| [AI_ENGINEERING_OS_POSITIONING.md](AI_ENGINEERING_OS_POSITIONING.md) | SCALE Engine 作为 Agent Governance Runtime / AI Engineering OS 的战略定位、能力边界、短板和路线图 |
 | [plans/2026-05-20-scale-engine-v2-final-architecture-plan.md](plans/2026-05-20-scale-engine-v2-final-architecture-plan.md) | SCALE Engine V2.0 最终架构落地方案：Prompt Cache、Dashboard 聚合、Background Hunter、供应链门禁、动态/视觉验证和 Evolution Shadow Mode |
 
 ## 架构与参考
