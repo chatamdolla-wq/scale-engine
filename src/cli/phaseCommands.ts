@@ -32,6 +32,7 @@ import { TaskLevelDetector, type TaskLevel } from '../workflow/TaskLevelDetector
 import { ToolEvidenceStore } from '../tools/ToolEvidenceStore.js'
 import { ToolOrchestrator } from '../tools/ToolOrchestrator.js'
 import { loadToolPolicy, type ResolvedToolPolicy, type ToolOrchestrationMode } from '../tools/ToolPolicy.js'
+import { runSafeCommand } from '../tools/SafeCommandRunner.js'
 import type { KarpathyCheck } from '../workflow/types.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -974,14 +975,12 @@ export const phaseBuild = defineCommand({
 
 // Helper: Run command and capture result (from verify-task)
 async function runVerificationCmd(cmd: string): Promise<{ exitCode: number; output: string }> {
-  const { spawn } = await import('node:child_process')
-  return new Promise((resolve) => {
-    const child = spawn(cmd, [], { shell: true, stdio: 'pipe' })
-    let output = ''
-    child.stdout?.on('data', (d: Buffer) => (output += d.toString()))
-    child.stderr?.on('data', (d: Buffer) => (output += d.toString()))
-    child.on('close', (code) => resolve({ exitCode: code ?? 1, output }))
-  })
+  try {
+    const result = await runSafeCommand(cmd)
+    return { exitCode: result.exitCode, output: [result.stdout, result.stderr].filter(Boolean).join('\n') }
+  } catch (error) {
+    return { exitCode: 1, output: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 // VERIFY Phase - GateSystem quality gates

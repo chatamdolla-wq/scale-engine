@@ -92,6 +92,31 @@ interface PackageLockPackage {
 const SOURCE_EXTENSIONS = new Set(['.js', '.cjs', '.mjs'])
 const DEFAULT_MAX_PACKAGES = 50
 const DEFAULT_MAX_PACKAGE_FILES = 25
+const BUILT_IN_BLOCKED_PACKAGE_VERSIONS: Array<{
+  packageName: string
+  version: string
+  severity: DependencyAuditSeverity
+  message: string
+}> = [
+  {
+    packageName: 'content-type',
+    version: '2.0.0',
+    severity: 'HIGH',
+    message: 'Package version is flagged for ownership/provenance instability by external supply-chain analysis.',
+  },
+  {
+    packageName: 'type-is',
+    version: '2.1.0',
+    severity: 'HIGH',
+    message: 'Package version is flagged for ownership/provenance instability by external supply-chain analysis.',
+  },
+  {
+    packageName: 'type-js',
+    version: '2.1.0',
+    severity: 'HIGH',
+    message: 'Package version is flagged for ownership/provenance instability by external supply-chain analysis.',
+  },
+]
 
 export function dependencyAuditPolicyTemplate(): string {
   return JSON.stringify({
@@ -244,6 +269,7 @@ function selectPackages(lockfile: PackageLockFile, options: { changedPackages?: 
 
 function scanPackage(projectDir: string, pkg: { name: string; path: string; metadata: PackageLockPackage }, maxPackageFiles: number): DependencyAuditFinding[] {
   const findings: DependencyAuditFinding[] = []
+  findings.push(...scanBuiltInBlockedVersions(pkg))
   if (pkg.metadata.hasInstallScript) {
     findings.push({
       packageName: pkg.name,
@@ -282,6 +308,23 @@ function scanPackage(projectDir: string, pkg: { name: string; path: string; meta
   }
   findings.push(...scanPackageSource(projectDir, pkg, maxPackageFiles))
   return findings
+}
+
+function scanBuiltInBlockedVersions(pkg: { name: string; path: string; metadata: PackageLockPackage }): DependencyAuditFinding[] {
+  const version = pkg.metadata.version
+  if (!version) return []
+  return BUILT_IN_BLOCKED_PACKAGE_VERSIONS
+    .filter(entry => entry.packageName === pkg.name && entry.version === version)
+    .map(entry => ({
+      packageName: pkg.name,
+      version,
+      ruleId: 'dependency.ownership-unstable',
+      severity: entry.severity,
+      path: pkg.path,
+      message: entry.message,
+      evidence: `${pkg.name}@${version}`,
+      fix: 'Pin to a reviewed stable version or replace the dependency until provenance is manually accepted.',
+    }))
 }
 
 function scanPackageSource(projectDir: string, pkg: { name: string; path: string; metadata: PackageLockPackage }, maxPackageFiles: number): DependencyAuditFinding[] {

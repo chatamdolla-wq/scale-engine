@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { execa } from 'execa'
 import { estimateTokens } from '../context/ContextBudget.js'
 import { redactEvidenceText, redactEvidenceValue } from '../tools/ToolEvidenceStore.js'
+import { runSafeCommand } from '../tools/SafeCommandRunner.js'
 
 export type WorkflowEvalCaseType = 'bugfix' | 'feature' | 'refactor' | 'security' | 'frontend' | 'release' | 'resource'
 export type FailureReplayCategory =
@@ -419,10 +419,8 @@ async function runAttempt(attempt: WorkflowEvalAttempt, cwd: string): Promise<Wo
   const expectedExitCode = attempt.expectedExitCode ?? 0
   const commandRedaction = redactEvidenceText(attempt.command)
   try {
-    const result = await execa(attempt.command, {
-      shell: true,
+    const result = await runSafeCommand(attempt.command, {
       cwd,
-      reject: false,
       timeout: attempt.timeoutMs ?? 30_000,
     })
     const output = [result.stdout ?? '', result.stderr ?? ''].filter(Boolean).join('\n')
@@ -434,8 +432,8 @@ async function runAttempt(attempt: WorkflowEvalAttempt, cwd: string): Promise<Wo
       id: attempt.id ?? `attempt-${randomUUID().slice(0, 8)}`,
       command: commandRedaction.value,
       expectedExitCode,
-      exitCode: result.exitCode ?? 1,
-      passed: (result.exitCode ?? 1) === expectedExitCode && outputContains,
+      exitCode: result.exitCode,
+      passed: result.exitCode === expectedExitCode && outputContains,
       durationMs: Date.now() - started,
       outputSummary: outputRedaction.value || '(no output)',
       redactionApplied: commandRedaction.redacted || outputRedaction.redacted,

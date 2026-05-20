@@ -103,6 +103,40 @@ describe('DependencyAuditor', () => {
     ]))
   })
 
+  it('flags built-in ownership instability watchlist versions', () => {
+    const projectDir = makeProject()
+    write(projectDir, 'package.json', JSON.stringify({
+      dependencies: {
+        'type-is': '^2.0.1',
+      },
+    }, null, 2))
+    write(projectDir, 'package-lock.json', JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        '': {
+          dependencies: {
+            'type-is': '^2.0.1',
+          },
+        },
+        'node_modules/type-is': {
+          version: '2.1.0',
+        },
+      },
+    }, null, 2))
+
+    const report = auditDependencies({ projectDir, mode: 'strict' })
+
+    expect(report.ok).toBe(false)
+    expect(report.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        packageName: 'type-is',
+        version: '2.1.0',
+        ruleId: 'dependency.ownership-unstable',
+        severity: 'HIGH',
+      }),
+    ]))
+  })
+
   it('suppresses accepted dependency findings through the policy baseline', () => {
     const projectDir = makeProject()
     writeLock(projectDir)

@@ -28,6 +28,28 @@ scale dependency audit --changed-packages left-pad,@scope/tool --json
 
 The command exits non-zero when the active mode has blocking findings.
 
+## Verification Command Safety
+
+SCALE verification commands are security-sensitive because they are often run in CI.
+The core verification paths (`verify-task`, phase verification, workflow eval attempts, and gate commands) execute configured commands without shell expansion by default.
+
+Allowed by default:
+
+```bash
+npm run build
+npm test -- --runInBand
+node scripts/check.js --changed
+```
+
+Blocked by default:
+
+```bash
+npm test && curl https://example.com
+node scripts/check.js | tee out.txt
+```
+
+Shell metacharacters such as `&&`, `|`, `;`, `<`, `>`, backticks, and unquoted `$` are rejected before execution. Use package scripts or checked-in helper scripts for composed commands. `SCALE_ALLOW_SHELL_COMMANDS=1` re-enables shell execution only for trusted local runs and must not be enabled for untrusted PR or user-controlled CI inputs.
+
 ## G7 Integration
 
 `SecurityGate` now emits two first-class evidence sources:
@@ -82,8 +104,15 @@ The first implementation detects:
 - install lifecycle scripts
 - executable bin scripts
 - deprecated packages from lockfile metadata
+- built-in ownership/provenance watchlist matches
 - dynamic code execution: `eval`, `new Function`
 - shell execution patterns
 - suspicious network access patterns
+
+The built-in ownership/provenance watchlist currently blocks exact versions that were flagged by external package behavior analysis:
+
+- `content-type@2.0.0`
+- `type-is@2.1.0`
+- `type-js@2.1.0` (kept as a defensive alias for reports that use this package name)
 
 Future network-backed checks can add npm registry metadata and `npm audit --json` ingestion, but they should stay optional and evidence-backed.

@@ -7,12 +7,12 @@ import { EvidenceStore } from '../EvidenceStore.js'
 import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig, type VerificationRuntimeEvidenceConfig } from '../VerificationCommands.js'
 import { registerMetaGovernanceGates } from './MetaGovernanceGates.js'
-import { execa } from 'execa'
 import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
 import { compressCommandOutput, type CommandOutputCompressionResult } from '../../tools/CommandOutputCompressor.js'
 import { CommandRunLedger, type CommandRunEvidenceOptions } from '../../tools/CommandRunLedger.js'
 import { auditDependencies, type DependencyAuditMode, type DependencyAuditReport } from '../../guardrails/DependencyAuditor.js'
+import { runSafeCommand } from '../../tools/SafeCommandRunner.js'
 
 export interface IGate {
   stage: GateStage
@@ -96,16 +96,10 @@ export async function runShellCommand(
 ): Promise<CommandResult> {
   const start = Date.now()
   try {
-    const result = await execa(command, {
-      shell: true,
-      timeout,
-      cwd,
-      reject: false,
-      all: false,
-    })
+    const result = await runSafeCommand(command, { timeout, cwd })
     const end = Date.now()
     return finalizeCommandResult(command, {
-      code: result.exitCode ?? 1,
+      code: result.exitCode,
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
       durationMs: end - start,
