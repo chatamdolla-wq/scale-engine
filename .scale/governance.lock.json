@@ -4,7 +4,7 @@
   "scaleVersion": "0.25.0",
   "pack": "scale-engine-repo",
   "packVersion": 1,
-  "generatedAt": "2026-05-20T13:18:53.427Z",
+  "generatedAt": "2026-05-20T13:30:17.090Z",
   "files": [
     {
       "path": ".scale/workspace.json",
@@ -78,7 +78,7 @@
     },
     {
       "path": "scripts/workflow/verify.sh",
-      "sha256": "4942dcdf38a6a684bf4c4a39596e7ce5e556997521ff117aab217d674009e668",
+      "sha256": "4bcb39219e9bc9e479318f329a5a18f8488f93fd955b42be70d5659e4d78df6a",
       "owned": true
     },
     {
