@@ -34,9 +34,25 @@ The dashboard reads existing local evidence:
 | --- | --- |
 | Runtime evidence | `.scale/evidence/runtime/` |
 | Workflow eval | `.scale/evals/runs/` and `.scale/evals/failures/` |
+| Workflow metrics | `.scale/metrics/tasks.jsonl` |
+| Gate evidence | `.scale/evidence/GATE-*.json` |
+| Command runs | `.scale/evidence/command-runs/` |
+| Model usage | `.scale/model-usage/usage.jsonl` |
 | Memory Brain | `.scale/memory/brain.sqlite` |
 | Resource Governance | workspace files plus `.scale/resource-policy.json` and `.scale/assets.json` |
 | HTML artifacts | task artifact manifests and rendered HTML files |
+
+## Aggregated Metrics
+
+V2.0 adds `MetricsAggregator` as the dashboard aggregation layer. It keeps the dashboard read-only and derives the following metrics from existing evidence:
+
+- recent task count and first-pass rate
+- average fix iterations
+- gate failure distribution
+- command output compression token savings
+- model usage and prompt-cache savings
+
+Each number must trace back to local JSON/JSONL evidence. If a source is absent, the dashboard reports zero rather than inventing values.
 
 ## Status Model
 

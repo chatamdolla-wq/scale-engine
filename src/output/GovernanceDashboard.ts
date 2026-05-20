@@ -6,6 +6,7 @@ import { RuntimeEvidenceLedger } from '../runtime/RuntimeEvidenceLedger.js'
 import { doctorResourceAssets } from '../workflow/ResourceGovernance.js'
 import { HTMLDocumentRenderer, type DocLang, type ThemeMode } from './HTMLDocumentRenderer.js'
 import { listExistingHtmlArtifacts } from './HTMLArtifactLayer.js'
+import { aggregateGovernanceMetrics, type AggregatedGovernanceMetrics } from '../dashboard/MetricsAggregator.js'
 
 export interface GovernanceDashboardOptions {
   projectDir?: string
@@ -48,6 +49,7 @@ export interface GovernanceDashboardSummary {
   htmlArtifacts: {
     count: number
   }
+  governanceMetrics: AggregatedGovernanceMetrics
 }
 
 export interface GovernanceDashboardResult {
@@ -83,6 +85,7 @@ export function renderGovernanceDashboard(options: GovernanceDashboardOptions = 
   const memoryDream = brain.dream()
   const resourceDoctor = doctorResourceAssets({ projectDir, scaleDir: scaleRoot })
   const htmlArtifacts = listExistingHtmlArtifacts({ projectDir, scaleDir: scaleRoot, taskId: options.taskId })
+  const governanceMetrics = aggregateGovernanceMetrics({ projectDir, scaleDir: scaleRoot })
 
   const summary: GovernanceDashboardSummary = {
     runtime: {
@@ -115,6 +118,7 @@ export function renderGovernanceDashboard(options: GovernanceDashboardOptions = 
     htmlArtifacts: {
       count: htmlArtifacts.length,
     },
+    governanceMetrics,
   }
 
   const findings = dashboardFindings(summary)
@@ -137,9 +141,12 @@ export function renderGovernanceDashboard(options: GovernanceDashboardOptions = 
       activeMemory: summary.memory.active,
       resourceFindings: summary.resources.findings,
       htmlArtifacts: summary.htmlArtifacts.count,
+      commandTokenSavings: summary.governanceMetrics.commandRuns.savedEstimatedTokens,
+      modelCacheSavings: summary.governanceMetrics.modelUsage.cacheSavingsTokens,
     },
     sections: [
       { heading: 'Runtime Evidence', content: runtimeSection(summary) },
+      { heading: 'Governance Metrics', content: governanceMetricsSection(summary.governanceMetrics) },
       { heading: 'Workflow Eval', content: evalSection(evalRuns, evalFailures) },
       { heading: 'Memory Brain', content: memorySection(memoryDream) },
       { heading: 'Resource Governance', content: resourceSection(resourceDoctor) },
@@ -199,6 +206,32 @@ function runtimeSection(summary: GovernanceDashboardSummary): string {
     <thead><tr><th>Status</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th></tr></thead>
     <tbody><tr><td>${summary.runtime.ok ? 'OK' : 'FAILED'}</td><td>${summary.runtime.total}</td><td>${summary.runtime.passed}</td><td>${summary.runtime.failed}</td><td>${summary.runtime.skipped}</td></tr></tbody>
   </table>`
+}
+
+function governanceMetricsSection(metrics: AggregatedGovernanceMetrics): string {
+  const gateRows = Object.entries(metrics.gateFailures.byGate)
+    .sort(([, a], [, b]) => b - a)
+    .map(([gate, count]) => `<tr><td><code>${escapeHtml(gate)}</code></td><td>${count}</td></tr>`)
+    .join('')
+  const providerRows = Object.entries(metrics.modelUsage.byProvider)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([provider, summary]) => `<tr><td>${escapeHtml(provider)}</td><td>${summary.records}</td><td>${summary.totalTokens}</td><td>${summary.cacheSavingsTokens}</td></tr>`)
+    .join('')
+  return `
+    <h3>Task Metrics</h3>
+    <table><thead><tr><th>Window</th><th>Total Tasks</th><th>Recent Tasks</th><th>First Pass</th><th>Recent First Pass</th><th>Avg Fix Iterations</th></tr></thead>
+    <tbody><tr><td>${metrics.sinceDays} days</td><td>${metrics.taskMetrics.total}</td><td>${metrics.taskMetrics.recentTasks}</td><td>${(metrics.taskMetrics.firstPassRate * 100).toFixed(1)}%</td><td>${(metrics.taskMetrics.recentFirstPassRate * 100).toFixed(1)}%</td><td>${metrics.taskMetrics.averageFixIterations.toFixed(2)}</td></tr></tbody></table>
+    <h3>Gate Failures</h3>
+    <table><thead><tr><th>Total Gate Evidence</th><th>Failed</th></tr></thead><tbody><tr><td>${metrics.gateFailures.total}</td><td>${metrics.gateFailures.failed}</td></tr></tbody></table>
+    <table><thead><tr><th>Gate</th><th>Failures</th></tr></thead><tbody>${gateRows || '<tr><td colspan="2">No gate failures found.</td></tr>'}</tbody></table>
+    <h3>Command Output Compression</h3>
+    <table><thead><tr><th>Total Runs</th><th>Passed</th><th>Failed</th><th>Raw Tokens</th><th>Compressed Tokens</th><th>Saved Tokens</th></tr></thead>
+    <tbody><tr><td>${metrics.commandRuns.total}</td><td>${metrics.commandRuns.passed}</td><td>${metrics.commandRuns.failed}</td><td>${metrics.commandRuns.rawEstimatedTokens}</td><td>${metrics.commandRuns.compressedEstimatedTokens}</td><td>${metrics.commandRuns.savedEstimatedTokens}</td></tr></tbody></table>
+    <h3>Model Usage</h3>
+    <table><thead><tr><th>Records</th><th>Total Tokens</th><th>Cache Eligible</th><th>Cache Creation</th><th>Cache Read</th><th>Cached</th><th>Saved</th></tr></thead>
+    <tbody><tr><td>${metrics.modelUsage.totalRecords}</td><td>${metrics.modelUsage.totalTokens}</td><td>${metrics.modelUsage.cacheEligibleTokens}</td><td>${metrics.modelUsage.cacheCreationInputTokens}</td><td>${metrics.modelUsage.cacheReadInputTokens}</td><td>${metrics.modelUsage.cachedTokens}</td><td>${metrics.modelUsage.cacheSavingsTokens}</td></tr></tbody></table>
+    <table><thead><tr><th>Provider</th><th>Records</th><th>Total Tokens</th><th>Saved Tokens</th></tr></thead><tbody>${providerRows || '<tr><td colspan="4">No model usage records found.</td></tr>'}</tbody></table>
+  `
 }
 
 function evalSection(runs: WorkflowEvalRun[], failures: ReturnType<WorkflowEvalStore['listFailures']>): string {

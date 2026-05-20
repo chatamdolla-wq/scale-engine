@@ -194,7 +194,16 @@ describe('artifact CLI', () => {
       ok: boolean
       outputPath: string
       manifestPath: string
-      summary: { runtime: { passed: number }; eval: { failures: number }; memory: { candidate: number }; htmlArtifacts: { count: number } }
+      summary: {
+        runtime: { passed: number }
+        eval: { failures: number }
+        memory: { candidate: number }
+        htmlArtifacts: { count: number }
+        governanceMetrics: {
+          commandRuns: { savedEstimatedTokens: number }
+          modelUsage: { cacheSavingsTokens: number }
+        }
+      }
       findings: Array<{ code: string }>
     }
     expect(report.ok).toBe(true)
@@ -202,8 +211,11 @@ describe('artifact CLI', () => {
     expect(report.summary.eval.failures).toBe(1)
     expect(report.summary.memory.candidate).toBeGreaterThanOrEqual(1)
     expect(report.summary.htmlArtifacts.count).toBeGreaterThanOrEqual(1)
+    expect(report.summary.governanceMetrics.commandRuns.savedEstimatedTokens).toBeGreaterThanOrEqual(0)
+    expect(report.summary.governanceMetrics.modelUsage.cacheSavingsTokens).toBeGreaterThanOrEqual(0)
     expect(report.findings.map(finding => finding.code)).toContain('open-eval-failures')
     expect(readFileSync(report.outputPath, 'utf-8')).toContain('SCALE Governance Dashboard')
+    expect(readFileSync(report.outputPath, 'utf-8')).toContain('Governance Metrics')
     expect(readFileSync(report.outputPath, 'utf-8')).toContain('missing-verification-evidence')
     expect(readFileSync(report.manifestPath, 'utf-8')).toContain('generated-report')
   }, 60_000)
