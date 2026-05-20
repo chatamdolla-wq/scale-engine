@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.21.2-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.21.2-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.23.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.21.2
+# SCALE Engine v0.23.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -16,6 +16,30 @@ Repository: https://github.com/hongmaple0820/scale-engine
 Mirror: https://gitee.com/hongmaple/scale-engine
 npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
 Language: [English](README.en.md) | [Chinese](README.md)
+
+## Community
+
+SCALE Engine is an engineering workflow governance project for real AI-agent delivery. Contributions, issues, PRs, governance-pack ideas, and field reports are welcome through the source repositories. Chinese users can also follow the WeChat public account for updates, examples, and community entry points.
+
+| Platform | Link | Purpose |
+| --- | --- | --- |
+| GitHub | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | Source, issues, and PRs |
+| Gitee | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | China mirror and feedback |
+| npm | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | CLI package |
+
+<p align="center">
+  <img src="image/wechat-public.jpg" alt="SCALE Engine WeChat public account" width="220" />
+</p>
+
+## Sponsorship
+
+If SCALE Engine saves engineering governance time for your team, or helps move AI-agent work into a verifiable, reviewable, and releasable loop, voluntary sponsorship is welcome. Sponsorship supports maintenance, examples, documentation, test coverage, and community support. It is not a commercial support contract and does not change issue or PR priority.
+
+<p align="center">
+  <img src="image/wxPay.jpg" alt="Sponsor with WeChat Pay" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/zfb.jpg" alt="Sponsor with Alipay" width="220" />
+</p>
 
 ## What It Solves
 

@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.21.2-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.21.2-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.23.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.21.2
+# SCALE Engine v0.23.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -33,13 +33,28 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 
 ## 社区与推广
 
-### 链接
+SCALE Engine 是一个面向真实工程交付的 Agent 工作流治理项目。欢迎通过源码仓库提交 Issue、PR、场景反馈和治理包改进建议；中文用户也可以关注公众号获取更新、示例和社区入口。
 
 | 平台 | 链接 | 说明 |
 |------|------|------|
-| 📦 **GitHub** | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | 源码 + Issues + PR |
-| 🔧 **Gitee** | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像 |
-| 📦 **npm** | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | 包下载 |
+| GitHub | [https://github.com/hongmaple0820/scale-engine](https://github.com/hongmaple0820/scale-engine) | 源码、Issues、PR |
+| Gitee | [https://gitee.com/hongmaple/scale-engine](https://gitee.com/hongmaple/scale-engine) | 国内镜像与反馈 |
+| npm | [https://www.npmjs.com/package/@hongmaple0820/scale-engine](https://www.npmjs.com/package/@hongmaple0820/scale-engine) | CLI 包下载 |
+
+<p align="center">
+  <img src="image/wechat-public.jpg" alt="SCALE Engine 微信公众号" width="220" />
+</p>
+
+## 赞助与支持
+
+如果 SCALE Engine 节省了你的工程治理时间，或帮助你的团队把 AI Agent 工作流落到可验证、可复盘、可发版的闭环里，欢迎自愿赞助。赞助用于持续维护、示例项目、文档、测试矩阵和社区支持，不构成商业支持承诺，也不会改变 Issue 或 PR 的处理优先级。
+
+<p align="center">
+  <img src="image/wxPay.jpg" alt="微信赞助" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/zfb.jpg" alt="支付宝赞助" width="220" />
+</p>
+
 ## 它解决什么问题
 
 AI 编码真正难的不是“写代码”，而是持续稳定地遵守工程纪律：

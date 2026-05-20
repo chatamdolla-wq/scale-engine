@@ -28,6 +28,7 @@
     "docs/RUNTIME_EVIDENCE.md",
     "docs/RESOURCE_GOVERNANCE.md",
     "docs/start",
+    "image",
     "examples/demo-projects/agent-governance-demo"
   ],
   "publishConfig": {
