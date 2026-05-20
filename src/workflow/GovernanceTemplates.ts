@@ -222,8 +222,9 @@ function detectNodeServiceName(projectDir: string): string {
       .replace(/[^a-zA-Z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '')
     if (normalized) return normalized
-  } catch {
+  } catch (error) {
     // Fall back to the directory name when package.json is absent or malformed.
+    void error
   }
   return basename(projectDir) || 'app'
 }

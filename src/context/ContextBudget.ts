@@ -56,10 +56,30 @@ export interface ContextPack {
   sections: ContextPackSection[]
 }
 
+export interface ContextBudgetDoctorTaskPack {
+  task: ContextPack['task']
+  generatedAt: string
+  totalEstimatedTokens: number
+  lazyLoaded: ContextPack['lazyLoaded']
+  omitted: ContextPack['omitted']
+  sections: Array<Omit<ContextPackSection, 'paths'> & { pathCount: number; samplePaths: string[] }>
+}
+
+export interface ContextBudgetDoctorInventoryReport {
+  projectDir: string
+  scaleDir: string
+  generatedAt: string
+  thresholds: ContextBudgetReport['thresholds']
+  summary: ContextBudgetSummary
+  recommendations: string[]
+  largestEntries: ContextBudgetEntry[]
+}
+
 export interface ContextBudgetDoctorReport {
   ok: boolean
   checks: Array<{ name: string; status: 'pass' | 'warn' | 'fail'; message: string }>
-  report: ContextBudgetReport
+  report: ContextBudgetDoctorInventoryReport
+  taskPack: ContextBudgetDoctorTaskPack
 }
 
 const CATEGORIES: ContextBudgetCategory[] = ['always', 'on-demand', 'evidence', 'archive', 'generated']
@@ -76,6 +96,13 @@ const IGNORED_DIRS = new Set([
   '.worktrees',
 ])
 
+const IGNORED_FILES = new Set([
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lockb',
+])
+
 const SCANNED_EXTENSIONS = new Set(['.md', '.json', '.yml', '.yaml', '.html', '.txt'])
 
 export interface ContextBudgetOptions {
@@ -83,6 +110,9 @@ export interface ContextBudgetOptions {
   scaleDir?: string
   maxAlwaysTokens?: number
   maxTaskTokens?: number
+  task?: string
+  level?: string
+  files?: string[]
 }
 
 export interface ContextPackOptions extends ContextBudgetOptions {
@@ -133,6 +163,13 @@ export function writeContextBudgetReport(report: ContextBudgetReport): string {
 
 export function doctorContextBudget(options: ContextBudgetOptions = {}): ContextBudgetDoctorReport {
   const report = scanContextBudget(options)
+  const taskPack = buildContextPackFromReport(report, {
+    task: options.task ?? 'General engineering task context budget probe',
+    taskId: undefined,
+    level: options.level ?? 'M',
+    files: options.files ?? [],
+    budget: report.thresholds.maxTaskTokens,
+  })
   const checks: ContextBudgetDoctorReport['checks'] = []
   checks.push({
     name: 'Always-loaded context',
@@ -141,8 +178,13 @@ export function doctorContextBudget(options: ContextBudgetOptions = {}): Context
   })
   checks.push({
     name: 'Task context budget',
+    status: taskPack.totalEstimatedTokens <= report.thresholds.maxTaskTokens ? 'pass' : 'fail',
+    message: `Task pack is ${taskPack.totalEstimatedTokens} tokens; limit is ${report.thresholds.maxTaskTokens}; omitted ${taskPack.omitted.length} oversized section(s).`,
+  })
+  checks.push({
+    name: 'Context inventory',
     status: report.summary.totalTokens <= report.thresholds.maxTaskTokens ? 'pass' : 'warn',
-    message: `Scanned context is ${report.summary.totalTokens} tokens; task pack limit is ${report.thresholds.maxTaskTokens}.`,
+    message: `Inventory is ${report.summary.totalTokens} tokens across ${report.summary.totalFiles} files; lazy loading keeps task packs budgeted.`,
   })
   checks.push({
     name: 'Generated artifacts',
@@ -154,16 +196,31 @@ export function doctorContextBudget(options: ContextBudgetOptions = {}): Context
   return {
     ok: checks.every(check => check.status !== 'fail'),
     checks,
-    report,
+    report: compactContextBudgetReport(report),
+    taskPack: compactContextPack(taskPack),
   }
 }
 
 export function buildContextPack(options: ContextPackOptions): ContextPack {
   const budget = options.budget ?? DEFAULT_MAX_TASK_TOKENS
   const report = scanContextBudget({ ...options, maxTaskTokens: budget })
+  return buildContextPackFromReport(report, {
+    task: options.task,
+    taskId: options.taskId,
+    level: options.level ?? 'M',
+    files: options.files ?? [],
+    budget,
+  })
+}
+
+function buildContextPackFromReport(
+  report: ContextBudgetReport,
+  options: { task: string; taskId?: string; level: string; files: string[]; budget: number },
+): ContextPack {
   const task = options.task
-  const files = options.files ?? []
-  const activations = activationRules(task, files, options.level ?? 'M')
+  const files = options.files
+  const budget = options.budget
+  const activations = activationRules(task, files, options.level)
   const sections: ContextPackSection[] = []
 
   const alwaysEntries = report.entries.filter(entry => entry.category === 'always')
@@ -203,7 +260,7 @@ export function buildContextPack(options: ContextPackOptions): ContextPack {
     task: {
       taskId: options.taskId,
       task,
-      level: options.level ?? 'M',
+      level: options.level,
       files,
       budget,
     },
@@ -214,6 +271,36 @@ export function buildContextPack(options: ContextPackOptions): ContextPack {
       .map(item => ({ id: item.id, reason: item.reason })),
     omitted,
     sections: packed,
+  }
+}
+
+function compactContextBudgetReport(report: ContextBudgetReport): ContextBudgetDoctorInventoryReport {
+  return {
+    projectDir: report.projectDir,
+    scaleDir: report.scaleDir,
+    generatedAt: report.generatedAt,
+    thresholds: report.thresholds,
+    summary: report.summary,
+    recommendations: report.recommendations,
+    largestEntries: report.entries
+      .slice()
+      .sort((a, b) => b.estimatedTokens - a.estimatedTokens)
+      .slice(0, 8),
+  }
+}
+
+function compactContextPack(pack: ContextPack): ContextBudgetDoctorTaskPack {
+  return {
+    task: pack.task,
+    generatedAt: pack.generatedAt,
+    totalEstimatedTokens: pack.totalEstimatedTokens,
+    lazyLoaded: pack.lazyLoaded,
+    omitted: pack.omitted,
+    sections: pack.sections.map(({ paths, ...section }) => ({
+      ...section,
+      pathCount: paths.length,
+      samplePaths: paths.slice(0, 8),
+    })),
   }
 }
 
@@ -236,20 +323,27 @@ function discoverContextFiles(projectDir: string, scaleDir: string): string[] {
 function walk(dir: string, projectDir: string, files: string[]) {
   const rel = normalizePath(relative(projectDir, dir))
   const base = rel.split('/').pop() ?? ''
-  if (IGNORED_DIRS.has(base)) return
+  if (shouldIgnoreContextDirectory(rel, base)) return
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const absolute = join(dir, entry.name)
     if (entry.isDirectory()) {
-      if (!IGNORED_DIRS.has(entry.name)) walk(absolute, projectDir, files)
+      const childRel = normalizePath(relative(projectDir, absolute))
+      if (!shouldIgnoreContextDirectory(childRel, entry.name)) walk(absolute, projectDir, files)
       continue
     }
     if (!entry.isFile()) continue
+    if (IGNORED_FILES.has(entry.name)) continue
     const ext = extname(entry.name).toLowerCase()
     const relativePath = normalizePath(relative(projectDir, absolute))
     if (SCANNED_EXTENSIONS.has(ext) || ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.cursorrules'].includes(relativePath)) {
       files.push(absolute)
     }
   }
+}
+
+function shouldIgnoreContextDirectory(relativePath: string, basename: string): boolean {
+  if (IGNORED_DIRS.has(basename)) return true
+  return relativePath === '.claude/worktrees' || relativePath.startsWith('.claude/worktrees/')
 }
 
 function contextEntry(projectDir: string, scaleRoot: string, file: string): ContextBudgetEntry {

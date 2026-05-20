@@ -124,6 +124,31 @@ func Login(token string) {
     ]))
   })
 
+  it('does not flag console calls embedded in generated script strings', () => {
+    const projectDir = makeProject()
+    write(projectDir, 'src/hooks/generator.ts', `
+export function generatedHook(): string {
+  return String.raw\`
+const input = JSON.parse(process.argv[2] || "{}")
+if (!input.file_path) { console.log("[PASS]"); process.exit(0) }
+console.error("[HOOK] generated runtime message")
+\`
+}
+
+export const smoke = {
+  command: 'node -e "console.log(\\'scale-eval-ok\\')"',
+}
+
+export const detector = /\\bconsole\\.(?:log|error)\\s*\\(/
+`)
+
+    const report = scanEngineeringStandards({ projectDir })
+
+    expect(report.findings).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'src/hooks/generator.ts', ruleId: 'ad-hoc-console-log' }),
+    ]))
+  })
+
   it('blocks hardcoded secret-like assignments', () => {
     const projectDir = makeProject()
     write(projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())

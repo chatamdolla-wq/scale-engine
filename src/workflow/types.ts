@@ -22,6 +22,11 @@ export interface GateEvidence {
   stdoutTail?: string
   stderrTail?: string
   outputHash?: string
+  rawEstimatedTokens?: number
+  compressedEstimatedTokens?: number
+  savedEstimatedTokens?: number
+  compressionRatio?: number
+  commandRunEvidenceId?: string
   source?: string
 }
 

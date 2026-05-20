@@ -1,3 +1,70 @@
+## 0.23.0 - 2026-05-20
+
+### Memory and context hardening
+
+- Added `scale context anatomy` to generate `.scale/anatomy.md` from a bounded project scan.
+- Added `scale memory cerebrum` to maintain `.scale/cerebrum.md` do-not-repeat rules and preferences from the local knowledge base.
+- Added executable hook smoke coverage for anatomy lookup, cerebrum checks, bug capture, and bug recall.
+- Switched generated workflow hooks to `.cjs` so CommonJS hook templates run correctly under Node.js package `type: module`.
+- Fixed `BugPatternDetector` TypeScript inference so `npm run typecheck` passes.
+- Fixed anatomy/cerebrum markdown parsing to use ASCII separators and improved cerebrum tokenization for non-English text.
+- Excluded lockfiles and nested `.claude/worktrees` from default context budget scans to reduce prompt inventory noise.
+- Split `scale context doctor` into a real lazy task-pack budget check plus separate inventory-pressure warning, with compact task-pack JSON output.
+- Cleared current standards-doctor blocking empty-catch findings and suppressed console false positives inside generated-script strings and regex literals.
+- Replaced the remaining non-CLI `console.warn` in skill discovery with the project logger.
+
+### Auto task level detection
+
+- Added `TaskLevelDetector` that infers task level (S/M/L/CRITICAL) from git diff signals: file count, line delta, cross-module changes, and critical file hits.
+- Integrated auto-detection into `scale build` — when `--level` is omitted, the level is inferred automatically instead of defaulting to M.
+- Added keyword-based level escalation for high-risk terms (migration, auth, payment, refactor, security).
+
+### One-click end-to-end workflow
+
+- Added `scale run` command that chains define → plan → build → verify → review → ship in a single invocation.
+- Added `WorkflowOrchestrator` that manages artifact ID passing between phases, phase timing, and failure handling.
+- Supports `--skip-phases`, `--no-stop` (continue on failure), `--no-commit`, and `--json` output.
+- Ambiguity analysis runs as a warning (not a hard block) so the orchestrator can proceed with caution.
+
+### Local TF-IDF vector search
+
+- Added `TfidfIndex` — a zero-dependency local vector search engine using TF-IDF + cosine similarity.
+- Replaced placeholder `recallByVector` in `SQLiteKnowledgeBase` with real TF-IDF search.
+- Supports CJK character-level tokenization and English stop-word filtering.
+- Index updates automatically on knowledge entry insertion.
+
+### Meta-governance gates
+
+- Added 7 meta-governance gates (G9–G15): artifact completeness, evidence quality, plan coherence, FSM consistency, hook coverage, security baseline, and governance lock integrity.
+- Registered meta-gates in `GateSystem` with `executeMetaGovernance()` method.
+
+### Command output compression and run ledger
+
+- Added native command output compression for verbose test, typecheck, lint, git diff/status, and generic failure outputs.
+- Added `.scale/evidence/command-runs/<taskId>/` records with raw output hashes, bounded raw tails, compressed summaries, and estimated token savings.
+- Wired command compression into `runShellCommand` while preserving full stdout/stderr for existing coverage and smoke-report parsers.
+- Recorded command-run evidence from build, lint, test, coverage, and product-smoke gates when runtime evidence is configured.
+
+### Doctor health checks and dashboard write APIs
+
+- Extended `scale doctor` with governance lock, FSM state, and gate registration checks.
+- Added dashboard write API endpoints for artifact mutation from the web UI.
+- Enhanced dashboard HTML with interactive controls.
+
+### Configuration profiles
+
+- Added `src/config/` module for named configuration profiles (sandbox, standard, critical).
+
+### Documentation and CI
+
+- Added `CONTRIBUTING.md` with development setup, commit conventions, and PR guidelines.
+- Added `docs/DOCUMENT_STANDARDS.md` and `docs/start/artifact-lifecycle.md`.
+- Added `.github/` CI/CD workflow templates.
+- Added `scripts/validate-docs.sh` for documentation structure validation.
+- Stabilized full-suite `npm test -- --run` on Windows by using Vitest's fork pool with one worker.
+
+---
+
 ## 0.21.2 - 2026-05-19
 
 ### Git workflow governance

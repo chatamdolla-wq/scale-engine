@@ -60,6 +60,24 @@ const WORKFLOW_PRESETS: WorkflowHookPreset[] = [
     description: 'Document standards check (G8) — validates markdown files on write',
     templates: ['tmpl-doc-standards-check'],
     enabled: true
+  },
+  {
+    name: 'anatomy',
+    description: 'Project file map — shows file descriptions before reads, auto-updates on writes',
+    templates: ['tmpl-anatomy-pre-read', 'tmpl-anatomy-post-write', 'tmpl-anatomy-session-start'],
+    enabled: true
+  },
+  {
+    name: 'cerebrum',
+    description: 'Learning memory — Do-Not-Repeat rules checked before writes, preferences loaded at session start',
+    templates: ['tmpl-cerebrum-pre-write', 'tmpl-cerebrum-session-start'],
+    enabled: true
+  },
+  {
+    name: 'bug-capture',
+    description: 'Auto-detect bug fix patterns from edits, recall past bugs before editing same file',
+    templates: ['tmpl-bug-capture', 'tmpl-bug-recall'],
+    enabled: true
   }
 ]
 

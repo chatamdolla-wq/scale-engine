@@ -44,6 +44,26 @@ describe('runShellCommand', () => {
     expect(result.stdout).toBe(dir)
     expect(result.cwd).toBe(dir)
   })
+
+  it('compresses verbose output and records optional command-run evidence', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scale-shell-evidence-'))
+    dirs.push(dir)
+    const command = `node -e "for(let i=0;i<180;i++) console.log('noise '+i); console.log('Tests 1 passed')"`
+
+    const result = await runShellCommand(command, 10_000, dir, {
+      commandRunEvidence: {
+        projectDir: dir,
+        taskId: 'task-1',
+        gate: 'G5',
+      },
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.outputCompression?.savedEstimatedTokens).toBeGreaterThan(0)
+    expect(result.commandRunEvidenceId).toMatch(/^CMD-/)
+    const evidenceDir = join(dir, '.scale', 'evidence', 'command-runs', 'task-1')
+    expect(readdirSync(evidenceDir)).toContain(`${result.commandRunEvidenceId}.json`)
+  })
 })
 
 describe('BuildGate', () => {

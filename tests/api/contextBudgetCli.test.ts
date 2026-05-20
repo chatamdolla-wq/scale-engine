@@ -81,6 +81,28 @@ describe('context budget CLI', () => {
     ]))
   }, 120_000)
 
+  it('keeps lockfiles and nested agent worktrees out of the default context scan', async () => {
+    const scaleDir = makeDir('scale-context-cli-scale-')
+    const projectDir = makeDir('scale-context-cli-project-')
+    writeProject(projectDir)
+    mkdirSync(join(projectDir, '.claude', 'worktrees', 'agent-run'), { recursive: true })
+    mkdirSync(join(projectDir, '.claude', 'skills', 'scale-engine'), { recursive: true })
+    writeFileSync(join(projectDir, 'package-lock.json'), '{"lockfileVersion":3}', 'utf-8')
+    writeFileSync(join(projectDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n', 'utf-8')
+    writeFileSync(join(projectDir, '.claude', 'worktrees', 'agent-run', 'README.md'), '# stale copy\n', 'utf-8')
+    writeFileSync(join(projectDir, '.claude', 'skills', 'scale-engine', 'SKILL.md'), '# Active skill\n', 'utf-8')
+
+    const result = await runScale(['context', 'budget', '--json'], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{ entries: Array<{ path: string }> }>(result.stdout)
+    const paths = report.entries.map(entry => entry.path)
+    expect(paths).not.toContain('package-lock.json')
+    expect(paths).not.toContain('pnpm-lock.yaml')
+    expect(paths).not.toContain('.claude/worktrees/agent-run/README.md')
+    expect(paths).toContain('.claude/skills/scale-engine/SKILL.md')
+  }, 120_000)
+
   it('fails context doctor when always-loaded threshold is too low', async () => {
     const scaleDir = makeDir('scale-context-cli-scale-')
     const projectDir = makeDir('scale-context-cli-project-')
@@ -93,6 +115,53 @@ describe('context budget CLI', () => {
     expect(report.ok).toBe(false)
     expect(report.checks).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'Always-loaded context', status: 'fail' }),
+    ]))
+  }, 120_000)
+
+  it('separates task pack budget from large context inventory', async () => {
+    const scaleDir = makeDir('scale-context-cli-scale-')
+    const projectDir = makeDir('scale-context-cli-project-')
+    writeProject(projectDir)
+    mkdirSync(join(projectDir, '.scale', 'evidence'), { recursive: true })
+    writeFileSync(
+      join(projectDir, '.scale', 'evidence', 'huge-run.json'),
+      JSON.stringify({ detail: 'runtime evidence\n'.repeat(10_000) }),
+      'utf-8',
+    )
+
+    const result = await runScale([
+      'context',
+      'doctor',
+      '--max-task',
+      '1000',
+      '--task',
+      'Verify implementation with runtime evidence',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      ok: boolean
+      checks: Array<{ name: string; status: string; message: string }>
+      report: { entries?: unknown; largestEntries: unknown[] }
+      taskPack: {
+        totalEstimatedTokens: number
+        omitted: Array<{ id: string }>
+        sections: Array<{ id: string; pathCount: number; samplePaths: string[]; paths?: unknown }>
+      }
+    }>(result.stdout)
+    expect(report.ok).toBe(true)
+    expect(report.report).not.toHaveProperty('entries')
+    expect(report.report.largestEntries.length).toBeLessThanOrEqual(8)
+    expect(report.taskPack.totalEstimatedTokens).toBeLessThanOrEqual(1000)
+    expect(report.taskPack.omitted.map(item => item.id)).toContain('runtime-evidence')
+    const evidenceSection = report.taskPack.sections.find(section => section.id === 'runtime-evidence')
+    expect(evidenceSection?.pathCount).toBeGreaterThan(0)
+    expect(evidenceSection?.samplePaths.length).toBeLessThanOrEqual(8)
+    expect(evidenceSection).not.toHaveProperty('paths')
+    expect(report.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Task context budget', status: 'pass' }),
+      expect.objectContaining({ name: 'Context inventory', status: 'warn' }),
     ]))
   }, 120_000)
 

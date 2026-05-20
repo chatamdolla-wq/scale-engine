@@ -13,6 +13,7 @@ import { WorkflowEngine } from './WorkflowEngine.js'
 import { TaskLevelDetector, type TaskLevel } from './TaskLevelDetector.js'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { estimateTokens } from '../context/ContextBudget.js'
 import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
 
 export type PhaseName = 'define' | 'plan' | 'build' | 'verify' | 'review' | 'ship'
@@ -38,6 +39,11 @@ export interface PhaseResult {
   details?: Record<string, unknown>
 }
 
+export interface TokenUsage {
+  totalEstimated: number
+  byPhase: Record<string, number>
+}
+
 export interface RunResult {
   success: boolean
   phases: PhaseResult[]
@@ -47,6 +53,7 @@ export interface RunResult {
     planId?: string
     taskId?: string
   }
+  tokenUsage: TokenUsage
   duration: number
 }
 
@@ -89,6 +96,7 @@ export class WorkflowOrchestrator {
     const startTime = Date.now()
     const phases: PhaseResult[] = []
     const artifacts: RunResult['artifacts'] = {}
+    const tokenByPhase: Record<string, number> = {}
     const skipSet = new Set(options.skipPhases ?? [])
     const stopOnFailure = options.stopOnFailure !== false
 
@@ -101,6 +109,8 @@ export class WorkflowOrchestrator {
       const phaseStart = Date.now()
       try {
         const result = await fn()
+        const detailStr = JSON.stringify(result.details ?? {})
+        tokenByPhase[name] = (tokenByPhase[name] ?? 0) + estimateTokens(detailStr)
         phases.push({ phase: name, success: true, duration: Date.now() - phaseStart, ...result })
         return true
       } catch (error) {
@@ -118,7 +128,7 @@ export class WorkflowOrchestrator {
       artifacts.specId = result.specId
       return { artifactId: result.specId, details: result }
     })
-    if (!defineOk) return this.buildResult(false, phases, artifacts, startTime)
+    if (!defineOk) return this.buildResult(false, phases, artifacts, tokenByPhase, startTime)
 
     // Phase 2: PLAN
     const planOk = await execute('plan', async () => {
@@ -126,7 +136,7 @@ export class WorkflowOrchestrator {
       artifacts.planId = result.planId
       return { artifactId: result.planId, details: result }
     })
-    if (!planOk) return this.buildResult(false, phases, artifacts, startTime)
+    if (!planOk) return this.buildResult(false, phases, artifacts, tokenByPhase, startTime)
 
     // Phase 3: BUILD
     const buildOk = await execute('build', async () => {
@@ -134,21 +144,21 @@ export class WorkflowOrchestrator {
       artifacts.taskId = result.taskId
       return { artifactId: result.taskId, details: result }
     })
-    if (!buildOk) return this.buildResult(false, phases, artifacts, startTime)
+    if (!buildOk) return this.buildResult(false, phases, artifacts, tokenByPhase, startTime)
 
     // Phase 4: VERIFY
     const verifyOk = await execute('verify', async () => {
       const result = await this.executeVerify(artifacts.taskId!)
       return { details: result }
     })
-    if (!verifyOk) return this.buildResult(false, phases, artifacts, startTime)
+    if (!verifyOk) return this.buildResult(false, phases, artifacts, tokenByPhase, startTime)
 
     // Phase 5: REVIEW
     const reviewOk = await execute('review', async () => {
       const result = await this.executeReview(artifacts.taskId!)
       return { details: result }
     })
-    if (!reviewOk) return this.buildResult(false, phases, artifacts, startTime)
+    if (!reviewOk) return this.buildResult(false, phases, artifacts, tokenByPhase, startTime)
 
     // Phase 6: SHIP
     await execute('ship', async () => {
@@ -160,6 +170,7 @@ export class WorkflowOrchestrator {
       phases.every(p => p.success),
       phases,
       artifacts,
+      tokenByPhase,
       startTime,
     )
   }
@@ -380,7 +391,10 @@ export class WorkflowOrchestrator {
         await this.fsm.transition(task.parents[0], 'complete', {
           actor: { kind: 'system', component: 'orchestrator' },
         })
-      } catch { /* plan may already be completed */ }
+      } catch (error) {
+        const parentPlanWarning = error instanceof Error ? error.message : String(error)
+        void parentPlanWarning
+      }
     }
 
     return { committed: options.autoCommit !== false }
@@ -390,12 +404,15 @@ export class WorkflowOrchestrator {
     success: boolean,
     phases: PhaseResult[],
     artifacts: RunResult['artifacts'],
+    tokenByPhase: Record<string, number>,
     startTime: number,
   ): RunResult {
+    const totalEstimated = Object.values(tokenByPhase).reduce((s, v) => s + v, 0)
     return {
       success,
       phases,
       artifacts,
+      tokenUsage: { totalEstimated, byPhase: { ...tokenByPhase } },
       duration: Date.now() - startTime,
     }
   }

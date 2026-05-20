@@ -27,6 +27,8 @@ export { TaskEngine } from './tasks/TaskEngine.js'
 // Knowledge Base
 export { KnowledgeBase } from './knowledge/KnowledgeBase.js'
 export { SQLiteKnowledgeBase } from './knowledge/SQLiteKnowledgeBase.js'
+export { CerebrumManager } from './knowledge/CerebrumManager.js'
+export type { CerebrumEntry, CerebrumHit } from './knowledge/CerebrumManager.js'
 export type { IKnowledgeBase } from './knowledge/KnowledgeBase.js'
 
 // Ubiquitous Language (mattpocock/skills style)
@@ -96,6 +98,8 @@ export type {
 
 // Context
 export { ContextBuilder } from './context/ContextBuilder.js'
+export { ProjectAnatomy } from './context/ProjectAnatomy.js'
+export type { AnatomyEntry } from './context/ProjectAnatomy.js'
 
 // Orchestration
 export { wireEffects } from './orchestration/EffectsWiring.js'

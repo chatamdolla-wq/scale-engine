@@ -10,6 +10,8 @@ import { registerMetaGovernanceGates } from './MetaGovernanceGates.js'
 import { execa } from 'execa'
 import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
+import { compressCommandOutput, type CommandOutputCompressionResult } from '../../tools/CommandOutputCompressor.js'
+import { CommandRunLedger, type CommandRunEvidenceOptions } from '../../tools/CommandRunLedger.js'
 
 export interface IGate {
   stage: GateStage
@@ -21,7 +23,7 @@ export interface IGate {
 
 type RequiredLevel = 'S' | 'M' | 'L' | 'ALWAYS' | 'CRITICAL'
 
-interface CommandResult {
+export interface CommandResult {
   code: number
   stdout: string
   stderr: string
@@ -29,6 +31,16 @@ interface CommandResult {
   startedAt: number
   endedAt: number
   cwd: string
+  outputCompression?: CommandOutputCompressionResult
+  commandRunEvidenceId?: string
+  commandRunEvidenceError?: string
+}
+
+export interface RunShellCommandOptions {
+  compressOutput?: boolean
+  compressionMaxChars?: number
+  compressionMaxLines?: number
+  commandRunEvidence?: CommandRunEvidenceOptions
 }
 
 interface ProductSmokeReport {
@@ -71,7 +83,12 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
-export async function runShellCommand(command: string, timeout: number, cwd = process.cwd()): Promise<CommandResult> {
+export async function runShellCommand(
+  command: string,
+  timeout: number,
+  cwd = process.cwd(),
+  options: RunShellCommandOptions = {},
+): Promise<CommandResult> {
   const start = Date.now()
   try {
     const result = await execa(command, {
@@ -81,26 +98,71 @@ export async function runShellCommand(command: string, timeout: number, cwd = pr
       reject: false,
       all: false,
     })
-    return {
+    const end = Date.now()
+    return finalizeCommandResult(command, {
       code: result.exitCode ?? 1,
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
-      durationMs: Date.now() - start,
+      durationMs: end - start,
       startedAt: start,
-      endedAt: Date.now(),
+      endedAt: end,
       cwd,
-    }
+    }, options)
   } catch (error) {
-    return {
+    const end = Date.now()
+    return finalizeCommandResult(command, {
       code: 1,
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
-      durationMs: Date.now() - start,
+      durationMs: end - start,
       startedAt: start,
-      endedAt: Date.now(),
+      endedAt: end,
       cwd,
+    }, options)
+  }
+}
+
+function finalizeCommandResult(
+  command: string,
+  result: CommandResult,
+  options: RunShellCommandOptions,
+): CommandResult {
+  if (options.compressOutput !== false) {
+    result.outputCompression = compressCommandOutput({
+      command,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.code,
+      maxChars: options.compressionMaxChars,
+      maxLines: options.compressionMaxLines,
+    })
+  }
+
+  if (options.commandRunEvidence) {
+    try {
+      const ledger = new CommandRunLedger({
+        projectDir: options.commandRunEvidence.projectDir ?? result.cwd,
+        scaleDir: options.commandRunEvidence.scaleDir,
+      })
+      const record = ledger.record({
+        ...options.commandRunEvidence,
+        command,
+        cwd: result.cwd,
+        exitCode: result.code,
+        durationMs: result.durationMs,
+        startedAt: result.startedAt,
+        endedAt: result.endedAt,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        compression: result.outputCompression,
+      })
+      result.commandRunEvidenceId = record.id
+    } catch (error) {
+      result.commandRunEvidenceError = error instanceof Error ? error.message : String(error)
     }
   }
+
+  return result
 }
 
 function createEvidence(input: Omit<GateEvidence, 'id'>): GateEvidence {
@@ -246,10 +308,10 @@ export class GateSystem {
     this.registerGate(new ExplorationGate(this.artifactWriter))
     this.registerGate(new PlanningGate(this.artifactWriter))
     this.registerGate(new TDDGate(this.commands.tddEvidence, this.commands.tddStrict, this.artifactWriter))
-    this.registerGate(new BuildGate(this.commands.build))
-    this.registerGate(new LintGate(this.commands.lint))
-    this.registerGate(new TestGate(this.commands.test))
-    this.registerGate(new CoverageGate(this.commands.coverage))
+    this.registerGate(new BuildGate(this.commands.build, this.commands.runtimeEvidence))
+    this.registerGate(new LintGate(this.commands.lint, this.commands.runtimeEvidence))
+    this.registerGate(new TestGate(this.commands.test, this.commands.runtimeEvidence))
+    this.registerGate(new CoverageGate(this.commands.coverage, this.commands.runtimeEvidence))
     this.registerGate(new SecurityGate())
     this.registerGate(new ProductSmokeGate(this.commands.smoke, this.commands.runtimeEvidence))
   }
@@ -283,6 +345,16 @@ function commandEvidence(
   fallbackDetail = 'command did not complete',
 ): GateEvidence {
   const output = commandResult ? `${commandResult.stdout}\n${commandResult.stderr}` : ''
+  const compression = commandResult?.outputCompression
+  const outputDetail = compression
+    ? `${compression.summary}\n${tail(compression.compressedOutput, 1500)}`
+    : tail(commandResult?.stdout || commandResult?.stderr || `exit code ${commandResult?.code}`, 500)
+  const compressionSuffix = compression
+    ? `\nEstimated tokens: ${compression.rawEstimatedTokens} -> ${compression.compressedEstimatedTokens} (saved ${compression.savedEstimatedTokens})`
+    : ''
+  const ledgerSuffix = commandResult?.commandRunEvidenceId
+    ? `\nCommand run evidence: ${commandResult.commandRunEvidenceId}`
+    : ''
   return createEvidence({
     kind: 'command',
     label,
@@ -293,14 +365,38 @@ function commandEvidence(
     cwd: commandResult?.cwd,
     startedAt: commandResult?.startedAt,
     endedAt: commandResult?.endedAt,
-    stdoutTail: commandResult ? tail(commandResult.stdout) : undefined,
-    stderrTail: commandResult ? tail(commandResult.stderr) : undefined,
+    stdoutTail: commandResult ? tail(commandResult.stdout, compression ? 500 : 1000) : undefined,
+    stderrTail: commandResult ? tail(commandResult.stderr, compression ? 500 : 1000) : undefined,
     outputHash: output ? sha256(output) : undefined,
+    rawEstimatedTokens: compression?.rawEstimatedTokens,
+    compressedEstimatedTokens: compression?.compressedEstimatedTokens,
+    savedEstimatedTokens: compression?.savedEstimatedTokens,
+    compressionRatio: compression?.compressionRatio,
+    commandRunEvidenceId: commandResult?.commandRunEvidenceId,
     source: command.source,
     detail: commandResult
-      ? `${command.reason}\n${tail(commandResult.stdout || commandResult.stderr || `exit code ${commandResult.code}`, 500)}`
+      ? `${command.reason}\n${outputDetail}${compressionSuffix}${ledgerSuffix}`
       : fallbackDetail,
   })
+}
+
+function gateCommandOptions(
+  stage: GateStage,
+  command: ResolvedVerificationCommand,
+  runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+): RunShellCommandOptions {
+  if (!runtimeEvidence) return {}
+  return {
+    commandRunEvidence: {
+      projectDir: runtimeEvidence.projectDir ?? command.cwd ?? process.cwd(),
+      scaleDir: runtimeEvidence.scaleDir,
+      taskId: runtimeEvidence.taskId,
+      sessionId: runtimeEvidence.sessionId,
+      profile: runtimeEvidence.profile,
+      gate: stage,
+      source: command.source,
+    },
+  }
 }
 
 export class ExplorationGate implements IGate {
@@ -674,7 +770,10 @@ export class BuildGate implements IGate {
   description = 'Run configured build or typecheck command'
   requiredLevel: RequiredLevel = 'ALWAYS'
 
-  constructor(private command: ResolvedVerificationCommand) {}
+  constructor(
+    private command: ResolvedVerificationCommand,
+    private runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+  ) {}
 
   async execute(): Promise<GateResult> {
     if (!this.command.command) {
@@ -684,7 +783,7 @@ export class BuildGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd, gateCommandOptions(this.stage, this.command, this.runtimeEvidence))
       if (commandResult.code !== 0) {
         blockers.push(`Build failed: ${commandResult.stderr}`)
       }
@@ -713,7 +812,10 @@ export class LintGate implements IGate {
   description = 'Run configured lint command'
   requiredLevel: RequiredLevel = 'ALWAYS'
 
-  constructor(private command: ResolvedVerificationCommand) {}
+  constructor(
+    private command: ResolvedVerificationCommand,
+    private runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+  ) {}
 
   async execute(): Promise<GateResult> {
     if (!this.command.command) {
@@ -723,7 +825,7 @@ export class LintGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 60000, this.command.cwd)
+      commandResult = await runShellCommand(this.command.command, 60000, this.command.cwd, gateCommandOptions(this.stage, this.command, this.runtimeEvidence))
       if (commandResult.code !== 0) {
         blockers.push(`Lint failed: ${commandResult.stderr}`)
       }
@@ -752,7 +854,10 @@ export class TestGate implements IGate {
   description = 'Run configured test command'
   requiredLevel: RequiredLevel = 'ALWAYS'
 
-  constructor(private command: ResolvedVerificationCommand) {}
+  constructor(
+    private command: ResolvedVerificationCommand,
+    private runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+  ) {}
 
   async execute(): Promise<GateResult> {
     if (!this.command.command) {
@@ -762,7 +867,7 @@ export class TestGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd, gateCommandOptions(this.stage, this.command, this.runtimeEvidence))
       if (commandResult.code !== 0) {
         blockers.push(`Tests failed: ${commandResult.stderr}`)
       }
@@ -791,7 +896,10 @@ export class CoverageGate implements IGate {
   description = 'Run configured coverage command'
   requiredLevel: RequiredLevel = 'ALWAYS'
 
-  constructor(private command: ResolvedVerificationCommand) {}
+  constructor(
+    private command: ResolvedVerificationCommand,
+    private runtimeEvidence?: VerificationRuntimeEvidenceConfig,
+  ) {}
 
   async execute(): Promise<GateResult> {
     if (!this.command.command) {
@@ -802,7 +910,7 @@ export class CoverageGate implements IGate {
     let detail = ''
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd)
+      commandResult = await runShellCommand(this.command.command, 120000, this.command.cwd, gateCommandOptions(this.stage, this.command, this.runtimeEvidence))
       if (commandResult.code !== 0) {
         blockers.push(`Coverage command failed: ${commandResult.stderr}`)
       }
@@ -1127,7 +1235,7 @@ export class ProductSmokeGate implements IGate {
     const blockers: string[] = []
     let commandResult: CommandResult | null = null
     try {
-      commandResult = await runShellCommand(this.command.command, 180000, this.command.cwd)
+      commandResult = await runShellCommand(this.command.command, 180000, this.command.cwd, gateCommandOptions(this.stage, this.command, this.runtimeEvidence))
       if (commandResult.code !== 0) {
         blockers.push(`Product smoke failed: ${commandResult.stderr || commandResult.stdout || `exit code ${commandResult.code}`}`)
       }

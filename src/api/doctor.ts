@@ -701,7 +701,10 @@ export class Doctor {
           if (profileId !== expectedProfile) {
             recommendations.push(`Profile "${profileId}" may not match scenario "${scenario}" (suggest: ${expectedProfile})`)
           }
-        } catch { /* ignore parse errors */ }
+        } catch (error) {
+          recommendations.push(`Could not parse ${thresholdsPath}; run: scale config doctor`)
+          void error
+        }
       }
 
       if (issues.length > 0) {

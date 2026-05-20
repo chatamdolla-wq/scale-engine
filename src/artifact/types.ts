@@ -300,6 +300,8 @@ export interface LessonPayload {
     | 'troubleshooting'
     | 'workflow'
     | 'reference'
+    | 'preference'
+    | 'do_not_repeat'
   problem: string
   solution: string
   prevention: string

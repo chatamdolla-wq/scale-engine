@@ -642,9 +642,12 @@ function scanFile(
     })
   }
 
+  let insideTemplateLiteral = false
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
-    if (isNonExecutablePatternLine(line)) continue
+    const startedInsideTemplateLiteral = insideTemplateLiteral
+    insideTemplateLiteral = updateTemplateLiteralState(line, insideTemplateLiteral)
+    if (startedInsideTemplateLiteral || isNonExecutablePatternLine(line)) continue
     const lineNumber = index + 1
     findings.push(...scanLine(path, line, lineNumber, policy, frameworks))
   }
@@ -1262,7 +1265,16 @@ function isLogCall(line: string): boolean {
 }
 
 function isAdHocOutputCall(line: string): boolean {
-  return /\bconsole\.(?:log|debug|info|warn|error)\s*\(|\bfmt\.Print(?:f|ln)?\s*\(|\bprint(?:ln)?\s*\(|\bSystem\.out\.print(?:ln)?\s*\(|\bConsole\.Write(?:Line)?\s*\(|\bprintln!\s*\(/.test(line)
+  for (const match of line.matchAll(/\bconsole\.(?:log|debug|info|warn|error)\s*\(|\bfmt\.Print(?:f|ln)?\s*\(|\bprint(?:ln)?\s*\(|\bSystem\.out\.print(?:ln)?\s*\(|\bConsole\.Write(?:Line)?\s*\(|\bprintln!\s*\(/g)) {
+    if (
+      match.index !== undefined &&
+      !isInsideQuotedString(line, match.index) &&
+      !isInsideRegexLiteral(line, match.index)
+    ) {
+      return true
+    }
+  }
+  return false
 }
 
 function isHardcodedSecret(line: string, policy: ResolvedEngineeringStandardsPolicy): boolean {
@@ -1304,6 +1316,81 @@ function isNonExecutablePatternLine(line: string): boolean {
     /=\s*\/.*\/[dgimsuy]*\s*(?:[),;]|$)/.test(trimmed) ||
     /^pattern:\s*\/.*\/[dgimsuy]*,?$/.test(trimmed) ||
     /\(\s*\/.*\/[dgimsuy]*\.(?:test|exec)\(/.test(trimmed)
+}
+
+function updateTemplateLiteralState(line: string, currentlyInside: boolean): boolean {
+  let inside = currentlyInside
+  let escaped = false
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index]
+    const next = line[index + 1]
+    if (!inside && char === '/' && next === '/') break
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (char === '`') inside = !inside
+  }
+  return inside
+}
+
+function isInsideQuotedString(line: string, targetIndex: number): boolean {
+  let quote: '"' | "'" | '`' | null = null
+  let escaped = false
+  for (let index = 0; index < targetIndex; index += 1) {
+    const char = line[index]
+    const next = line[index + 1]
+    if (!quote && char === '/' && next === '/') break
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (quote) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') quote = char
+  }
+  return quote !== null
+}
+
+function isInsideRegexLiteral(line: string, targetIndex: number): boolean {
+  let quote: '"' | "'" | '`' | null = null
+  let escaped = false
+  let regexOpen = false
+  for (let index = 0; index < targetIndex; index += 1) {
+    const char = line[index]
+    const next = line[index + 1]
+    if (!quote && !regexOpen && char === '/' && next === '/') break
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (quote) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (!regexOpen && (char === '"' || char === "'" || char === '`')) {
+      quote = char
+      continue
+    }
+    if (char === '/') {
+      regexOpen = !regexOpen
+    }
+  }
+  return regexOpen
 }
 
 function isAllowedFindingPattern(

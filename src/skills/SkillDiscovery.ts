@@ -156,7 +156,7 @@ export class SkillDiscovery implements ISkillDiscovery {
   async discover(context: DiscoveryContext): Promise<DiscoveryResult[]> {
     // 独立模式下无法执行发现功能
     if (!this.registry) {
-      console.warn('SkillDiscovery: registry not initialized, discover disabled')
+      logger.warn('SkillDiscovery: registry not initialized, discover disabled')
       return []
     }
 

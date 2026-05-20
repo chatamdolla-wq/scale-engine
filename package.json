@@ -1,6 +1,6 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Executable AI agent governance with workflow gates, evidence, skill/tool orchestration, and traceable HTML artifacts",
   "type": "module",
   "bin": {
@@ -36,7 +36,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "bun --watch src/api/cli.ts",
-    "test": "vitest",
+    "test": "vitest run --reporter dot --pool=forks --poolOptions.forks.maxForks=1 --poolOptions.forks.minForks=1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
     "mcp": "node dist/api/mcp.js",

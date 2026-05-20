@@ -1,9 +1,9 @@
-// SCALE Engine - Hook Generator Enhanced (v0.10.0)
+﻿// SCALE Engine - Hook Generator Enhanced (v0.10.0)
 // Generates JavaScript hooks from rules, templates, and detectors.
 
 import type { IEventBus } from '../core/eventBus.js'
 import type { ProposedRule } from '../evolution/EvolutionEngine.js'
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '../core/logger.js'
 
@@ -183,6 +183,274 @@ const BUILTIN_TEMPLATES: HookTemplate[] = [
     templateBody: String.raw`const fs = require("fs"); const path = require("path"); const scaleDir = process.env.SCALE_DIR || ".scale"; const phases = ["DEFINE", "PLAN", "EXECUTE", "VERIFY", "REVIEW", "SHIP"]; const phaseMap = {DEFINE:"define",PLAN:"plan",EXECUTE:"build",VERIFY:"verify",REVIEW:"review",SHIP:"ship"}; const missing = []; for (const phase of phases) { const marker = path.join(scaleDir, "phases", ".phase-" + phase.toLowerCase()); if (!fs.existsSync(marker)) { missing.push(phase); } } const stateFile = path.join(scaleDir, "state", "explore.json"); const hasExplore = fs.existsSync(stateFile); if (missing.length > 0) { const next = missing[0]; const cmd = phaseMap[next] || next.toLowerCase(); console.log("[NEXT] Remaining: " + missing.join(" -> ")); console.log("[NEXT] Next step: scale " + cmd); } else { console.log("[DONE] All phases complete"); } process.exit(0);`,
     variables: []
   },
+  // ========== Anatomy Hooks (OpenWolf-inspired) ==========
+  {
+    id: 'tmpl-anatomy-pre-read',
+    name: 'Anatomy Pre-Read',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Read',
+    description: 'Look up file description from anatomy.md before Claude reads it',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const input = JSON.parse(process.argv[2] || "{}");
+const filePath = input.tool_input?.file_path || input.tool_input?.path || "";
+if (!filePath) { console.log("[PASS]"); process.exit(0); }
+const anatomyPath = path.join(scaleDir, "anatomy.md");
+if (!fs.existsSync(anatomyPath)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const content = fs.readFileSync(anatomyPath, "utf-8");
+  const basename = path.basename(filePath);
+  const lines = content.split("\n");
+  for (const line of lines) {
+    if (!line.startsWith("- ")) continue;
+    if (line.indexOf(basename) === -1) continue;
+    var tokMatch = line.match(/\(~(\d+)\s+tok\)/);
+    var tokens = tokMatch ? tokMatch[1] : "?";
+    var descPart = line.split(" - ")[1];
+    var desc = descPart ? descPart.split("(")[0].trim() : "no description";
+    console.error("[ANATOMY] " + basename + " - " + desc + " (~" + tokens + " tok)");
+    break;
+  }
+} catch (error) {
+  console.error("[ANATOMY] Lookup skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-anatomy-post-write',
+    name: 'Anatomy Post-Write',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Update anatomy.md after file write/edit',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const projectDir = process.env.SCALE_PROJECT_DIR || process.cwd();
+const input = JSON.parse(process.argv[2] || "{}");
+const filePath = input.tool_input?.file_path || input.tool_input?.path || "";
+if (!filePath) { console.log("[PASS]"); process.exit(0); }
+const baseName = path.basename(filePath);
+if (baseName === ".env" || baseName.startsWith(".env.")) { console.log("[PASS]"); process.exit(0); }
+if (filePath.includes(scaleDir)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const content = input.tool_input?.content || input.tool_input?.new_string || "";
+  if (!content) { console.log("[PASS]"); process.exit(0); }
+  const tokens = Math.ceil(content.length / 4);
+  const relPath = path.relative(projectDir, filePath).replace(/\\\\/g, "/");
+  const dir = path.dirname(relPath);
+  const sectionKey = dir === "." ? "./" : dir + "/";
+  console.log("[ANATOMY-UPDATE] " + relPath + " (~" + tokens + " tok)");
+} catch (error) {
+  console.error("[ANATOMY-UPDATE] Skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  {
+    id: 'tmpl-anatomy-session-start',
+    name: 'Anatomy Session Start',
+    hookType: 'SessionStart',
+    matcherPattern: '',
+    description: 'Show project overview from anatomy.md at session start',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const anatomyPath = path.join(scaleDir, "anatomy.md");
+if (!fs.existsSync(anatomyPath)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const content = fs.readFileSync(anatomyPath, "utf-8");
+  const header = content.match(/> Files: (\d+) \| Total: ~([\d,]+) tokens/);
+  if (header) {
+    console.error("[ANATOMY] Project map: " + header[1] + " files, ~" + header[2] + " tokens");
+  }
+  const age = (Date.now() - fs.statSync(anatomyPath).mtimeMs) / (1000 * 60 * 60 * 24);
+  if (age > 7) {
+    console.error("[ANATOMY] anatomy.md is " + Math.floor(age) + " days old. Consider: scale scan");
+  }
+} catch (error) {
+  console.error("[ANATOMY] Session summary skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  // ========== Cerebrum Pre-Write Check ==========
+  {
+    id: 'tmpl-cerebrum-pre-write',
+    name: 'Cerebrum Pre-Write Check',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Write|Edit',
+    description: 'Check Do-Not-Repeat rules before writing code',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const input = JSON.parse(process.argv[2] || "{}");
+const content = input.tool_input?.content || input.tool_input?.new_string || "";
+if (!content) { console.log("[PASS]"); process.exit(0); }
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const cerebrumPath = path.join(scaleDir, "cerebrum.md");
+if (!fs.existsSync(cerebrumPath)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const cerebrum = fs.readFileSync(cerebrumPath, "utf-8");
+  const dnrSection = cerebrum.split("## Do Not Repeat")[1]?.split("## ")[0] || "";
+  const rules = dnrSection.match(/- \*\*(.+?)\*\*\s+-\s+(.+)/g) || [];
+  const contentLower = content.toLowerCase();
+  for (const rule of rules) {
+    const m = rule.match(/- \*\*(.+?)\*\*\s+-\s+(.+)/);
+    if (!m) continue;
+    const pattern = m[1].toLowerCase();
+    const desc = m[2];
+    const words = pattern.split(/\s+/).filter(w => w.length > 2);
+    const hits = words.filter(w => contentLower.includes(w));
+    if (hits.length > 0 && hits.length >= Math.ceil(words.length * 0.4)) {
+      console.error("[CEREBRUM] Do-Not-Repeat: \"" + m[1] + "\" - " + desc);
+    }
+  }
+} catch (error) {
+  console.error("[CEREBRUM] Check skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  // ========== Cerebrum Session Start ==========
+  {
+    id: 'tmpl-cerebrum-session-start',
+    name: 'Cerebrum Session Start',
+    hookType: 'SessionStart',
+    matcherPattern: '',
+    description: 'Show cerebrum status at session start',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const cerebrumPath = path.join(scaleDir, "cerebrum.md");
+if (!fs.existsSync(cerebrumPath)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const content = fs.readFileSync(cerebrumPath, "utf-8");
+  const dnrCount = (content.match(/- \*\*.+?\*\*/g) || []).length;
+  const prefCount = (content.match(/^- [^-]/gm) || []).length - dnrCount;
+  console.error("[CEREBRUM] " + dnrCount + " do-not-repeat rules, preferences loaded");
+  const age = (Date.now() - fs.statSync(cerebrumPath).mtimeMs) / (1000 * 60 * 60 * 24);
+  if (age > 14) {
+    console.error("[CEREBRUM] cerebrum.md is " + Math.floor(age) + " days old. Learning may be stale.");
+  }
+} catch (error) {
+  console.error("[CEREBRUM] Session summary skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  // ========== Bug Capture (PostToolUse Edit) ==========
+  {
+    id: 'tmpl-bug-capture',
+    name: 'Bug Pattern Capture',
+    hookType: 'PostToolUse',
+    matcherPattern: 'Edit',
+    description: 'Auto-detect bug fix patterns from Edit operations and log to buglog.json',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const input = JSON.parse(process.argv[2] || "{}");
+const oldStr = input.tool_input?.old_string || "";
+const newStr = input.tool_input?.new_string || "";
+const filePath = input.tool_input?.file_path || "";
+if (!oldStr || !newStr || oldStr === newStr) { console.log("[PASS]"); process.exit(0); }
+
+function detectPattern(old, nw) {
+  if (/catch\s*\(/.test(nw) && !/catch\s*\(/.test(old)) return "error-handling";
+  if (/\?\./.test(nw) && !/\?\./.test(old)) return "null-safety";
+  if (/\?\?/.test(nw) && !/\?\?/.test(old)) return "null-safety";
+  if (/if\s*\([^)]+\)\s*(return|throw)/.test(nw) && !/if\s*\([^)]+\)\s*(return|throw)/.test(old)) return "guard-clause";
+  if (/^import\s+/m.test(nw) && !/^import\s+/m.test(old)) return "missing-import";
+  if (/\bawait\b/.test(nw) && !/\bawait\b/.test(old)) return "async-fix";
+  if (/===/.test(nw) && /==[^=]/.test(old) && !/===/.test(old)) return "operator-fix";
+  if (/!==/.test(nw) && /!=[^=]/.test(old) && !/!==/.test(old)) return "operator-fix";
+  if (/:\s*(string|number|boolean|any)\b/.test(nw) && !/:\s*(string|number|boolean|any)\b/.test(old) && /\.(ts|tsx)$/.test(filePath)) return "type-fix";
+  if (old.split("\n").length === 1 && nw.split("\n").length === 1) {
+    var oldIds = (old.match(/\b[a-zA-Z_]\w*\b/g) || []);
+    var newIds = (nw.match(/\b[a-zA-Z_]\w*\b/g) || []);
+    var diff = oldIds.filter(function(i) { return newIds.indexOf(i) < 0; });
+    var added = newIds.filter(function(i) { return oldIds.indexOf(i) < 0; });
+    if (diff.length === 1 && added.length === 1) return "wrong-reference";
+  }
+  return null;
+}
+
+var pattern = detectPattern(oldStr, newStr);
+if (!pattern) { console.log("[PASS]"); process.exit(0); }
+
+var scaleDir = process.env.SCALE_DIR || ".scale";
+var buglogPath = path.join(scaleDir, "buglog.json");
+try {
+  var buglog = { version: 1, bugs: [] };
+  if (fs.existsSync(buglogPath)) {
+    buglog = JSON.parse(fs.readFileSync(buglogPath, "utf-8"));
+  }
+  var existing = buglog.bugs.find(function(b) { return b.file === filePath && b.pattern === pattern; });
+  if (existing) {
+    existing.occurrences = (existing.occurrences || 1) + 1;
+    existing.timestamp = new Date().toISOString();
+  } else {
+    buglog.bugs.push({
+      id: "bug-" + String(buglog.bugs.length + 1).padStart(3, "0"),
+      timestamp: new Date().toISOString(),
+      file: filePath,
+      pattern: pattern,
+      oldSnippet: oldStr.slice(0, 200),
+      newSnippet: newStr.slice(0, 200),
+      tags: ["auto-detected", pattern],
+      occurrences: 1
+    });
+  }
+  fs.mkdirSync(scaleDir, { recursive: true });
+  fs.writeFileSync(buglogPath, JSON.stringify(buglog, null, 2));
+  console.error("[BUG-CAPTURE] Detected " + pattern + " fix in " + path.basename(filePath));
+} catch (e) {
+  console.error("[BUG-CAPTURE] Failed to log: " + e.message);
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
+  // ========== Bug Recall (PreToolUse Edit) ==========
+  {
+    id: 'tmpl-bug-recall',
+    name: 'Bug Recall Before Edit',
+    hookType: 'PreToolUse',
+    matcherPattern: 'Edit',
+    description: 'Check buglog.json for past bugs in the same file before editing',
+    templateBody: String.raw`
+const fs = require("fs");
+const path = require("path");
+const input = JSON.parse(process.argv[2] || "{}");
+const filePath = input.tool_input?.file_path || "";
+if (!filePath) { console.log("[PASS]"); process.exit(0); }
+const scaleDir = process.env.SCALE_DIR || ".scale";
+const buglogPath = path.join(scaleDir, "buglog.json");
+if (!fs.existsSync(buglogPath)) { console.log("[PASS]"); process.exit(0); }
+try {
+  const buglog = JSON.parse(fs.readFileSync(buglogPath, "utf-8"));
+  const fileBugs = buglog.bugs.filter(b => b.file === filePath || b.file.endsWith(path.basename(filePath)));
+  if (fileBugs.length > 0) {
+    const summary = fileBugs.slice(0, 3).map(b => b.pattern + " (" + (b.timestamp || "").slice(0, 10) + ")").join(", ");
+    console.error("[BUG-RECALL] " + fileBugs.length + " past bugs in " + path.basename(filePath) + ": " + summary);
+  }
+} catch (error) {
+  console.error("[BUG-RECALL] Skipped: " + (error && error.message ? error.message : String(error)));
+}
+console.log("[PASS]");
+process.exit(0);`,
+    variables: []
+  },
   // ========== Document Standards Check (G8) ==========
   {
     id: 'tmpl-doc-standards-check',
@@ -236,7 +504,7 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
     mkdirSync(hooksDir, { recursive: true })
 
     const hookId = 'HOOK-' + Date.now() + '-' + rule.id
-    const scriptPath = join(hooksDir, hookId + '.mjs')
+    const scriptPath = join(hooksDir, hookId + '.cjs')
 
     const variables = this.extractVariablesFromRule(rule)
     const hookContent = suitableTemplate
@@ -269,7 +537,7 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
     mkdirSync(hooksDir, { recursive: true })
 
     const hookId = 'HOOK-' + Date.now() + '-' + template.id
-    const scriptPath = join(hooksDir, hookId + '.mjs')
+    const scriptPath = join(hooksDir, hookId + '.cjs')
     const hookContent = this.renderTemplate(template, variables)
 
     writeFileSync(scriptPath, hookContent, 'utf-8')
@@ -297,7 +565,7 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
     mkdirSync(hooksDir, { recursive: true })
 
     const hookId = 'HOOK-' + Date.now() + '-detector-' + detectorType
-    const scriptPath = join(hooksDir, hookId + '.mjs')
+    const scriptPath = join(hooksDir, hookId + '.cjs')
     const hookContent = this.generateDetectorHook(detectorType, pattern)
 
     writeFileSync(scriptPath, hookContent, 'utf-8')
@@ -332,7 +600,7 @@ export class HookGeneratorEnhanced implements IHookGeneratorEnhanced {
     if (!existsSync(hookPath)) return { valid: false, errors: ['Hook file does not exist'] }
     const errors: string[] = []
     try {
-      const content = require('fs').readFileSync(hookPath, 'utf-8')
+      const content = readFileSync(hookPath, 'utf-8')
       if (!content.includes('process.exit')) errors.push('Hook must call process.exit()')
       try { new Function(content) } catch (e) { errors.push('Syntax: ' + (e as Error).message) }
     } catch (e) { errors.push('Read error: ' + (e as Error).message) }

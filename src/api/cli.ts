@@ -13,12 +13,14 @@ import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '.
 import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
 import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
+import { ProjectAnatomy } from '../context/ProjectAnatomy.js'
 import {
   buildContextPack,
   doctorContextBudget,
   scanContextBudget,
   writeContextBudgetReport,
 } from '../context/ContextBudget.js'
+import { CerebrumManager } from '../knowledge/CerebrumManager.js'
 import {
   buildCodeGraphContext,
   createCodeGraphRoiReport,
@@ -1250,6 +1252,9 @@ const contextDoctor = defineCommand({
     dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
     'max-always': { type: 'string', description: 'Maximum Always-loaded estimated tokens' },
     'max-task': { type: 'string', description: 'Maximum task context estimated tokens' },
+    task: { type: 'string', description: 'Task text for a representative lazy context pack probe' },
+    level: { type: 'string', default: 'M', description: 'Task level for the context pack probe' },
+    files: { type: 'string', description: 'Comma-separated scoped files for the context pack probe' },
     json: { type: 'boolean', default: false },
   },
   run({ args }) {
@@ -1260,6 +1265,9 @@ const contextDoctor = defineCommand({
       scaleDir,
       maxAlwaysTokens: parsePositiveIntArg(args['max-always'], '--max-always'),
       maxTaskTokens: parsePositiveIntArg(args['max-task'], '--max-task'),
+      task: args.task ? String(args.task) : undefined,
+      level: String(args.level ?? 'M'),
+      files: parseCommaList(args.files),
     })
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
@@ -1274,10 +1282,59 @@ const contextDoctor = defineCommand({
   },
 })
 
+const contextAnatomy = defineCommand({
+  meta: { name: 'anatomy', description: 'Scan the project and generate .scale/anatomy.md for file-map context' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'max-files': { type: 'string', description: 'Maximum files to include; defaults to 500' },
+    exclude: { type: 'string', description: 'Comma-separated directory names to exclude' },
+    write: { type: 'boolean', default: false, description: 'Write .scale/anatomy.md' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const maxFiles = parsePositiveIntArg(args['max-files'], '--max-files')
+    const excludePatterns = parseCommaList(args.exclude)
+    const anatomy = new ProjectAnatomy()
+    const sections = anatomy.scan(projectDir, {
+      maxFiles,
+      excludePatterns: excludePatterns.length > 0 ? excludePatterns : undefined,
+    })
+    const content = anatomy.serialize(sections)
+    const summary = [...sections.values()].reduce(
+      (acc, entries) => {
+        acc.files += entries.length
+        acc.tokens += entries.reduce((sum, entry) => sum + entry.tokens, 0)
+        return acc
+      },
+      { files: 0, tokens: 0 },
+    )
+    const outputPath = join(scaleDir, 'anatomy.md')
+    if (isTruthyFlag(args.write)) {
+      ensureDir(scaleDir)
+      writeFileSync(outputPath, content, 'utf-8')
+    }
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        projectDir,
+        outputPath: isTruthyFlag(args.write) ? outputPath : undefined,
+        summary,
+      }, null, 2))
+      return
+    }
+    console.log('SCALE Project Anatomy')
+    console.log(`  Files: ${summary.files}`)
+    console.log(`  Estimated tokens: ${summary.tokens}`)
+    if (isTruthyFlag(args.write)) console.log(`  Wrote: ${outputPath}`)
+  },
+})
+
 
 const context = defineCommand({
   meta: { name: 'context', description: 'Context assembly' },
-  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary, init: contextInit, grill: contextGrill, budget: contextBudget, pack: contextPack, doctor: contextDoctor },
+  subCommands: { build: contextBuild, status: contextStatus, inject: contextInject, glossary: contextGlossary, init: contextInit, grill: contextGrill, budget: contextBudget, pack: contextPack, doctor: contextDoctor, anatomy: contextAnatomy },
 })
 
 // ============================================================================
@@ -3975,6 +4032,76 @@ const memoryDoctor = defineCommand({
   },
 })
 
+const memoryCerebrum = defineCommand({
+  meta: { name: 'cerebrum', description: 'Maintain .scale/cerebrum.md do-not-repeat rules and preferences' },
+  args: {
+    type: { type: 'string', description: 'Optional entry type: preference or do-not-repeat' },
+    pattern: { type: 'string', description: 'Pattern for do-not-repeat entries' },
+    description: { type: 'string', description: 'Entry description or preference text' },
+    tags: { type: 'string', description: 'Comma-separated tags for preferences' },
+    write: { type: 'boolean', default: false, description: 'Write .scale/cerebrum.md' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const { kb } = getEngine()
+    const manager = new CerebrumManager(kb)
+    const type = args.type ? String(args.type).toLowerCase() : ''
+    let created: unknown
+
+    if (type) {
+      if (type === 'do-not-repeat' || type === 'do_not_repeat' || type === 'dnr') {
+        const pattern = String(args.pattern ?? '').trim()
+        const description = String(args.description ?? '').trim()
+        if (!pattern || !description) {
+          console.error('memory cerebrum --type do-not-repeat requires --pattern and --description.')
+          process.exit(1)
+          return
+        }
+        created = await manager.addDoNotRepeat(pattern, description)
+      } else if (type === 'preference' || type === 'pref') {
+        const description = String(args.description ?? args.pattern ?? '').trim()
+        if (!description) {
+          console.error('memory cerebrum --type preference requires --description.')
+          process.exit(1)
+          return
+        }
+        created = await manager.addPreference(description, parseCommaList(args.tags))
+      } else {
+        console.error('memory cerebrum --type must be preference or do-not-repeat.')
+        process.exit(1)
+        return
+      }
+    }
+
+    const entries = await manager.loadAll()
+    const outputPath = join(SCALE_DIR, 'cerebrum.md')
+    const shouldWrite = isTruthyFlag(args.write) || Boolean(created)
+    if (shouldWrite) {
+      ensureDir(SCALE_DIR)
+      writeFileSync(outputPath, manager.toMarkdown(), 'utf-8')
+    }
+
+    const summary = {
+      total: entries.length,
+      doNotRepeat: entries.filter(entry => entry.type === 'do_not_repeat').length,
+      preferences: entries.filter(entry => entry.type === 'preference').length,
+    }
+    if (args.json) {
+      console.log(JSON.stringify({
+        ok: true,
+        outputPath: shouldWrite ? outputPath : undefined,
+        created,
+        summary,
+      }, null, 2))
+      return
+    }
+    console.log('SCALE Cerebrum')
+    console.log(`  Do-not-repeat: ${summary.doNotRepeat}`)
+    console.log(`  Preferences: ${summary.preferences}`)
+    if (shouldWrite) console.log(`  Wrote: ${outputPath}`)
+  },
+})
+
 const memorySettle = defineCommand({
   meta: { name: 'settle', description: 'Settle runtime evidence into a reviewable memory learning candidate' },
   args: {
@@ -4227,6 +4354,7 @@ const memory = defineCommand({
   subCommands: {
     pack: memoryPack,
     doctor: memoryDoctor,
+    cerebrum: memoryCerebrum,
     settle: memorySettle,
     ingest: memoryIngest,
     query: memoryQuery,

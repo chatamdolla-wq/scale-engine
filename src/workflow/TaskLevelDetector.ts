@@ -165,7 +165,8 @@ export class TaskLevelDetector {
           if (deleteMatch) lineDelta += parseInt(deleteMatch[1], 10)
         }
       }
-    } catch {
+    } catch (error) {
+      void error
       // git diff 失败（可能不在 git 仓库中）
     }
 
@@ -193,7 +194,8 @@ export class TaskLevelDetector {
             if (deleteMatch) lineDelta += parseInt(deleteMatch[1], 10)
           }
         }
-      } catch {
+      } catch (error) {
+        void error
         // 忽略
       }
     }

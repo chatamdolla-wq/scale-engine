@@ -115,7 +115,9 @@ export class EvolutionEffectivenessGate implements IGate {
             const cause = content.payload.rootCauseCategory
             defects[cause] = (defects[cause] || 0) + 1
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       // 检查2: 重复 Defect 是否触发了规则提议
@@ -205,7 +207,9 @@ export class GuardrailEffectivenessGate implements IGate {
               detectorTriggers++
             }
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       evidenceItems.push(createEvidence({
@@ -227,7 +231,9 @@ export class GuardrailEffectivenessGate implements IGate {
               blockedTransitions++
             }
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       if (blockedTransitions > 0) {
@@ -292,7 +298,9 @@ export class WorkflowThoroughnessGate implements IGate {
         try {
           const content = JSON.parse(readFileSync(join(artifactsDir, f), 'utf-8'))
           types.add(content.type)
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       const expectedTypes = ['Need', 'Spec', 'Plan', 'Task', 'Change', 'Evidence']
@@ -390,7 +398,9 @@ export class MultiAgentCoordinationGate implements IGate {
               agentEvents++
             }
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       evidenceItems.push(createEvidence({
@@ -417,7 +427,9 @@ export class MultiAgentCoordinationGate implements IGate {
           try {
             const content = JSON.parse(readFileSync(join(artifactsDir, f), 'utf-8'))
             if (content.payload?.assignedTo) assignedCount++
-          } catch { /* skip */ }
+          } catch {
+            continue
+          }
         }
 
         evidenceItems.push(createEvidence({
@@ -489,7 +501,9 @@ export class SkillUtilizationGate implements IGate {
               skillEvents++
             }
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       evidenceItems.push(createEvidence({
@@ -545,7 +559,9 @@ export class SelfImprovementGate implements IGate {
           if (content.type === 'Lesson') {
             lessonsByTime.push(content.createdAt || 0)
           }
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       // 检查2: Defect 是否在减少
@@ -594,7 +610,9 @@ export class SelfImprovementGate implements IGate {
         try {
           const content = JSON.parse(readFileSync(join(rulesDir, f), 'utf-8'))
           if (content.status === 'active' || content.verified) activeRules++
-        } catch { /* skip */ }
+        } catch {
+          continue
+        }
       }
 
       evidenceItems.push(createEvidence({
