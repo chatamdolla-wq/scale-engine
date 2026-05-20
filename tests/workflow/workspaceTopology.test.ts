@@ -91,4 +91,19 @@ describe('WorkspaceTopology', () => {
       hotfixPrefixes: ['hotfix/'],
     })
   })
+
+  it('generates a single-repository template without placeholder child repositories', () => {
+    const template = JSON.parse(workspaceTopologyTemplate({ topology: 'single' }))
+
+    expect(template.topology).toBe('single')
+    expect(template.repositories).toEqual([
+      expect.objectContaining({ name: 'root', path: '.', role: 'root', required: true }),
+    ])
+    expect(template.finishPolicy).toMatchObject({
+      requireCleanRepositories: true,
+      requirePushedBranches: true,
+      requireRootPointerUpdate: false,
+      requireReviewArtifacts: false,
+    })
+  })
 })

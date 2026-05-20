@@ -40,13 +40,14 @@ scale init --interactive
 ```bash
 scale init --governance-pack standard
 scale init --governance-pack project-scaffold
+scale init --governance-pack scale-engine-repo
 scale init --governance-pack moe-workspace
 scale init --governance-pack go-service-matrix
 scale init --governance-pack node-library
 scale init --governance-pack frontend-app
 ```
 
-不确定时先用 `standard`。仓库形态明确时再用更具体的 pack。
+不确定时先用 `standard`。仓库形态明确时再用更具体的 pack。`scale-engine-repo` 是 `scale-engine` 仓库自身的自托管 pack，不是普通业务仓库默认选项。
 
 ## 更新已有工作流
 

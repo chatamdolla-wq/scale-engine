@@ -67,11 +67,14 @@ export function writeGovernanceTemplates(
   const exclude = options.exclude ?? pack.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor']
   const result: GovernanceTemplateResult = { created: [], skipped: [] }
   const lockFiles = new Map<string, { path: string; owned: boolean; sha256?: string }>()
+  const packOverrides = new Set(pack.generatedFiles.map(file => file.path))
   for (const file of readGovernanceLock(projectDir)?.files ?? []) {
     lockFiles.set(file.path, file)
   }
 
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/README.md', workflowReadme(projectName, mode, pack.id))
+  if (!packOverrides.has('docs/workflow/README.md')) {
+    writeTracked(result, lockFiles, projectDir, 'docs/workflow/README.md', workflowReadme(projectName, mode, pack.id))
+  }
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/explore.md', governanceTemplateContent('explore.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'))
   writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'))

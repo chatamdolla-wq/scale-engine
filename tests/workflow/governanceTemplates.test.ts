@@ -187,6 +187,47 @@ describe('writeGovernanceTemplates', () => {
     expect(matrix.exclude).toEqual(expect.arrayContaining(['OpenList', 'gfast', 'mcp-zero']))
   })
 
+  it('generates node-library workflow entry points and single-repo topology', () => {
+    const dir = makeDir()
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: '@demo/node-workflow',
+      scripts: {
+        build: 'tsc --noEmit',
+        lint: 'eslint src/**/*.ts',
+        test: 'vitest run',
+        typecheck: 'tsc --noEmit',
+      },
+    }, null, 2), 'utf-8')
+
+    const result = writeGovernanceTemplates(dir, {
+      mode: 'standard',
+      projectName: 'Node Workflow',
+      pack: 'node-library',
+    })
+
+    expect(result.created).toEqual(expect.arrayContaining([
+      join(dir, 'scripts', 'preflight', 'all.sh'),
+      join(dir, 'scripts', 'preflight', 'all.ps1'),
+      join(dir, 'docs', 'workflow', 'node-library.md'),
+      join(dir, '.scale', 'workspace.json'),
+      join(dir, '.planning', 'tasks', '.gitkeep'),
+    ]))
+    expect(readFileSync(join(dir, 'scripts', 'preflight', 'all.sh'), 'utf-8')).toContain('[PREFLIGHT] node-library workflow')
+    expect(readFileSync(join(dir, 'scripts', 'preflight', 'all.ps1'), 'utf-8')).toContain("[PREFLIGHT] node-library workflow")
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'node-library.md'), 'utf-8')).toContain('feature/fix/docs/chore/codex -> dev -> master -> tag/publish')
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'workspace.json'), 'utf-8'))).toMatchObject({
+      topology: 'single',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+      ],
+      finishPolicy: {
+        requireCleanRepositories: true,
+        requirePushedBranches: true,
+        requireRootPointerUpdate: false,
+      },
+    })
+  })
+
   it('generates MOE workspace topology and documentation', () => {
     const dir = makeDir()
 
@@ -206,6 +247,88 @@ describe('writeGovernanceTemplates', () => {
     })
     expect(readFileSync(join(dir, 'docs', 'workflow', 'moe-workspace.md'), 'utf-8')).toContain('MOE Workspace Governance')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('Governance pack: moe-workspace')
+  })
+
+  it('generates scale-engine-repo governance assets', () => {
+    const dir = makeDir()
+
+    const result = writeGovernanceTemplates(dir, {
+      mode: 'standard',
+      projectName: 'scale-engine',
+      pack: 'scale-engine-repo',
+    })
+
+    expect(result.created).toEqual(expect.arrayContaining([
+      join(dir, '.scale', 'workspace.json'),
+      join(dir, '.agent', 'project.json'),
+      join(dir, '.claude', 'settings.json'),
+      join(dir, '.claude', 'workflow.json'),
+      join(dir, '.claude', 'hooks', 'session-start-reminder.sh'),
+      join(dir, '.claude', 'hooks', 'gate-execute-phase.sh'),
+      join(dir, '.claude', 'hooks', 'session-end-gate.sh'),
+      join(dir, 'scripts', 'hooks', 'check-dangerous-file.sh'),
+      join(dir, 'scripts', 'hooks', 'check-explore.sh'),
+      join(dir, 'scripts', 'hooks', 'check-tdd.sh'),
+      join(dir, 'scripts', 'hooks', 'check-context.sh'),
+      join(dir, 'scripts', 'workflow', 'new-task.sh'),
+      join(dir, 'scripts', 'workflow', 'explore.sh'),
+      join(dir, 'scripts', 'workflow', 'resume.sh'),
+      join(dir, 'scripts', 'workflow', 'verify.sh'),
+      join(dir, 'scripts', 'gates', 'all.sh'),
+      join(dir, 'scripts', 'workflow', 'new-task.ps1'),
+      join(dir, 'scripts', 'workflow', 'explore.ps1'),
+      join(dir, 'scripts', 'workflow', 'resume.ps1'),
+      join(dir, 'scripts', 'workflow', 'verify.ps1'),
+      join(dir, 'scripts', 'gates', 'all.ps1'),
+      join(dir, 'AGENTS.md'),
+      join(dir, 'CLAUDE.md'),
+      join(dir, 'Makefile'),
+      join(dir, 'docs', 'guides', 'GETTING_STARTED.md'),
+      join(dir, 'docs', 'guides', 'DEVELOPMENT_WORKFLOW.md'),
+      join(dir, 'docs', 'workflow', 'README.md'),
+      join(dir, '.scale', 'governance.lock.json'),
+    ]))
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'governance.lock.json'), 'utf-8'))).toMatchObject({
+      pack: 'scale-engine-repo',
+      packVersion: 1,
+    })
+    expect(JSON.parse(readFileSync(join(dir, '.scale', 'workspace.json'), 'utf-8'))).toMatchObject({
+      topology: 'single',
+      branchPolicy: {
+        integrationBranch: 'dev',
+        productionBranch: 'master',
+        requireAuthorScopeDate: true,
+      },
+      finishPolicy: {
+        requirePushedBranches: true,
+      },
+    })
+    expect(JSON.parse(readFileSync(join(dir, '.agent', 'project.json'), 'utf-8'))).toMatchObject({
+      profiles: {
+        default: {
+          checks: ['lint', 'typecheck', 'test', 'build'],
+        },
+      },
+    })
+    const claudeSettings = JSON.parse(readFileSync(join(dir, '.claude', 'settings.json'), 'utf-8'))
+    expect(claudeSettings.permissions.allow).toContain('Bash(bash scripts/hooks/*: *)')
+    expect(claudeSettings.permissions.allow).toContain('Bash(bash .claude/hooks/*: *)')
+    expect(claudeSettings.hooks.SessionStart).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'bash .claude/hooks/session-start-reminder.sh' }),
+    ]))
+    expect(claudeSettings.hooks.PreToolUse).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'bash scripts/hooks/check-dangerous-file.sh' }),
+      expect.objectContaining({ command: 'bash scripts/hooks/check-explore.sh' }),
+      expect.objectContaining({ command: 'bash scripts/hooks/check-tdd.sh' }),
+      expect.objectContaining({ command: 'bash .claude/hooks/gate-execute-phase.sh' }),
+    ]))
+    expect(claudeSettings.hooks.Stop).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'bash .claude/hooks/session-end-gate.sh' }),
+    ]))
+    expect(readFileSync(join(dir, 'docs', 'guides', 'GETTING_STARTED.md'), 'utf-8')).toContain('make preflight')
+    expect(readFileSync(join(dir, 'scripts', 'gates', 'all.sh'), 'utf-8')).toContain('preflight --service all')
+    expect(readFileSync(join(dir, 'scripts', 'workflow', 'verify.sh'), 'utf-8')).toContain('scale preflight')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('GitLab Flow')
   })
 
   it('generates resource governance pack documentation', () => {

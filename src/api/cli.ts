@@ -2745,7 +2745,7 @@ const init = defineCommand({
     'governance-pack': {
       type: 'string',
       default: 'standard',
-      description: 'Governance template pack (standard/project-scaffold/moe-workspace/resource-governance/go-service-matrix/node-library/frontend-app)',
+      description: 'Governance template pack (standard/project-scaffold/scale-engine-repo/moe-workspace/resource-governance/go-service-matrix/node-library/frontend-app)',
     },
     quick: { type: 'boolean', default: false, description: 'Quick start with auto-detection' },
     interactive: { type: 'boolean', default: false, description: 'Interactive configuration mode with prompts' },

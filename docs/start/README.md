@@ -22,6 +22,12 @@
 5. 查看 [文档地图](../README.md)
    区分哪些文档是用户指南、哪些是参考资料、哪些是历史规划和过程记录。
 
+如果你要开发的是 `scale-engine` 仓库本身，而不是把 SCALE 接入别的项目，改看：
+
+- [../guides/GETTING_STARTED.md](../guides/GETTING_STARTED.md)
+- [../guides/DEVELOPMENT_WORKFLOW.md](../guides/DEVELOPMENT_WORKFLOW.md)
+- [../workflow/README.md](../workflow/README.md)
+
 ## 15 分钟学习路径
 
 ```bash

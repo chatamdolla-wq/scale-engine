@@ -8,10 +8,27 @@
         "lint": "npm run lint",
         "test": "npx vitest run --reporter=dot --testTimeout=30000"
       },
-      "services": []
+      "services": [
+        "scale-engine"
+      ]
+    },
+    "productSmoke": {
+      "commands": {
+        "smoke": "powershell -ExecutionPolicy Bypass -File scripts/qa/product-smoke.ps1"
+      },
+      "services": [
+        "scale-engine"
+      ]
     }
   },
-  "services": [],
+  "services": [
+    {
+      "name": "scale-engine",
+      "path": ".",
+      "type": "node",
+      "required": true
+    }
+  ],
   "exclude": [
     "node_modules",
     "dist",
@@ -29,6 +46,7 @@
       "L",
       "CRITICAL"
     ],
-    "engineeringStandardsGate": "block"
+    "engineeringStandardsGate": "block",
+    "productSmokeGate": "warn"
   }
 }

@@ -28,8 +28,27 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 | 接入已有项目 | [SCALE 工作流升级指南](docs/start/workflow-upgrade.md) | `init`、`upgrade check/plan/apply`、本地 `make` 包装入口怎么用 |
 | 选择治理包 | 本文的 Governance Pack 章节 | 不同项目形态应该选哪个 pack |
 | 维护或扩展 SCALE | [docs/README.md](docs/README.md) | 文档地图、内部模块和长期维护资料 |
+| 开发本仓库 | [docs/guides/GETTING_STARTED.md](docs/guides/GETTING_STARTED.md) | `scale-engine` 仓库自己的工程化工作流、门禁和验证入口 |
 
 一句话理解：SCALE 不是让 Agent 多写文档，而是让“做了什么、验证了什么、没验证什么”可追踪。
+
+## 开发本仓库
+
+如果你要开发的是 `scale-engine` 仓库本身，而不是把 SCALE 接入别的项目，入口改为：
+
+- [docs/guides/GETTING_STARTED.md](docs/guides/GETTING_STARTED.md)：15 分钟上手本仓库 workflow。
+- [docs/guides/DEVELOPMENT_WORKFLOW.md](docs/guides/DEVELOPMENT_WORKFLOW.md)：日常开发闭环。
+- [docs/workflow/README.md](docs/workflow/README.md)：仓库门禁、分支策略和升级入口。
+
+最小命令面：
+
+```bash
+make preflight
+make new-task NAME=workflow-adaptation LEVEL=M
+make gate-workflow
+make gate-quality
+make verify PROFILE=default
+```
 
 ## 社区与推广
 
@@ -174,6 +193,7 @@ scale init --governance-pack frontend-app
 | --- | --- |
 | `standard` | 通用项目治理，包含任务 artifact、验证、指标、资源、规范和 skills policy |
 | `project-scaffold` | 可复现的工程化工作流脚手架和治理 demo 项目 |
+| `scale-engine-repo` | `scale-engine` 仓库自身的自托管 workflow pack，面向维护 CLI 本身 |
 | `moe-workspace` | 父工作区 + 独立子仓库，适合 MOE/多仓协作 |
 | `resource-governance` | 文档、报告、截图、脚本、媒体、生成产物等资源生命周期治理 |
 | `go-service-matrix` | Go 后端服务矩阵，支持按服务 build/lint/test/security 验证 |

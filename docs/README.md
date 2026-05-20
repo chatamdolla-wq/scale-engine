@@ -12,6 +12,14 @@
 | [start/artifact-lifecycle.md](start/artifact-lifecycle.md) | Artifact 生命周期完整 walkthrough |
 | [../README.md](../README.md) | 项目主页和能力总览 |
 
+## 仓库维护入口
+
+| 文档 | 说明 |
+| --- | --- |
+| [guides/GETTING_STARTED.md](guides/GETTING_STARTED.md) | `scale-engine` 仓库维护者的 15 分钟上手路径 |
+| [guides/DEVELOPMENT_WORKFLOW.md](guides/DEVELOPMENT_WORKFLOW.md) | 本仓库日常开发工作流 |
+| [workflow/README.md](workflow/README.md) | 仓库门禁、分支策略和 workflow 命令面 |
+
 ## 当前治理能力
 
 | 文档 | 说明 |
@@ -86,6 +94,7 @@
 ## 维护规则
 
 - 面向新用户的文档优先放在 `docs/start/`。
+- 面向本仓库维护者的 workflow 文档优先放在 `docs/guides/` 和 `docs/workflow/`。
 - 当前可执行能力放在根 README 和当前治理能力文档中。
 - 历史规划不要混入新手教程，避免用户把旧计划当成当前事实。
 - 如果 CLI 行为变化，必须同步更新 `README.md`、`docs/start/quickstart.md` 和相关 reference 文档。

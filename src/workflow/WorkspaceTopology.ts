@@ -107,24 +107,29 @@ export function writeWorkspaceTopologyTemplate(
 
 export function workspaceTopologyTemplate(options: WorkspaceTopologyTemplateOptions = {}): string {
   const topology = options.topology ?? 'moe'
+  const repositories: WorkspaceRepositoryConfig[] = [
+    {
+      name: 'root',
+      path: '.',
+      role: 'root',
+      required: true,
+    },
+  ]
+
+  if (topology !== 'single') {
+    repositories.push({
+      name: 'example-service',
+      path: 'services/example',
+      role: topology === 'monorepo' ? 'service' : 'nested-repo',
+      required: false,
+      services: ['example'],
+    })
+  }
+
   const config: WorkspaceTopologyConfig = {
     version: 1,
     topology,
-    repositories: [
-      {
-        name: 'root',
-        path: '.',
-        role: 'root',
-        required: true,
-      },
-      {
-        name: 'example-service',
-        path: 'services/example',
-        role: topology === 'monorepo' ? 'service' : 'nested-repo',
-        required: false,
-        services: ['example'],
-      },
-    ],
+    repositories,
     branchPolicy: defaultBranchPolicy(),
     finishPolicy: defaultFinishPolicy(topology),
   }
