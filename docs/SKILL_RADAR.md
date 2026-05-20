@@ -86,7 +86,7 @@ If evidence is missing, the final delivery should list the capability as unverif
 
 This is intentionally conservative. Third-party skills should start in review-required mode and be promoted only after inspection.
 
-External skill references and acknowledgements are tracked in [Third-Party Skills and External References](THIRD_PARTY_SKILLS.md). SCALE should not vendor community skill code unless the license text, source revision, copyright notice, and modification notes are preserved.
+External skill references and acknowledgements are tracked in [Third-Party Skills and External References](THIRD_PARTY_SKILLS.md) and the full [External Reference Inventory](EXTERNAL_REFERENCES.md). SCALE should not vendor community skill code unless the license text, source revision, copyright notice, and modification notes are preserved.
 
 ## Policy Integration
 

@@ -214,11 +214,11 @@ G7 `SecurityGate` includes a lightweight built-in scan for hardcoded secrets, pr
 
 Skill Radar recommends skills, MCP servers, browser automation, desktop automation, planning workflows, memory providers, and external CLIs by task intent. It returns confidence, safety level, evidence requirements, attribution metadata, and fallback behavior.
 
-Third-party skills stay review-required until source, scripts, license, attribution, and pinned revision are checked. Current external references include `OthmanAdi/planning-with-files` (MIT), `rohitg00/agentmemory` (Apache-2.0), and `garrytan/gbrain` (MIT). SCALE records them as governed references, optional integrations, or adapted concepts; it does not vendor upstream source code.
+Third-party skills stay review-required until source, scripts, license, attribution, and pinned revision are checked. `OthmanAdi/planning-with-files` (MIT), `rohitg00/agentmemory` (Apache-2.0), and `garrytan/gbrain` (MIT) have explicit attribution records; other external skills, MCP servers, CLIs, adapters, and discovery candidates are tracked in the [External Reference Inventory](docs/EXTERNAL_REFERENCES.md) with unknown licenses kept `review-required`. SCALE records them as governed references, optional integrations, or adapted concepts; it does not vendor upstream source code.
 
 Memory is provider-routed rather than expanded as a built-in Memory OS. Agents can use `scale memory provider status` and `scale memory provider recall` to select `agentmemory`, `gbrain`, or `scale-local` under policy; external providers are read-only by default and fall back to local evidence-backed memory.
 
-See [Skill Radar](docs/SKILL_RADAR.md) and [Third-Party Skills](docs/THIRD_PARTY_SKILLS.md).
+See [Skill Radar](docs/SKILL_RADAR.md), [Third-Party Skills](docs/THIRD_PARTY_SKILLS.md), and [External Reference Inventory](docs/EXTERNAL_REFERENCES.md).
 
 ## Supported Platforms
 
