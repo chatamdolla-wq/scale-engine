@@ -19,6 +19,11 @@ import { WindsurfAdapter } from './WindsurfAdapter.js'
 import { KimiAdapter } from './KimiAdapter.js'
 import { DoubaoAdapter } from './DoubaoAdapter.js'
 import { KiroAdapter } from './KiroAdapter.js'
+import { QoderAdapter } from './QoderAdapter.js'
+import { JCodeAdapter } from './JCodeAdapter.js'
+import { ClineAdapter } from './ClineAdapter.js'
+import { KiloCodeAdapter } from './KiloCodeAdapter.js'
+import { AntigravityAdapter } from './AntigravityAdapter.js'
 import type { AgentPlatform } from '../artifact/types.js'
 
 // Re-export all adapters and shared types
@@ -40,6 +45,11 @@ export { WindsurfAdapter } from './WindsurfAdapter.js'
 export { KimiAdapter } from './KimiAdapter.js'
 export { DoubaoAdapter } from './DoubaoAdapter.js'
 export { KiroAdapter } from './KiroAdapter.js'
+export { QoderAdapter } from './QoderAdapter.js'
+export { JCodeAdapter } from './JCodeAdapter.js'
+export { ClineAdapter } from './ClineAdapter.js'
+export { KiloCodeAdapter } from './KiloCodeAdapter.js'
+export { AntigravityAdapter } from './AntigravityAdapter.js'
 
 // ============================================================================
 // Adapter Registry
@@ -63,6 +73,11 @@ const ADAPTER_MAP: Record<AgentPlatform, new () => IAgentAdapter> = {
   'kimi': KimiAdapter,
   'doubao': DoubaoAdapter,
   'kiro': KiroAdapter,
+  'qoder': QoderAdapter,
+  'jcode': JCodeAdapter,
+  'cline': ClineAdapter,
+  'kilocode': KiloCodeAdapter,
+  'antigravity': AntigravityAdapter,
 }
 
 /** All supported agent type identifiers */

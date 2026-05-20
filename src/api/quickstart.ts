@@ -19,16 +19,22 @@ export function detectPlatform(projectDir: string = '.'): PlatformDetectionResul
     { platform: 'codex', paths: [join(projectDir, '.codex', 'config.toml')] },
     { platform: 'cursor', paths: [join(projectDir, '.cursorrules')] },
     { platform: 'gemini', paths: [join(projectDir, '.gemini', 'settings.json')] },
+    { platform: 'qoder', paths: [join(projectDir, '.qoder', 'settings.json')] },
+    { platform: 'jcode', paths: [join(projectDir, '.jcode', 'settings.json')] },
     { platform: 'aider', paths: [join(projectDir, '.aider.conf.yml')] },
     { platform: 'deepseek-tui', paths: [join(projectDir, '.deepseek', 'instructions.md')] },
     { platform: 'windsurf', paths: [join(projectDir, '.windsurf', 'settings.json'), join(projectDir, '.windsurfrc')] },
     { platform: 'kimi', paths: [join(projectDir, '.kimi', 'settings.json')] },
     { platform: 'doubao', paths: [join(projectDir, '.doubao', 'settings.json')] },
+    { platform: 'kiro', paths: [join(projectDir, '.kiro', 'settings.json')] },
+    { platform: 'cline', paths: [join(projectDir, '.cline', 'settings.json'), join(projectDir, '.clinerules')] },
+    { platform: 'kilocode', paths: [join(projectDir, '.kilocode', 'settings.json')] },
+    { platform: 'antigravity', paths: [join(projectDir, '.agents', 'hooks.json'), join(projectDir, '.agents', 'rules')] },
   ]
   for (const check of checks) {
     for (const p of check.paths) if (existsSync(p)) return { platform: check.platform, confidence: 1.0, suggestions: [] }
   }
-  return { platform: null, confidence: 0, suggestions: ['claude-code', 'cursor', 'aider', 'windsurf'] }
+  return { platform: null, confidence: 0, suggestions: ['claude-code', 'cursor', 'qoder', 'cline', 'windsurf'] }
 }
 
 export const PHYSICAL_CONSTRAINTS = [

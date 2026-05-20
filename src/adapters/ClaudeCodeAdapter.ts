@@ -6,6 +6,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { logger } from '../core/logger.js'
+import type { AgentPlatform } from '../artifact/types.js'
 
 // ============================================================================
 // Types
@@ -14,18 +15,7 @@ import { logger } from '../core/logger.js'
 export interface AdapterConfig {
   projectDir: string
   scaleDir?: string
-  agentType?:
-    | 'claude-code'
-    | 'codex'
-    | 'opencode'
-    | 'cursor'
-    | 'gemini'
-    | 'openclaw'
-    | 'hermes'
-    | 'trae'
-    | 'workbuddy'
-    | 'vsc'
-    | 'qcoder'
+  agentType?: AgentPlatform
   scenarioMode?: 'sandbox' | 'standard' | 'critical'
   thresholdsPath?: string
 }
@@ -34,6 +24,8 @@ export interface HookEntry {
   matcher: string
   command: string
   timeout?: number
+  type?: string
+  hooks?: HookEntry[]
 }
 
 export interface SettingsJson {

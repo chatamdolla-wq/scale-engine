@@ -173,14 +173,21 @@ export class Doctor {
       { agent: 'workbuddy', path: join(this.projectDir, '.workbuddy', 'settings.json') },
       { agent: 'vsc', path: join(this.projectDir, '.vscode', 'scale.json') },
       { agent: 'qcoder', path: join(this.projectDir, '.qwen', 'settings.json') },
+      { agent: 'qoder', path: join(this.projectDir, '.qoder', 'settings.json') },
+      { agent: 'jcode', path: join(this.projectDir, '.jcode', 'settings.json') },
+      { agent: 'windsurf', path: join(this.projectDir, '.windsurf', 'settings.json') },
+      { agent: 'kiro', path: join(this.projectDir, '.kiro', 'settings.json') },
+      { agent: 'cline', path: join(this.projectDir, '.cline', 'settings.json') },
+      { agent: 'kilocode', path: join(this.projectDir, '.kilocode', 'settings.json') },
+      { agent: 'antigravity', path: join(this.projectDir, '.agents', 'hooks.json') },
     ]
     const found = candidates.find((c) => existsSync(c.path))
     if (!found) {
       return {
         name: 'Agent settings',
         status: 'warn',
-        message: 'No agent settings found (.claude/.codex/.cursor/.gemini/.openclaw/.hermes/.trae/.workbuddy/.vscode/.qwen)',
-        fix: 'Run: scale init --agent <claude-code|codex|cursor|gemini|openclaw|hermes|trae|workbuddy|vsc|qcoder>',
+        message: 'No agent settings found (.claude/.codex/.cursor/.gemini/.openclaw/.hermes/.trae/.workbuddy/.vscode/.qwen/.qoder/.jcode/.windsurf/.kiro/.cline/.kilocode/.agents)',
+        fix: 'Run: scale init --agent <platform>',
       }
     }
     try {
@@ -202,7 +209,7 @@ export class Doctor {
   }
 
   private checkKnowledgeDoc(): DiagnosticResult {
-    const paths = ['CLAUDE.md', 'AGENTS.md', '.cursorrules', 'GEMINI.md', '.hermes.md', 'TRAE.md', 'WORKBUDDY.md', 'VSC.md', 'QWEN.md']
+    const paths = ['CLAUDE.md', 'AGENTS.md', '.cursorrules', 'GEMINI.md', '.hermes.md', 'TRAE.md', 'WORKBUDDY.md', 'VSC.md', 'QWEN.md', 'JCODE.md', '.qoder/rules/SCALE.md', '.kiro/rules/SCALE.md', '.windsurf/rules.md', '.clinerules/SCALE.md', '.agents/rules/SCALE.md']
     for (const name of paths) {
       const p = join(this.projectDir, name)
       if (existsSync(p)) {

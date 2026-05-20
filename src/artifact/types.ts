@@ -836,12 +836,17 @@ export type AgentPlatform =
   | 'workbuddy'
   | 'vsc'
   | 'qcoder'
+  | 'qoder'
   | 'deepseek-tui'
   | 'aider'
   | 'windsurf'
   | 'kimi'
   | 'doubao'
   | 'kiro'
+  | 'jcode'
+  | 'cline'
+  | 'kilocode'
+  | 'antigravity'
 
 /** Skill 引用 */
 export interface SkillRef {

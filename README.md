@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
-  <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
+  <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
@@ -412,7 +412,7 @@ G7 `SecurityGate` 内置轻量安全扫描，覆盖硬编码密钥、私钥、TL
 
 ## 支持的平台与角色
 
-SCALE Engine 内置 16 个平台适配器，包括 Claude Code、Codex CLI、OpenCode、Cursor、Gemini CLI、OpenClaw、Hermes、Trae、WorkBuddy、VS Code Copilot CLI、QCoder、DeepSeek-TUI、Aider、Windsurf、Kimi、Doubao。
+SCALE Engine 内置 22 个平台适配器，包括 Claude Code、Codex CLI、OpenCode、Cursor、Gemini CLI、OpenClaw、Hermes、Trae、WorkBuddy、VS Code Copilot CLI、QCoder、Qoder、JCode、DeepSeek-TUI、Aider、Windsurf、Kiro、Cline、Kilo Code、Antigravity、Kimi、Doubao。
 
 内置 12 个专业 Agent Profile：
 

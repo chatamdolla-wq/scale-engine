@@ -40,6 +40,11 @@ The inventory is intentionally conservative:
 | [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) | Video generation CLI reference | optional install reference | review-required | `ExternalSkills`, `SkillDiscovery`, `SkillInstaller` |
 | [op7418/guizang-ppt-skill](https://github.com/op7418/guizang-ppt-skill) | PPT generation skill reference | optional install reference | review-required | `ExternalSkills`, `SkillDiscovery`, `SkillInstaller` |
 | [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code) | QCoder adapter target | adapter target reference | review-required | `QCoderAdapter` |
+| [Qoder docs](https://docs.qoder.com/) | Qoder adapter target | adapter target reference | review-required | `QoderAdapter` |
+| JCode | JCode adapter target; upstream source and license still need review | provisional adapter target reference | review-required | `JCodeAdapter` |
+| [Cline docs](https://docs.cline.bot/) | Cline adapter target | adapter target reference | review-required | `ClineAdapter` |
+| [Kilo Code docs](https://docs.kilocode.ai/) | Kilo Code adapter target | adapter target reference | review-required | `KiloCodeAdapter` |
+| [Google Antigravity docs](https://antigravity.google/docs/) | Antigravity adapter target | adapter target reference | review-required | `AntigravityAdapter` |
 | [openclaw-ai/openclaw](https://github.com/openclaw-ai/openclaw) | OpenClaw adapter target | adapter target reference | review-required | `OpenClawAdapter` |
 | [hermes-ai/hermes](https://github.com/hermes-ai/hermes) | Hermes adapter target | adapter target reference | review-required | `HermesAdapter` |
 | [Hmbown/deepseek-tui](https://github.com/Hmbown/deepseek-tui) | DeepSeek TUI adapter target | adapter target reference | review-required | `DeepSeekTuiAdapter` |

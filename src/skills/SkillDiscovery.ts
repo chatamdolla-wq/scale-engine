@@ -94,7 +94,7 @@ export interface ISkillDiscovery {
 const GLOBAL_PLATFORMS: AgentPlatform[] = ['claude-code', 'codex', 'opencode', 'deepseek-tui']
 
 /** 项目级平台：skills 目录在项目目录下 */
-const PROJECT_PLATFORMS: AgentPlatform[] = ['cursor', 'gemini', 'openclaw', 'hermes', 'trae', 'workbuddy', 'vsc', 'qcoder', 'aider', 'windsurf', 'kimi', 'doubao', 'kiro']
+const PROJECT_PLATFORMS: AgentPlatform[] = ['cursor', 'gemini', 'openclaw', 'hermes', 'trae', 'workbuddy', 'vsc', 'qcoder', 'qoder', 'jcode', 'aider', 'windsurf', 'kimi', 'doubao', 'kiro', 'cline', 'kilocode', 'antigravity']
 
 const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string> = {
   // 全局级（homedir）
@@ -110,12 +110,17 @@ const PLATFORM_SKILLS_DIRS: Record<AgentPlatform, string> = {
   'workbuddy': join('.workbuddy', 'skills'),
   'vsc': join('.vscode', 'skills'),
   'qcoder': join('.qwen', 'skills'),
+  'qoder': join('.qoder', 'skills'),
+  'jcode': join('.jcode', 'skills'),
   'aider': join('.aider', 'commands'),
   'deepseek-tui': join(homedir(), '.deepseek', 'skills'),
   'windsurf': join('.windsurf', 'skills'),
   'kimi': join('.kimi', 'skills'),
   'doubao': join('.doubao', 'skills'),
   'kiro': join('.kiro', 'skills'),
+  'cline': join('.cline', 'skills'),
+  'kilocode': join('.kilocode', 'skills'),
+  'antigravity': join('.agents', 'skills'),
 }
 
 export class SkillDiscovery implements ISkillDiscovery {
@@ -236,11 +241,17 @@ export class SkillDiscovery implements ISkillDiscovery {
       { platform: 'workbuddy', paths: [join(this.projectDir, '.workbuddy', 'settings.json')] },
       { platform: 'vsc', paths: [join(this.projectDir, '.vscode', 'scale.json')] },
       { platform: 'qcoder', paths: [join(this.projectDir, '.qwen', 'settings.json')] },
+      { platform: 'qoder', paths: [join(this.projectDir, '.qoder', 'settings.json')] },
+      { platform: 'jcode', paths: [join(this.projectDir, '.jcode', 'settings.json')] },
       { platform: 'aider', paths: [join(this.projectDir, '.aider.conf.yml')] },
       { platform: 'deepseek-tui', paths: [join(this.projectDir, '.deepseek', 'instructions.md')] },
       { platform: 'windsurf', paths: [join(this.projectDir, '.windsurf', 'settings.json'), join(this.projectDir, '.windsurfrc')] },
       { platform: 'kimi', paths: [join(this.projectDir, '.kimi', 'settings.json')] },
       { platform: 'doubao', paths: [join(this.projectDir, '.doubao', 'settings.json')] },
+      { platform: 'kiro', paths: [join(this.projectDir, '.kiro', 'settings.json')] },
+      { platform: 'cline', paths: [join(this.projectDir, '.cline', 'settings.json'), join(this.projectDir, '.clinerules')] },
+      { platform: 'kilocode', paths: [join(this.projectDir, '.kilocode', 'settings.json')] },
+      { platform: 'antigravity', paths: [join(this.projectDir, '.agents', 'hooks.json'), join(this.projectDir, '.agents', 'rules')] },
     ]
     for (const check of checks) {
       if (check.paths.some(p => existsSync(p))) return check.platform

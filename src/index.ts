@@ -123,7 +123,7 @@ export { ModelRouter, DEFAULT_MODELS } from './routing/ModelRouter.js'
 export { PromptCachePolicy, resolvePromptCachePolicy, shouldCacheContextCategory } from './routing/PromptCachePolicy.js'
 export type { PromptCachePolicyInput, PromptCachePolicyOptions, PromptCachePolicyResult, PromptCacheCandidate, PromptCacheProvider } from './routing/PromptCachePolicy.js'
 
-// Adapters (all 11 platforms)
+// Adapters
 export {
   ClaudeCodeAdapter,
   CodexAdapter,
@@ -137,6 +137,16 @@ export {
   VSCAdapter,
   QCoderAdapter,
   DeepSeekTuiAdapter,
+  AiderAdapter,
+  WindsurfAdapter,
+  KimiAdapter,
+  DoubaoAdapter,
+  KiroAdapter,
+  QoderAdapter,
+  JCodeAdapter,
+  ClineAdapter,
+  KiloCodeAdapter,
+  AntigravityAdapter,
   createAdapter,
   SUPPORTED_AGENTS,
 } from './adapters/index.js'

@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
-  <img src="https://img.shields.io/badge/platforms-16-blue?style=flat-square" alt="platforms" />
+  <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
@@ -222,7 +222,7 @@ See [Skill Radar](docs/SKILL_RADAR.md), [Third-Party Skills](docs/THIRD_PARTY_SK
 
 ## Supported Platforms
 
-SCALE Engine includes adapters for 16 agent platforms, including Claude Code, Codex CLI, OpenCode, Cursor, Gemini CLI, OpenClaw, Hermes, Trae, WorkBuddy, VS Code Copilot CLI, QCoder, DeepSeek-TUI, Aider, Windsurf, Kimi, and Doubao.
+SCALE Engine includes adapters for 22 agent platforms, including Claude Code, Codex CLI, OpenCode, Cursor, Gemini CLI, OpenClaw, Hermes, Trae, WorkBuddy, VS Code Copilot CLI, QCoder, Qoder, JCode, DeepSeek-TUI, Aider, Windsurf, Kiro, Cline, Kilo Code, Antigravity, Kimi, and Doubao.
 
 It also includes 12 professional agent profiles:
 
