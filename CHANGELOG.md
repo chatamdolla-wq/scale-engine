@@ -1,3 +1,21 @@
+## 0.24.0 - 2026-05-20
+
+### SCALE Engine V2 workflow hardening
+
+- Added provider-aware prompt cache policy reporting and model-usage ledger support so static governance context can be measured and optimized instead of repeatedly paid for blindly.
+- Added governance dashboard aggregation for recent token usage, gate failures, replay hotspots, and evolution metrics.
+- Added readonly `BackgroundHunter` scanning that can surface engineering-standards findings and diagnostic inputs without mutating code automatically.
+- Added dependency audit governance for supply-chain risk, including dependency metadata, vulnerability, dangerous API, and install-script checks.
+- Added active security and visual gates for HTTP-surface red-team checks and UI screenshot/spec validation.
+- Added evolution shadow mode: gate failures can create Defects after repeated failures, lessons propose shadow rules first, and blocking hooks require maturity evidence plus approval.
+- Added V2 architecture and operational docs for context budget, hunter, dependency audit, active gates, dashboard, and evolution shadow mode.
+
+### Verification
+
+- Verified the release candidate with typecheck, lint, build, full Vitest suite, `git diff --check`, and `npm pack --dry-run`.
+
+---
+
 ## 0.23.0 - 2026-05-20
 
 ### Memory and context hardening
