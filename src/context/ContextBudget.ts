@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { compileContext, type CompiledContext } from './ContextCompiler.js'
 
 export type ContextBudgetCategory = 'always' | 'on-demand' | 'evidence' | 'archive' | 'generated'
 
@@ -54,6 +55,13 @@ export interface ContextPack {
   lazyLoaded: Array<{ id: string; reason: string }>
   omitted: Array<{ id: string; reason: string; estimatedTokens: number }>
   sections: ContextPackSection[]
+  compiler?: {
+    strategy: CompiledContext['strategy']
+    budget: number
+    totalCandidateTokens: number
+    estimatedTokenSavings: number
+    ranking: Array<{ id: string; included: boolean; score: number; matchedSignals: string[]; reason: string }>
+  }
 }
 
 export interface ContextBudgetDoctorTaskPack {
@@ -243,18 +251,41 @@ function buildContextPackFromReport(
   }
 
   const unique = dedupeSections(sections)
-  let total = 0
-  const packed: ContextPackSection[] = []
-  const omitted: ContextPack['omitted'] = []
-  for (const item of unique) {
-    if (item.included && total + item.estimatedTokens > budget) {
-      packed.push({ ...item, included: false, reason: `${item.reason} Omitted because it would exceed budget ${budget}.` })
-      omitted.push({ id: item.id, reason: 'budget-exceeded', estimatedTokens: item.estimatedTokens })
-      continue
+  const compiled = compileContext({
+    task,
+    level: options.level,
+    files,
+    budget,
+    candidates: unique.map((item, index) => ({
+      id: item.id,
+      category: item.category,
+      estimatedTokens: item.estimatedTokens,
+      reason: item.reason,
+      paths: item.paths,
+      required: item.id === 'always-core',
+      basePriority: unique.length - index,
+    })),
+  })
+  const byId = new Map(unique.map(item => [item.id, item]))
+  const packed: ContextPackSection[] = compiled.items.map(item => {
+    const original = byId.get(item.id)
+    return {
+      ...(original ?? {
+        id: item.id,
+        category: item.category,
+        paths: item.paths,
+        estimatedTokens: item.estimatedTokens,
+        reason: item.reason,
+      }),
+      included: item.included,
+      reason: item.included
+        ? (item.inclusionReason ?? item.reason)
+        : `${item.reason} Omitted by context compiler: ${item.omissionReason ?? 'not-selected'}.`,
     }
-    if (item.included) total += item.estimatedTokens
-    packed.push(item)
-  }
+  })
+  const omitted: ContextPack['omitted'] = compiled.items
+    .filter(item => !item.included)
+    .map(item => ({ id: item.id, reason: item.omissionReason ?? 'not-selected', estimatedTokens: item.estimatedTokens }))
 
   return {
     task: {
@@ -265,12 +296,25 @@ function buildContextPackFromReport(
       budget,
     },
     generatedAt: new Date().toISOString(),
-    totalEstimatedTokens: total,
+    totalEstimatedTokens: compiled.totalEstimatedTokens,
     lazyLoaded: packed
       .filter(item => item.included && item.id !== 'always-core')
       .map(item => ({ id: item.id, reason: item.reason })),
     omitted,
     sections: packed,
+    compiler: {
+      strategy: compiled.strategy,
+      budget: compiled.budget,
+      totalCandidateTokens: compiled.totalCandidateTokens,
+      estimatedTokenSavings: compiled.estimatedTokenSavings,
+      ranking: compiled.items.map(item => ({
+        id: item.id,
+        included: item.included,
+        score: item.score,
+        matchedSignals: item.matchedSignals,
+        reason: item.included ? (item.inclusionReason ?? item.reason) : (item.omissionReason ?? 'not-selected'),
+      })),
+    },
   }
 }
 

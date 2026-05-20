@@ -101,6 +101,7 @@ export type {
 
 // Context
 export { ContextBuilder } from './context/ContextBuilder.js'
+export * from './context/ContextCompiler.js'
 export { ProjectAnatomy } from './context/ProjectAnatomy.js'
 export type { AnatomyEntry } from './context/ProjectAnatomy.js'
 

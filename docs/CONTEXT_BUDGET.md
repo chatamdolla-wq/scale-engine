@@ -43,6 +43,28 @@ scale context pack \
   --json
 ```
 
+The context pack now uses the baseline Context Compiler. Each candidate section is scored by category, task/file relevance, risk level, and budget fit. The JSON output includes compiler metadata so callers can explain why a section was loaded or omitted:
+
+```json
+{
+  "compiler": {
+    "strategy": "relevance-budget-v1",
+    "budget": 4000,
+    "totalCandidateTokens": 6200,
+    "estimatedTokenSavings": 2200,
+    "ranking": [
+      {
+        "id": "runtime-evidence",
+        "included": true,
+        "score": 292,
+        "matchedSignals": ["evidence", "high-risk-evidence"],
+        "reason": "Evidence is needed for completion and verification claims."
+      }
+    ]
+  }
+}
+```
+
 Evaluate progressive governance mode:
 
 ```bash
