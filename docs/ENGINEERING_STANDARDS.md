@@ -70,6 +70,8 @@ scale verify <task-id> --json
 
 `scale dependency audit` adds the supply-chain side of `G7 Security`. It audits lockfile-scoped packages for install scripts, bin scripts, deprecated packages, dynamic code execution, shell execution, and suspicious network access. See [DEPENDENCY_AUDIT.md](DEPENDENCY_AUDIT.md).
 
+`ActiveRedTeam` and `VisualGate` add optional dynamic verification for projects that can provide a runnable HTTP target and structured visual evidence. They are disabled unless explicitly configured. See [ACTIVE_SECURITY_VISUAL_GATES.md](ACTIVE_SECURITY_VISUAL_GATES.md).
+
 `scale preflight` and `scale verify` consume `.scale/verification.json`:
 
 ```json

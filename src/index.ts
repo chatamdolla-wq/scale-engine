@@ -79,6 +79,7 @@ export {
   BUILT_IN_ROLES,
 } from './guardrails/advancedDetectors.js'
 export * from './guardrails/DependencyAuditor.js'
+export * from './guardrails/ActiveRedTeam.js'
 export {
   DetectorStatisticsTracker,
   DetectorRegistry,
@@ -192,6 +193,7 @@ export { REQUIREMENT_CLARITY_TREE, DESIGN_DEPTH_TREE, TECH_SELECTION_TREE } from
 export * from './workflow/ContextGovernance.js'
 export * from './workflow/DiagnosticLoop.js'
 export * from './workflow/TddLoop.js'
+export * from './workflow/gates/VisualGate.js'
 
 // Issue Triage FSM (Phase 12 - mattpoclock/skills style)
 export { IssueTriageFSM, ISSUE_TRIAGE_MACHINE } from './tasks/IssueTriageFSM.js'

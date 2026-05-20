@@ -2,6 +2,7 @@
 
 export * from './types.js'
 export * from './gates/GateSystem.js'
+export * from './gates/VisualGate.js'
 export * from './quality/HonestDelivery.js'
 export * from './quality/KarpathyEvaluator.js'
 export * from './cognitive/AmbiguityScorer.js'
