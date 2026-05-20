@@ -56,6 +56,12 @@ function parseJson<T = unknown>(stdout: string): T {
   return JSON.parse(stdout) as T
 }
 
+function coverageFixtureCommand(coverage = '100.00'): string {
+  const text = `All files | 100.00 | 100.00 | 100.00 | 100.00 | ${coverage}`
+  const codes = Array.from(text).map(char => char.charCodeAt(0)).join(',')
+  return `node -e "process.stdout.write(String.fromCharCode(${codes}))"`
+}
+
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
   for (const file of repoFiles) rmSync(file, { force: true })
@@ -389,7 +395,7 @@ export function login(token: string) {
       ],
     }, null, 2), 'utf-8')
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const preflight = await runScale([
       'preflight',
       '--service',
@@ -638,7 +644,7 @@ export function leaky(token: string) {
     const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       buildResult.task.id,
@@ -701,7 +707,7 @@ export function leaky(token: string) {
     const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       buildResult.task.id,
@@ -884,7 +890,7 @@ export function leaky(token: string) {
       complete: false,
     })
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     mkdirSync(join(projectDir, 'test-fixtures', 'phase-cli', 'api'), { recursive: true })
     mkdirSync(join(projectDir, 'test-fixtures', 'phase-cli', 'gateway'), { recursive: true })
     writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
@@ -1036,7 +1042,7 @@ export function leaky(token: string) {
     const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       buildResult.task.id,
@@ -1100,7 +1106,7 @@ export function leaky(token: string) {
     expect(build.exitCode).toBe(0)
     const taskId = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout).task.id
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       taskId,
@@ -1169,7 +1175,7 @@ export function leaky(token: string) {
     const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       buildResult.task.id,
@@ -1252,7 +1258,7 @@ export function leaky(token: string) {
     const taskId = buildResult.task.id
     if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       taskId,
@@ -1336,7 +1342,7 @@ export function leaky(token: string) {
     expect(build.exitCode).toBe(0)
     const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       taskId,
@@ -1436,7 +1442,7 @@ export function leaky(token: string) {
     expect(build.exitCode).toBe(0)
     const taskId = parseJson<{ task: { id: string } }>(build.stdout).task.id
 
-    const coverageCommand = 'node -p String.fromCharCode(65,108,108,32,102,105,108,101,115,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48,32,124,32,49,48,48,46,48,48)'
+    const coverageCommand = coverageFixtureCommand()
     const verify = await runScale([
       'verify',
       taskId,

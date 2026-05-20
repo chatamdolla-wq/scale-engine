@@ -43,6 +43,7 @@ export interface IEvolutionEvaluator {
 export class EvolutionEvaluator implements IEvolutionEvaluator {
   private history: EvolutionSnapshot[] = []
   private maxHistory: number
+  private lastSnapshotTimestamp = 0
 
   constructor(
     private eventBus: IEventBus,
@@ -84,7 +85,7 @@ export class EvolutionEvaluator implements IEvolutionEvaluator {
     metrics.overallScore = this.calculateOverallScore(metrics)
     metrics.trend = this.determineTrend(metrics)
 
-    this.history.push({ timestamp: Date.now(), metrics })
+    this.history.push({ timestamp: this.nextSnapshotTimestamp(), metrics })
     if (this.history.length > this.maxHistory) this.history.shift()
 
     this.eventBus.emit('evolution.evaluated', { score: metrics.overallScore, trend: metrics.trend })
@@ -123,6 +124,12 @@ export class EvolutionEvaluator implements IEvolutionEvaluator {
   private async countEvents(type: string): Promise<number> {
     const events = await this.eventBus.query({ types: [type as any], limit: 1000 })
     return events.length
+  }
+
+  private nextSnapshotTimestamp(): number {
+    const now = Date.now()
+    this.lastSnapshotTimestamp = Math.max(now, this.lastSnapshotTimestamp + 1)
+    return this.lastSnapshotTimestamp
   }
 
   private calculateLessonQuality(m: EvolutionMetrics): number {

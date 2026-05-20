@@ -14,7 +14,7 @@ afterEach(() => {
 
 function nodePrintCommand(text: string): string {
   const codes = Array.from(text).map(char => char.charCodeAt(0)).join(',')
-  return `node -p String.fromCharCode(${codes})`
+  return `node -e "process.stdout.write(String.fromCharCode(${codes}))"`
 }
 
 describe('runShellCommand', () => {

@@ -332,7 +332,7 @@ describe('AutonomousDevLoop', () => {
       const loop = new AutonomousDevLoop(bus, {
         worklogPath,
         batonPath,
-        qaCommand: 'node -e "console.log(`Tests  2 failed | 44 passed (46)`); process.exit(1)"',
+        qaCommand: 'node -e "console.log(\'Tests  2 failed | 44 passed (46)\'); process.exit(1)"',
         cwd: dir,
       })
 
@@ -345,7 +345,7 @@ describe('AutonomousDevLoop', () => {
       const loop = new AutonomousDevLoop(bus, {
         worklogPath,
         batonPath,
-        qaCommand: 'node -e "console.log(`Tests  590 passed (590)`); process.exit(0)"',
+        qaCommand: 'node -e "console.log(\'Tests  590 passed (590)\'); process.exit(0)"',
         cwd: dir,
       })
 
