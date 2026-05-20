@@ -13,6 +13,13 @@ Report token cost by context category:
 scale context budget --json
 ```
 
+Include provider-specific prompt cache policy:
+
+```bash
+scale context budget --provider anthropic --json
+scale context budget --provider openai --json
+```
+
 Write the report to `.scale/context-budget.json`:
 
 ```bash
@@ -65,6 +72,25 @@ scale governance roi \
 | `evidence` | Runtime evidence and task artifacts | Summarize and reference by path |
 | `archive` | Historical plans and old roadmap context | Do not load unless explicitly requested |
 | `generated` | HTML reports, screenshots, graph outputs, generated artifacts | Keep manifest-only by default |
+
+## Prompt Cache Policy
+
+V2.0 adds a cache policy layer for stable context. The policy is intentionally conservative:
+
+- `always` is cache-eligible by default because it contains stable entrypoint rules and governance source-of-truth config.
+- `on-demand` is not cache-eligible by default because it changes with task intent and can break stable prefix reuse.
+- `evidence`, `archive`, and `generated` are never cache-eligible by default.
+- Unsupported providers still write usage evidence; they do not pretend to support prompt caching.
+
+Provider behavior:
+
+| Provider | Strategy | Usage fields |
+| --- | --- | --- |
+| Anthropic | `anthropic-ephemeral` | `cache_creation_input_tokens`, `cache_read_input_tokens` |
+| OpenAI | `openai-automatic` | `prompt_tokens_details.cached_tokens` |
+| Other | `usage-ledger-only` | normal input/output usage only |
+
+The cache policy does not live in `ModelRouter`. `ModelRouter` selects a model; provider request builders or adapters apply provider-specific cache controls.
 
 ## Progressive Governance
 

@@ -20,6 +20,7 @@ import {
   scanContextBudget,
   writeContextBudgetReport,
 } from '../context/ContextBudget.js'
+import { resolvePromptCachePolicy } from '../routing/PromptCachePolicy.js'
 import { CerebrumManager } from '../knowledge/CerebrumManager.js'
 import {
   buildCodeGraphContext,
@@ -1181,6 +1182,7 @@ const contextBudget = defineCommand({
     dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
     'max-always': { type: 'string', description: 'Maximum Always-loaded estimated tokens' },
     'max-task': { type: 'string', description: 'Maximum task context estimated tokens' },
+    provider: { type: 'string', default: 'generic', description: 'Model provider for prompt cache policy: anthropic, openai, or generic' },
     write: { type: 'boolean', default: false, description: 'Write .scale/context-budget.json' },
     json: { type: 'boolean', default: false },
   },
@@ -1193,9 +1195,13 @@ const contextBudget = defineCommand({
       maxAlwaysTokens: parsePositiveIntArg(args['max-always'], '--max-always'),
       maxTaskTokens: parsePositiveIntArg(args['max-task'], '--max-task'),
     })
+    const promptCache = resolvePromptCachePolicy({
+      provider: String(args.provider ?? 'generic'),
+      entries: report.entries,
+    })
     const path = isTruthyFlag(args.write) ? writeContextBudgetReport(report) : undefined
     if (args.json) {
-      console.log(JSON.stringify({ ...report, path }, null, 2))
+      console.log(JSON.stringify({ ...report, promptCache, path }, null, 2))
       return
     }
     console.log('SCALE Context Budget')
@@ -1205,6 +1211,9 @@ const contextBudget = defineCommand({
     for (const [category, summary] of Object.entries(report.summary.byCategory)) {
       console.log(`  ${category}: ${summary.tokens} tokens in ${summary.files} files`)
     }
+    console.log(`  Prompt cache provider: ${promptCache.provider}`)
+    console.log(`  Prompt cache strategy: ${promptCache.strategy}${promptCache.supported ? '' : ' (usage ledger only)'}`)
+    console.log(`  Cache eligible: ${promptCache.cacheEligibleTokens} tokens across ${promptCache.cacheEligiblePaths.length} paths`)
     for (const recommendation of report.recommendations) console.log(`  recommendation: ${recommendation}`)
     if (path) console.log(`  wrote: ${path}`)
   },

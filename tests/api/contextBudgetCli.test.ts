@@ -55,13 +55,41 @@ describe('context budget CLI', () => {
     const report = parseJson<{
       summary: { alwaysTokens: number; byCategory: Record<string, { files: number }> }
       entries: Array<{ path: string; category: string }>
+      promptCache: { provider: string; strategy: string; cacheEligibleTokens: number; cacheEligiblePaths: string[] }
     }>(result.stdout)
     expect(report.summary.alwaysTokens).toBeGreaterThan(0)
     expect(report.summary.byCategory.always.files).toBeGreaterThan(0)
+    expect(report.promptCache.provider).toBe('generic')
+    expect(report.promptCache.strategy).toBe('usage-ledger-only')
+    expect(report.promptCache.cacheEligibleTokens).toBe(report.summary.alwaysTokens)
+    expect(report.promptCache.cacheEligiblePaths).toContain('AGENTS.md')
     expect(report.entries).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: 'AGENTS.md', category: 'always' }),
       expect.objectContaining({ path: 'docs/report.html', category: 'generated' }),
     ]))
+  }, 120_000)
+
+  it('reports provider-specific prompt cache policy for Anthropic', async () => {
+    const scaleDir = makeDir('scale-context-cli-scale-')
+    const projectDir = makeDir('scale-context-cli-project-')
+    writeProject(projectDir)
+
+    const result = await runScale(['context', 'budget', '--provider', 'anthropic', '--json'], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      promptCache: {
+        provider: string
+        supported: boolean
+        strategy: string
+        usageMetrics: { cacheCreationInputTokens?: string; cacheReadInputTokens?: string }
+      }
+    }>(result.stdout)
+    expect(report.promptCache.provider).toBe('anthropic')
+    expect(report.promptCache.supported).toBe(true)
+    expect(report.promptCache.strategy).toBe('anthropic-ephemeral')
+    expect(report.promptCache.usageMetrics.cacheCreationInputTokens).toBe('cache_creation_input_tokens')
+    expect(report.promptCache.usageMetrics.cacheReadInputTokens).toBe('cache_read_input_tokens')
   }, 120_000)
 
   it('scans an absolute SCALE_DIR as logical .scale context', async () => {
