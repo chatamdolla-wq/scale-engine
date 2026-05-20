@@ -105,3 +105,30 @@ runtime evidence -> memory pack -> memory settle -> 人审 -> knowledge/docs/rul
 - 当前版本不内置向量数据库；如果项目配置了 SQLite knowledge base，会使用现有召回接口。
 - 当前版本只检测 Graphify 产物是否存在并生成摘要，不主动运行 Graphify。
 - HTML 可视化报告适合后续加在 context pack 之上；Memory Fabric 的核心产物先保持 JSON/Markdown，方便 diff、测试和 CLI 集成。
+
+## Memory Provider Router
+
+SCALE now treats strong memory systems as providers instead of rebuilding them inside the workflow engine.
+
+Default provider order:
+
+```text
+agentmemory -> gbrain -> scale-local
+```
+
+Commands:
+
+```bash
+scale memory provider init
+scale memory provider status --json
+scale memory provider recall "OAuth callback Redis state" --json
+```
+
+Provider rules:
+
+- `agentmemory` and `gbrain` are external providers and start disabled until endpoint, privacy, retention, and delete boundaries are reviewed.
+- External providers are read-only by default. Writes require an explicit provider policy change.
+- `scale-local` remains the fallback provider through Memory Brain and only promotes reviewed, evidence-backed memory.
+- `memory pack` automatically includes a `provider-memory` section when provider recall returns relevant active memories.
+
+This keeps agents flexible: they can ask the router for memory before planning, verification, review, or release, while SCALE still records which provider was used and why fallback was required.

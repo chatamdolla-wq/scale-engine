@@ -5,6 +5,7 @@ import type { IKnowledgeBase } from '../knowledge/KnowledgeBase.js'
 import { RuntimeEvidenceLedger, type RuntimeEvidenceRecord } from '../runtime/RuntimeEvidenceLedger.js'
 import { SessionLedger, type RuntimeSessionEvent, type RuntimeSessionLevel } from '../runtime/SessionLedger.js'
 import { redactEvidenceText } from '../tools/ToolEvidenceStore.js'
+import { recallMemoryProviders, type MemoryProviderRecallItem } from './MemoryProviders.js'
 
 export interface MemoryFabricOptions {
   projectDir?: string
@@ -68,6 +69,7 @@ export interface ContextPack {
 export type ContextPackItem =
   | RuntimeEvidenceContextItem
   | RuntimeSessionContextItem
+  | ProviderMemoryContextItem
   | KnowledgeContextItem
   | GraphContextItem
 
@@ -91,6 +93,18 @@ export interface RuntimeSessionContextItem {
   phase?: string
   message?: string
   createdAt: string
+}
+
+export interface ProviderMemoryContextItem {
+  type: 'provider-memory'
+  provider: string
+  id: string
+  title: string
+  summary: string
+  confidence: number
+  score: number
+  evidencePaths: string[]
+  sourceUrl?: string
 }
 
 export interface KnowledgeContextItem {
@@ -161,6 +175,7 @@ export class MemoryFabric {
     const drafts: DraftSection[] = [
       this.runtimeEvidenceSection(task),
       this.sessionEventsSection(task),
+      await this.providerMemorySection(task, input.knowledgeTopK ?? DEFAULT_KNOWLEDGE_TOP_K),
       await this.knowledgeSection(task, input.knowledgeTopK ?? DEFAULT_KNOWLEDGE_TOP_K),
       this.graphSection(),
     ]
@@ -242,6 +257,25 @@ export class MemoryFabric {
       title: 'Knowledge Recall',
       priority: 60,
       items: entries.map(entry => this.toKnowledgeItem(entry)),
+    }
+  }
+
+  private async providerMemorySection(task: ContextPackTask, topK: number): Promise<DraftSection> {
+    const query = [task.task, task.files.join(' ')].filter(Boolean).join('\n')
+    const report = await recallMemoryProviders({
+      projectDir: this.projectDir,
+      scaleDir: this.scaleRoot,
+      query,
+      task: task.task,
+      files: task.files,
+      limit: topK,
+      includeCandidates: false,
+    })
+    return {
+      id: 'provider-memory',
+      title: 'Provider Memory Recall',
+      priority: 70,
+      items: report.items.map(toProviderMemoryItem),
     }
   }
 
@@ -392,9 +426,24 @@ function toSessionEventItem(event: RuntimeSessionEvent): RuntimeSessionContextIt
   }
 }
 
+function toProviderMemoryItem(item: MemoryProviderRecallItem): ProviderMemoryContextItem {
+  return {
+    type: 'provider-memory',
+    provider: item.provider,
+    id: item.id,
+    title: item.title,
+    summary: item.summary,
+    confidence: item.confidence,
+    score: item.score,
+    evidencePaths: item.evidencePaths,
+    sourceUrl: item.sourceUrl,
+  }
+}
+
 function renderItemSummary(item: ContextPackItem): string {
   if (item.type === 'runtime-evidence') return `[${item.status}] ${item.title}: ${item.summary}`
   if (item.type === 'session-event') return `${item.eventType}${item.phase ? `/${item.phase}` : ''}: ${item.message ?? item.createdAt}`
+  if (item.type === 'provider-memory') return `${item.provider}/${item.id}: ${item.title} (${item.confidence.toFixed(2)})`
   if (item.type === 'knowledge') return `${item.title} (${item.tags.join(', ') || 'no tags'})`
   return `${item.kind}: ${item.path}`
 }

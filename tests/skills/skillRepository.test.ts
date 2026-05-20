@@ -13,6 +13,7 @@ describe('SkillRepository', () => {
     expect(ids).toEqual(expect.arrayContaining([
       'planning-with-files',
       'agentmemory',
+      'gbrain',
       'awesome-design-md',
       'ui-ux-pro-max',
       'web-access',
@@ -30,6 +31,7 @@ describe('SkillRepository', () => {
     const entries = listSkillRepositoryEntries()
     const planning = entries.find(entry => entry.id === 'planning-with-files')
     const memory = entries.find(entry => entry.id === 'agentmemory')
+    const gbrain = entries.find(entry => entry.id === 'gbrain')
 
     expect(planning?.category).toBe('planning')
     expect(planning?.attribution.license).toBe('MIT')
@@ -43,6 +45,11 @@ describe('SkillRepository', () => {
     expect(memory?.attribution.modifiedFromUpstream).toBe(false)
     expect(memory?.safety.requiresReview).toBe(true)
     expect(memory?.safety.requiredChecks).toContain('verify-attribution-and-notice')
+
+    expect(gbrain?.category).toBe('memory')
+    expect(gbrain?.attribution.license).toBe('MIT')
+    expect(gbrain?.attribution.usage).toBe('external-reference')
+    expect(gbrain?.safety.requiresReview).toBe(true)
   })
 
   it('recommends a composable UI workflow with design and browser validation skills', () => {
@@ -108,6 +115,7 @@ describe('SkillRepository', () => {
     expect(markdown).toContain('Third-Party Attribution')
     expect(markdown).toContain('planning-with-files')
     expect(markdown).toContain('agentmemory')
+    expect(markdown).toContain('gbrain')
     expect(markdown).toContain('MIT')
     expect(markdown).toContain('Apache-2.0')
     expect(markdown).toContain('verify-attribution-and-notice')

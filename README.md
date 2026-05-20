@@ -318,7 +318,7 @@ scale skill doctor --supply-chain
 
 Desktop CUA and external agent CLIs are blocked by default through Tool Policy until deliberately enabled. Third-party skills stay review-required until source, scripts, license, and pinned revision are checked.
 
-新引入或借鉴的社区 skills 必须保留来源、授权、致谢和使用边界。当前外部参考包括 `OthmanAdi/planning-with-files`（MIT）和 `rohitg00/agentmemory`（Apache-2.0）；SCALE 目前只做治理登记、可选集成和方法借鉴，不直接 vendoring 上游源码。
+新引入或借鉴的社区 skills 必须保留来源、授权、致谢和使用边界。当前外部参考包括 `OthmanAdi/planning-with-files`（MIT）、`rohitg00/agentmemory`（Apache-2.0）和 `garrytan/gbrain`（MIT）；SCALE 目前只做治理登记、可选集成和方法借鉴，不直接 vendoring 上游源码。
 
 See [Skill Radar](docs/SKILL_RADAR.md) and [Third-Party Skills](docs/THIRD_PARTY_SKILLS.md).
 
@@ -333,7 +333,11 @@ scale memory query "OAuth callback state design"
 scale memory contradictions --json
 scale memory dream --json
 scale memory promote <candidate-id>
+scale memory provider status --json
+scale memory provider recall "OAuth callback Redis state" --json
 ```
+
+Strong memory is now provider-routed instead of expanded as a built-in Memory OS. SCALE treats `agentmemory`, `gbrain`, and `scale-local` as governed providers with read-only external defaults, privacy boundaries, fallback, and evidence records so agents can recall memory autonomously by task.
 
 The point is not to remember everything. The point is to keep useful, reviewed project facts while reporting contradictions instead of silently overwriting them.
 

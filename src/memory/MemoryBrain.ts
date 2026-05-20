@@ -313,6 +313,10 @@ export class MemoryBrain {
     return row ? rowToNode(row) : null
   }
 
+  close(): void {
+    this.db.close()
+  }
+
   private ingestEvidence(options: MemoryIngestOptions): MemoryIngestReport {
     const ledger = new RuntimeEvidenceLedger({
       projectDir: this.projectDir,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -34,6 +34,33 @@ function parseJson<T>(stdout: string): T {
 }
 
 describe('memory CLI', () => {
+  it('creates and inspects autonomous memory provider routing policy', async () => {
+    const scaleDir = makeDir('scale-memory-cli-scale-')
+    const projectDir = makeDir('scale-memory-cli-project-')
+
+    const init = await runScale(['memory', 'provider', 'init', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+    const initReport = parseJson<{ written: boolean; path: string; config: { routing: { defaultOrder: string[] } } }>(init.stdout)
+    expect(initReport.written).toBe(true)
+    expect(initReport.config.routing.defaultOrder).toEqual(['agentmemory', 'gbrain', 'scale-local'])
+    expect(existsSync(initReport.path)).toBe(true)
+
+    const status = await runScale(['memory', 'provider', 'status', '--json'], scaleDir, projectDir)
+    expect(status.exitCode).toBe(0)
+    const statusReport = parseJson<{
+      configExists: boolean
+      providers: Array<{ id: string; available: boolean; safetyLevel: string; writeMode: string }>
+      warnings: string[]
+    }>(status.stdout)
+    expect(statusReport.configExists).toBe(true)
+    expect(statusReport.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'agentmemory', available: false, safetyLevel: 'review-required', writeMode: 'disabled' }),
+      expect.objectContaining({ id: 'gbrain', available: false, safetyLevel: 'review-required', writeMode: 'disabled' }),
+      expect.objectContaining({ id: 'scale-local', available: true, safetyLevel: 'trusted-local', writeMode: 'candidate-only' }),
+    ]))
+    expect(statusReport.warnings).toEqual([])
+  }, 120_000)
+
   it('renders a memory context pack for a scoped task', async () => {
     const scaleDir = makeDir('scale-memory-cli-scale-')
     const projectDir = makeDir('scale-memory-cli-project-')
@@ -85,6 +112,75 @@ describe('memory CLI', () => {
     expect(pack.sections).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'runtime-evidence', included: true }),
       expect.objectContaining({ id: 'session-events', included: true }),
+      expect.objectContaining({ id: 'provider-memory', included: false }),
+    ]))
+  }, 120_000)
+
+  it('recalls local provider memory and injects it into the context pack', async () => {
+    const scaleDir = makeDir('scale-memory-cli-scale-')
+    const projectDir = makeDir('scale-memory-cli-project-')
+    const memoryFile = join(projectDir, 'memory.jsonl')
+    writeFileSync(memoryFile, JSON.stringify({
+      id: 'MEM-provider-oauth',
+      type: 'decision',
+      title: 'OAuth callback uses Redis state',
+      summary: 'OAuth callback state must be resolved server-side from Redis before provider binding continues.',
+      entities: ['oauth', 'redis', 'callback'],
+      source: 'manual',
+      evidencePaths: ['docs/oauth-state-evidence.md'],
+      confidence: 0.86,
+      scope: 'project',
+      status: 'active',
+      createdAt: '2026-05-20T00:00:00.000Z',
+      updatedAt: '2026-05-20T00:00:00.000Z',
+      lastVerifiedAt: '2026-05-20T00:00:00.000Z',
+      metadata: {},
+    }) + '\n', 'utf-8')
+
+    const imported = await runScale(['memory', 'import', memoryFile, '--json'], scaleDir, projectDir)
+    expect(imported.exitCode).toBe(0)
+
+    const recall = await runScale([
+      'memory',
+      'provider',
+      'recall',
+      'OAuth Redis callback state',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(recall.exitCode).toBe(0)
+    const recallReport = parseJson<{
+      ok: boolean
+      selectedProviders: string[]
+      fallbackUsed: boolean
+      items: Array<{ provider: string; id: string; title: string }>
+      warnings: string[]
+    }>(recall.stdout)
+    expect(recallReport.ok).toBe(true)
+    expect(recallReport.selectedProviders).toContain('scale-local')
+    expect(recallReport.fallbackUsed).toBe(true)
+    expect(recallReport.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'scale-local', id: 'MEM-provider-oauth' }),
+    ]))
+    expect(recallReport.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('agentmemory skipped'),
+      expect.stringContaining('gbrain skipped'),
+    ]))
+
+    const packResult = await runScale([
+      'memory',
+      'pack',
+      '--task',
+      'Fix OAuth callback state lookup',
+      '--budget',
+      '4000',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(packResult.exitCode).toBe(0)
+    const pack = parseJson<{ sections: Array<{ id: string; included: boolean; items: Array<{ type: string; provider?: string; id?: string }> }> }>(packResult.stdout)
+    const providerMemory = pack.sections.find(section => section.id === 'provider-memory')
+    expect(providerMemory).toMatchObject({ included: true })
+    expect(providerMemory?.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'provider-memory', provider: 'scale-local', id: 'MEM-provider-oauth' }),
     ]))
   }, 120_000)
 

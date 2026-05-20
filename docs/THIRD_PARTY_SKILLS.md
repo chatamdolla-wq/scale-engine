@@ -17,6 +17,7 @@ This document records external skill projects that SCALE may learn from, recomme
 | --- | --- | --- | --- | --- |
 | Planning with Files | MIT | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | Adapt concepts for file-backed plans, findings, progress logs, active-plan routing, and plan attestation. | Not vendored. |
 | agentmemory | Apache-2.0 | [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Optional external memory provider via REST or MCP for teams that need cross-agent persistent memory beyond local SCALE Memory Brain. | Not vendored. |
+| GBrain | MIT | [garrytan/gbrain](https://github.com/garrytan/gbrain) | Optional graph memory provider for brain repos, hybrid search, entity relationships, MCP, and background maintenance. | Not vendored. |
 
 ## Acknowledgements
 
@@ -24,6 +25,7 @@ SCALE acknowledges these upstream projects and contributors:
 
 - `OthmanAdi/planning-with-files`, Copyright (c) 2026 Ahmad Adi.
 - `rohitg00/agentmemory` and its upstream contributors.
+- `garrytan/gbrain` and its upstream contributors.
 
 The current SCALE implementation records these projects as external references or adapted concepts. It does not copy their source code into this repository.
 
@@ -47,5 +49,6 @@ External memory providers must not be enabled silently. Before use, record:
 - credential boundary
 - retention and deletion policy
 - whether data leaves the local machine or team-controlled infrastructure
+- whether provider writes are disabled, candidate-only, or explicitly enabled
 
 External planning skills must not replace SCALE task evidence. They can improve the plan artifact shape, but final delivery still requires verification output, changed-file evidence, and explicit unverified-risk notes.

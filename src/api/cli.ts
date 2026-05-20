@@ -155,7 +155,10 @@ import {
   doctorMemoryFabric,
   renderContextPackMarkdown,
   renderMemoryLearningCandidateMarkdown,
+  inspectMemoryProviders,
+  recallMemoryProviders,
   settleMemoryLearning,
+  writeMemoryProvidersConfig,
 } from '../memory/index.js'
 import {
   resolveWorkspaceTopology,
@@ -4543,6 +4546,99 @@ const memoryImport = defineCommand({
   },
 })
 
+const memoryProviderInit = defineCommand({
+  meta: { name: 'init', description: 'Create .scale/memory-providers.json for autonomous memory provider routing' },
+  args: {
+    force: { type: 'boolean', default: false, description: 'Overwrite existing provider configuration' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const result = writeMemoryProvidersConfig({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      force: isTruthyFlag(args.force),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+    console.log(`\nSCALE Memory Provider Config: ${result.path}`)
+    console.log(`  ${result.written ? 'written' : 'exists'}`)
+    console.log(`  Order: ${result.config.routing.defaultOrder.join(' -> ')}`)
+  },
+})
+
+const memoryProviderStatus = defineCommand({
+  meta: { name: 'status', description: 'Inspect memory provider routing, availability, and safety boundaries' },
+  args: {
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const report = inspectMemoryProviders({ projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('\nSCALE Memory Providers')
+    console.log(`  Config: ${report.configExists ? report.configPath : 'default policy (not written)'}`)
+    console.log(`  Mode: ${report.routing.mode}`)
+    for (const provider of report.providers) {
+      console.log(`  [${provider.available ? 'AVAILABLE' : 'SKIP'}] ${provider.id} (${provider.kind})`)
+      console.log(`    safety: ${provider.safetyLevel}; write: ${provider.writeMode}; reason: ${provider.reason}`)
+    }
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+  },
+})
+
+const memoryProviderRecall = defineCommand({
+  meta: { name: 'recall', description: 'Recall relevant memory through provider routing with local fallback' },
+  args: {
+    query: { type: 'positional', required: true, description: 'Memory query or task context' },
+    task: { type: 'string', description: 'Optional task text for provider routing context' },
+    files: { type: 'string', description: 'Comma-separated files or modules in scope' },
+    provider: { type: 'string', description: 'Force one provider id, such as agentmemory, gbrain, or scale-local' },
+    limit: { type: 'string', default: '5', description: 'Maximum results' },
+    'include-candidates': { type: 'boolean', default: false, description: 'Allow scale-local candidate memory fallback' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const limit = Number.parseInt(String(args.limit ?? '5'), 10)
+    const report = await recallMemoryProviders({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      query: String(args.query),
+      task: args.task ? String(args.task) : undefined,
+      files: parseCommaList(args.files),
+      provider: args.provider ? String(args.provider) : undefined,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : 5,
+      includeCandidates: isTruthyFlag(args['include-candidates']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('\nSCALE Memory Provider Recall')
+    console.log(`  Query: ${report.query}`)
+    console.log(`  Providers: ${report.providerOrder.join(' -> ')}`)
+    console.log(`  Results: ${report.items.length}`)
+    for (const item of report.items) {
+      console.log(`  [${item.provider}] ${item.id}: ${item.title}`)
+      console.log(`    score: ${item.score}; confidence: ${item.confidence}; evidence: ${item.evidencePaths.join(', ') || 'none'}`)
+      console.log(`    ${item.summary}`)
+    }
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+  },
+})
+
+const memoryProvider = defineCommand({
+  meta: { name: 'provider', description: 'Manage autonomous memory provider routing for agentmemory, gbrain, and scale-local' },
+  subCommands: {
+    init: memoryProviderInit,
+    status: memoryProviderStatus,
+    recall: memoryProviderRecall,
+  },
+})
+
 const memory = defineCommand({
   meta: { name: 'memory', description: 'Memory Fabric context packs and project-scoped long-term memory' },
   subCommands: {
@@ -4557,6 +4653,7 @@ const memory = defineCommand({
     promote: memoryPromote,
     export: memoryExport,
     import: memoryImport,
+    provider: memoryProvider,
   },
 })
 
