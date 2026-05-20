@@ -144,6 +144,7 @@ import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
 import {
   RuntimeEvidenceLedger,
   SessionLedger,
+  createAiOsPlan,
   doctorRuntimeEvidence,
   evaluateFinalReportReadiness,
   type RuntimeEvidenceKind,
@@ -3130,6 +3131,54 @@ const governance = defineCommand({
   subCommands: { diff: governanceDiff, mode: governanceModeCommand, roi: governanceRoiCommand },
 })
 
+const aiOsPlanCommand = defineCommand({
+  meta: { name: 'plan', description: 'Create a unified AI OS runtime plan for governance, context, memory, skills, and ROI' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id' },
+    task: { type: 'string', required: true, description: 'Task or requirement description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context compiler' },
+    'requested-mode': { type: 'string', description: 'Requested governance mode: minimal, standard, expanded, or critical' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      task: String(args.task),
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      services: parseCommaList(args.services),
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+      requestedMode: normalizeGovernanceMode(args['requested-mode']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(plan, null, 2))
+      return
+    }
+    console.log('SCALE AI OS Runtime Plan')
+    console.log(`  Version: ${plan.version}`)
+    console.log(`  Task: ${plan.task.taskId ?? 'n/a'} ${plan.task.task}`)
+    console.log(`  Governance: ${plan.governance.effectiveMode}`)
+    console.log(`  Context: ${plan.context.totalEstimatedTokens}/${plan.context.task.budget} tokens; saved ${plan.context.compiler?.estimatedTokenSavings ?? 0}`)
+    console.log(`  Memory: ${plan.memory.items.length} item(s); providers ${plan.memory.providerOrder.join(' -> ')}`)
+    console.log(`  Skill steps: ${plan.skillPlan.executionPlan.steps.length}`)
+    console.log(`  ROI: ${plan.roi.summary.recommendation}`)
+    for (const recommendation of plan.recommendations) console.log(`  recommendation: ${recommendation}`)
+  },
+})
+
+const aiOs = defineCommand({
+  meta: { name: 'ai-os', description: 'AI Engineering OS runtime planning and governance orchestration' },
+  subCommands: { plan: aiOsPlanCommand },
+})
+
 // ============================================================================
 // upgrade command - Safe workflow/template/capability update planning
 // ============================================================================
@@ -5665,6 +5714,7 @@ const main = defineCommand({
     preflight,
     upgrade,
     governance,
+    'ai-os': aiOs,
     codegraph,
     eval: evalCommand,
     artifact,

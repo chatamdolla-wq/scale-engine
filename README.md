@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.26.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.27.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.26.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.27.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.26.0
+# SCALE Engine v0.27.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -16,6 +16,22 @@ SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探
 国内镜像：https://gitee.com/hongmaple/scale-engine
 npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 语言：[中文](README.md) | [English](README.en.md)
+
+## 0.27.0 AI OS Runtime
+
+0.27.0 把战略方向落成了一个可执行入口：`scale ai-os plan`。它会在一次命令里同时生成风险治理模式、Context Compiler 预算结果、Memory Provider 召回结果、Skill Routing 执行计划和 Governance ROI，让 Agent 在开始任务前就知道应该加载什么上下文、调用什么能力、补什么证据、哪些风险会升级门禁。
+
+```bash
+scale ai-os plan \
+  --task-id TASK-123 \
+  --task "修复 OAuth callback auth token 并验证浏览器回调流程" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --budget 8000 \
+  --json
+```
+
+这不是“完全替代人类判断”的声明；它是把 AI Engineering OS 的核心闭环先做成可测试、可解释、可度量的运行时规划层。
 
 ## 先怎么学
 

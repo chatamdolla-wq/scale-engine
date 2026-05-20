@@ -36,6 +36,7 @@
 | [CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md) | CodeGraph、Graphify 和显式 fallback 的代码智能与探索 ROI |
 | [WORKFLOW_EVAL.md](WORKFLOW_EVAL.md) | Workflow Eval、pass@k 指标、Failure Replay 和改进候选 |
 | [SKILL_RADAR.md](SKILL_RADAR.md) | Skill Radar、能力置信度、证据要求和供应链安全检查 |
+| [AI_ENGINEERING_OS_POSITIONING.md](AI_ENGINEERING_OS_POSITIONING.md) | Agent Governance Runtime / AI Engineering OS 方向，以及 `scale ai-os plan` 一体化 runtime plan |
 | [THIRD_PARTY_SKILLS.md](THIRD_PARTY_SKILLS.md) | 第三方 skill 致谢、授权边界、引用方式和 vendoring 策略 |
 | [EXTERNAL_REFERENCES.md](EXTERNAL_REFERENCES.md) | 外部项目、skills、MCP、CLI 和适配器引用的完整清单 |
 | [UPGRADE_MANAGEMENT.md](UPGRADE_MANAGEMENT.md) | SCALE CLI、governance pack、skills、MCP 和 CLI 工具的安全升级流程 |
@@ -53,7 +54,6 @@
 
 | 文档 | 说明 |
 | --- | --- |
-| [AI_ENGINEERING_OS_POSITIONING.md](AI_ENGINEERING_OS_POSITIONING.md) | SCALE Engine 作为 Agent Governance Runtime / AI Engineering OS 的战略定位、能力边界、短板和路线图 |
 | [plans/2026-05-20-scale-engine-v2-final-architecture-plan.md](plans/2026-05-20-scale-engine-v2-final-architecture-plan.md) | SCALE Engine V2.0 最终架构落地方案：Prompt Cache、Dashboard 聚合、Background Hunter、供应链门禁、动态/视觉验证和 Evolution Shadow Mode |
 
 ## 架构与参考

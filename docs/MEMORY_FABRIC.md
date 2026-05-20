@@ -122,6 +122,7 @@ Commands:
 scale memory provider init
 scale memory provider status --json
 scale memory provider recall "OAuth callback Redis state" --json
+scale ai-os plan --task "Fix OAuth callback Redis state" --files src/auth/oauth.ts --json
 ```
 
 Provider rules:
@@ -130,5 +131,6 @@ Provider rules:
 - External providers are read-only by default. Writes require an explicit provider policy change.
 - `scale-local` remains the fallback provider through Memory Brain and only promotes reviewed, evidence-backed memory.
 - `memory pack` automatically includes a `provider-memory` section when provider recall returns relevant active memories.
+- `ai-os plan` includes both the provider recall summary and the Memory Fabric context pack, so agents can route memory before planning without pretending external memory is always available.
 
 This keeps agents flexible: they can ask the router for memory before planning, verification, review, or release, while SCALE still records which provider was used and why fallback was required.

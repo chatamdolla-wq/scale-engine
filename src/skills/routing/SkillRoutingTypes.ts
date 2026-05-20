@@ -50,6 +50,25 @@ export interface TaskIntent {
   reasons: string[]
 }
 
+export type SkillPlanExecutionStepKind = 'skill' | 'artifact' | 'verification'
+
+export interface SkillPlanExecutionStep {
+  kind: SkillPlanExecutionStepKind
+  id: string
+  required: boolean
+  priority: number
+  reason: string
+  evidenceRequired: string
+  fallback: string
+}
+
+export interface SkillPlanExecutionPlan {
+  strategy: 'intent-evidence-graph-v1'
+  steps: SkillPlanExecutionStep[]
+  fallbackPolicy: string
+  evidenceSummary: string[]
+}
+
 export interface SkillPlan {
   taskId: string
   taskName: string
@@ -62,6 +81,7 @@ export interface SkillPlan {
   requiredVerification: string[]
   mode: SkillRoutingMode
   required: boolean
+  executionPlan: SkillPlanExecutionPlan
   generatedAt: string
 }
 

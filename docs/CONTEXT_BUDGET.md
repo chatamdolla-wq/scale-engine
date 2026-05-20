@@ -43,6 +43,18 @@ scale context pack \
   --json
 ```
 
+Build the unified AI OS runtime plan that embeds the context pack with memory, skill routing, adaptive workflow, and ROI:
+
+```bash
+scale ai-os plan \
+  --task-id TASK-123 \
+  --task "Review frontend route with browser evidence" \
+  --level L \
+  --files src/routes/upload.tsx \
+  --budget 8000 \
+  --json
+```
+
 The context pack now uses the baseline Context Compiler. Each candidate section is scored by category, task/file relevance, risk level, and budget fit. The JSON output includes compiler metadata so callers can explain why a section was loaded or omitted:
 
 ```json
@@ -131,5 +143,13 @@ This is not a replacement for verification. It only decides which governance beh
 
 ## Governance ROI
 
-`scale governance roi` reports both benefit and overhead. Early ROI is estimated from context budget and risk signals. Later versions should replace estimates with measured eval data such as file reads saved, tool calls saved, fix iterations reduced, and human corrections avoided.
+`scale governance roi` reports both benefit and overhead. In v0.27.0, `scale ai-os plan` also attaches ROI modules for:
+
+- `context-budget`
+- `context-compiler`
+- `memory-provider-runtime`
+- `skill-routing-engine`
+- `progressive-governance`
+
+Early ROI is still estimated from context budget, compiler savings, recall count, skill evidence steps, and risk signals. Later versions should replace estimates with measured eval data such as file reads saved, tool calls saved, fix iterations reduced, and human corrections avoided.
 

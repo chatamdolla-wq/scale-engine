@@ -1,5 +1,7 @@
 import type {
   ResolvedSkillRoutingPolicy,
+  SkillPlanExecutionPlan,
+  SkillPlanExecutionStep,
   SkillPlan,
   SkillTaskLevel,
   TaskIntent,
@@ -41,6 +43,14 @@ export function createSkillPlan(options: CreateSkillPlanOptions): SkillPlan {
     requiredVerification,
     mode: resolvePlanMode(level, intents, options.policy),
     required,
+    executionPlan: createExecutionPlan({
+      intents,
+      requiredSkills,
+      recommendedSkills,
+      requiredArtifacts,
+      recommendedArtifacts,
+      requiredVerification,
+    }),
     generatedAt: new Date().toISOString(),
   }
 }
@@ -85,12 +95,104 @@ ${list(plan.recommendedArtifacts)}
 
 ${list(plan.requiredVerification)}
 
+## Execution Plan
+
+| Kind | ID | Required | Priority | Reason | Evidence | Fallback |
+| --- | --- | --- | ---: | --- | --- | --- |
+${executionRows(plan.executionPlan.steps)}
+
 ## Skipped Skills
 
-| Skill | Reason | Fallback Evidence |
-| --- | --- | --- |
-|  |  |  |
+No skipped skills recorded at plan time. Record runtime skips and fallback evidence in \`skill-evidence.md\`.
 `
+}
+
+function createExecutionPlan(options: {
+  intents: TaskIntent[]
+  requiredSkills: string[]
+  recommendedSkills: string[]
+  requiredArtifacts: string[]
+  recommendedArtifacts: string[]
+  requiredVerification: string[]
+}): SkillPlanExecutionPlan {
+  const intentReason = options.intents.length
+    ? `Detected intents: ${options.intents.map(intent => `${intent.domain}(${intent.score})`).join(', ')}.`
+    : 'No domain-specific intent detected; keep evidence lightweight.'
+  const steps: SkillPlanExecutionStep[] = []
+  let priority = 100
+
+  for (const skill of options.requiredSkills) {
+    steps.push({
+      kind: 'skill',
+      id: skill,
+      required: true,
+      priority: priority--,
+      reason: intentReason,
+      evidenceRequired: 'Record used/executed status and concrete output path in skill-evidence.md.',
+      fallback: 'If unavailable, record skipped/fallback status with manual evidence; block when routing mode is block.',
+    })
+  }
+  for (const skill of options.recommendedSkills) {
+    steps.push({
+      kind: 'skill',
+      id: skill,
+      required: false,
+      priority: priority--,
+      reason: intentReason,
+      evidenceRequired: 'Record used or skipped status when it materially affects delivery quality.',
+      fallback: 'Use the nearest built-in verification or explain why the recommendation was not needed.',
+    })
+  }
+  for (const artifact of options.requiredArtifacts) {
+    steps.push({
+      kind: 'artifact',
+      id: artifact,
+      required: true,
+      priority: priority--,
+      reason: 'Required artifact for task evidence and gate review.',
+      evidenceRequired: `Write substantive ${artifact} content before verification or ship.`,
+      fallback: 'No silent fallback; document accepted non-goal only when the gate policy allows it.',
+    })
+  }
+  for (const artifact of options.recommendedArtifacts) {
+    steps.push({
+      kind: 'artifact',
+      id: artifact,
+      required: false,
+      priority: priority--,
+      reason: 'Recommended artifact for clearer review and future recall.',
+      evidenceRequired: `Write ${artifact} when it reduces ambiguity or review risk.`,
+      fallback: 'Mention omission in summary when the artifact is not useful for this task.',
+    })
+  }
+  for (const verification of options.requiredVerification) {
+    steps.push({
+      kind: 'verification',
+      id: verification,
+      required: true,
+      priority: priority--,
+      reason: 'Required verification evidence for detected task intent.',
+      evidenceRequired: `Attach command, screenshot, report, or reviewer evidence for ${verification}.`,
+      fallback: 'If the verification cannot run, record the blocker and a lower-fidelity fallback.',
+    })
+  }
+
+  return {
+    strategy: 'intent-evidence-graph-v1',
+    steps,
+    fallbackPolicy: 'Required steps need concrete evidence or an explicit skipped/fallback record; recommended steps may be skipped with a reason.',
+    evidenceSummary: unique(steps.map(step => step.evidenceRequired)),
+  }
+}
+
+function executionRows(steps: SkillPlanExecutionStep[]): string {
+  return steps.length
+    ? steps.map(step => `| ${step.kind} | ${step.id} | ${step.required ? 'yes' : 'no'} | ${step.priority} | ${escapeMarkdownCell(step.reason)} | ${escapeMarkdownCell(step.evidenceRequired)} | ${escapeMarkdownCell(step.fallback)} |`).join('\n')
+    : '| none | none | no | 0 | no routing step required | no extra evidence | continue with standard verification |'
+}
+
+function escapeMarkdownCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
 }
 
 function resolvePlanMode(level: SkillTaskLevel, intents: TaskIntent[], policy: ResolvedSkillRoutingPolicy): 'off' | 'warn' | 'block' {

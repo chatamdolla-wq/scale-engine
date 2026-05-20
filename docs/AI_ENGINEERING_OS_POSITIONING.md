@@ -1,7 +1,7 @@
 # SCALE Engine Strategic Positioning
 
 > Date: 2026-05-20  
-> Status: strategic direction, not a release claim  
+> Status: strategic direction with a v0.27.0 runtime baseline
 > Audience: maintainers, contributors, roadmap reviewers, and product-facing documentation owners
 
 SCALE Engine should be positioned as an **Agent Governance Runtime** evolving toward an **AI Engineering OS**.
@@ -306,22 +306,43 @@ Core work:
 | Skill Routing Engine | task-intent routing with evidence requirements and fallback decisions |
 | Governance ROI | quantify token cost, evidence quality, and gate friction |
 
+Implemented baseline in v0.27.0:
+
+```bash
+scale ai-os plan \
+  --task-id TASK-123 \
+  --task "Fix OAuth callback auth token handling and verify browser flow" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --budget 8000 \
+  --json
+```
+
+The command returns one runtime plan containing:
+
+- `governance`: progressive mode, risk signals, required behaviors
+- `context`: Context Compiler ranking, included sections, omitted sections, token savings
+- `memory`: provider order, selected providers, fallback status, recalled items, memory context pack
+- `skillPlan`: detected intents plus executable skill/artifact/verification steps
+- `adaptiveWorkflow`: risk-adaptive gates and exit criteria for the task
+- `roi`: benefit and overhead modules for context, memory, skill routing, and governance
+
 Exit criteria:
 
-- each context item has an inclusion reason
-- memory recall has provider, score, and evidence source
-- skill recommendations include why, when, and required proof
-- context pack generation reports token budget and omissions
+- each context item has an inclusion reason: baseline implemented by `ContextCompiler`
+- memory recall has provider, score, and evidence source: baseline implemented by Memory Provider Router
+- skill recommendations include why, when, and required proof: baseline implemented by skill execution plans
+- context pack generation reports token budget and omissions: baseline implemented by `context.pack.compiler`
 
 ### 6.3 0.28.0: Adaptive Governance
 
-Theme: make the workflow risk-aware instead of uniformly heavy.
+Theme: deepen adaptive governance beyond the v0.27.0 baseline.
 
 Core work:
 
 | Module | Outcome |
 | --- | --- |
-| Adaptive Workflow Router | dynamic gate profile based on task risk |
+| Adaptive Workflow Router | production policy controls for dynamic gate profiles beyond the v0.27.0 planning output |
 | Evaluator Intelligence | critique and uncertainty gates for architecture/root-cause work |
 | Tool Strategy Planner | cost, retry, fallback, and evidence graph for tools |
 | Evolution Shadow Promotion | lessons become rules only after validation |

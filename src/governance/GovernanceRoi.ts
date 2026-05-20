@@ -1,5 +1,7 @@
-import type { ContextBudgetReport } from '../context/ContextBudget.js'
+import type { ContextBudgetReport, ContextPack } from '../context/ContextBudget.js'
 import type { CodeGraphQueryReport } from '../codegraph/CodeIntelligence.js'
+import type { MemoryProviderRecallReport } from '../memory/MemoryProviders.js'
+import type { SkillPlan } from '../skills/routing/index.js'
 import type { ProgressiveGovernanceReport } from './ProgressiveGovernance.js'
 
 export interface GovernanceRoiModule {
@@ -23,8 +25,11 @@ export interface GovernanceRoiReport {
 export function createGovernanceRoiReport(options: {
   taskId?: string
   contextBudget?: ContextBudgetReport
+  contextPack?: ContextPack
   codeIntelligence?: CodeGraphQueryReport
   governance?: ProgressiveGovernanceReport
+  memoryRecall?: MemoryProviderRecallReport
+  skillPlan?: SkillPlan
 }): GovernanceRoiReport {
   const modules: GovernanceRoiModule[] = []
 
@@ -47,6 +52,17 @@ export function createGovernanceRoiReport(options: {
     })
   }
 
+  if (options.contextPack?.compiler) {
+    const compiler = options.contextPack.compiler
+    modules.push({
+      module: 'context-compiler',
+      evidenceLevel: 'estimated',
+      benefit: `Selected ${options.contextPack.sections.filter(section => section.included).length}/${options.contextPack.sections.length} context section(s); estimated savings ${compiler.estimatedTokenSavings} tokens from ${compiler.totalCandidateTokens} candidates.`,
+      overhead: `One relevance ranking pass with ${compiler.ranking.length} candidate section(s).`,
+      recommendation: compiler.estimatedTokenSavings > 0 ? 'keep-default' : 'keep-optional',
+    })
+  }
+
   if (options.governance) {
     const governance = options.governance
     modules.push({
@@ -63,6 +79,30 @@ export function createGovernanceRoiReport(options: {
       benefit: 'No risk-signal evaluation available.',
       overhead: 'Unknown.',
       recommendation: 'needs-evidence',
+    })
+  }
+
+  if (options.memoryRecall) {
+    const memory = options.memoryRecall
+    modules.push({
+      module: 'memory-provider-runtime',
+      evidenceLevel: memory.items.length > 0 ? 'estimated' : 'missing',
+      benefit: memory.items.length > 0
+        ? `Recalled ${memory.items.length} memory item(s) from ${memory.selectedProviders.join(', ') || 'no provider'}; fallback used: ${memory.fallbackUsed}.`
+        : `No memory item recalled; provider order was ${memory.providerOrder.join(' -> ')}.`,
+      overhead: `${memory.providerOrder.length} provider route(s), ${memory.warnings.length} warning(s).`,
+      recommendation: memory.items.length > 0 ? 'keep-default' : 'keep-optional',
+    })
+  }
+
+  if (options.skillPlan) {
+    const plan = options.skillPlan
+    modules.push({
+      module: 'skill-routing-engine',
+      evidenceLevel: plan.executionPlan.steps.length > 0 ? 'estimated' : 'missing',
+      benefit: `Detected ${plan.intents.length} intent(s), ${plan.requiredSkills.length} required skill(s), and ${plan.executionPlan.steps.length} executable evidence step(s).`,
+      overhead: `${plan.requiredArtifacts.length} required artifact(s), ${plan.requiredVerification.length} verification evidence item(s).`,
+      recommendation: plan.requiredSkills.length > 0 || plan.requiredArtifacts.length > 0 ? 'keep-default' : 'keep-optional',
     })
   }
 

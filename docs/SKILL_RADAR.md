@@ -19,6 +19,7 @@ scale skill radar --task "Automate WPS desktop workflow with CUA" --json
 scale skill radar --task "Review release PR" --phase review --level L --output docs/worklog/tasks/release/skill-radar.md
 scale skill doctor --supply-chain
 scale skill doctor --supply-chain --json
+scale ai-os plan --task "Design upload UI and run browser E2E checks" --files src/pages/upload.tsx --json
 ```
 
 ## Safety Levels
@@ -72,6 +73,18 @@ Each recommendation carries required evidence. Examples:
 - Memory work: `memory-provider-health`, `privacy-boundary`, `data-retention-policy`, `query-result`
 
 If evidence is missing, the final delivery should list the capability as unverified rather than claiming it was used successfully.
+
+## Skill Execution Plan
+
+In v0.27.0, `createSkillPlan` and `scale ai-os plan` return an `executionPlan`:
+
+- `strategy`: currently `intent-evidence-graph-v1`
+- `steps`: ordered skill, artifact, and verification actions
+- `reason`: why the step was selected from task intents
+- `evidenceRequired`: what proof must be recorded
+- `fallback`: what to do when the skill, MCP, CLI, or verification path is unavailable
+
+This turns skill routing from a recommendation list into an auditable execution graph. Required steps still need concrete evidence or an explicit skipped/fallback record; recommended steps may be skipped with a reason.
 
 ## Supply-Chain Doctor
 

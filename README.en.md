@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.26.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.27.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.26.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.27.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.26.0
+# SCALE Engine v0.27.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -16,6 +16,22 @@ Repository: https://github.com/hongmaple0820/scale-engine
 Mirror: https://gitee.com/hongmaple/scale-engine
 npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
 Language: [English](README.en.md) | [Chinese](README.md)
+
+## 0.27.0 AI OS Runtime
+
+0.27.0 turns the AI Engineering OS direction into one executable entry point: `scale ai-os plan`. It creates a unified task plan with progressive governance mode, Context Compiler budget output, Memory Provider recall, Skill Routing execution steps, and Governance ROI. An agent can see which context to load, which capabilities to use, what evidence is required, and which risks escalate gates before it starts the task.
+
+```bash
+scale ai-os plan \
+  --task-id TASK-123 \
+  --task "Fix OAuth callback auth token handling and verify browser callback flow" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --budget 8000 \
+  --json
+```
+
+This is not a claim that SCALE replaces human judgment. It is the first testable, explainable, and measurable runtime planning layer for the AI Engineering OS direction.
 
 ## Community
 
