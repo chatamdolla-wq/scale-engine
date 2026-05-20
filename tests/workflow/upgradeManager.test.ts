@@ -23,6 +23,13 @@ function makeDir(): string {
   return dir
 }
 
+function setLockedPackVersion(projectDir: string, packVersion: number): void {
+  const lockPath = join(projectDir, '.scale', 'governance.lock.json')
+  const lock = JSON.parse(readFileSync(lockPath, 'utf-8')) as { packVersion: number }
+  lock.packVersion = packVersion
+  writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n', 'utf-8')
+}
+
 describe('UpgradeManager', () => {
   it('reports a clean project as safe and check-only for third-party capabilities', () => {
     const projectDir = makeDir()
@@ -99,6 +106,28 @@ describe('UpgradeManager', () => {
     expect(report.changedFiles).toContain('.scale/governance.lock.json')
     expect(report.backup?.manifestPath).toBeTruthy()
     expect(existsSync(report.backup!.manifestPath)).toBe(true)
+  })
+
+  it('safe-applies clean managed generated files when the governance pack version changes', () => {
+    const projectDir = makeDir()
+    writeGovernanceTemplates(projectDir, { mode: 'standard', pack: 'project-scaffold' })
+    setLockedPackVersion(projectDir, 1)
+
+    const plan = createUpgradePlanReport({ projectDir })
+    expect(plan.applyMode).toBe('safe')
+    expect(plan.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'upgrade-governance-pack' }),
+      expect.objectContaining({ action: 'refresh-managed-generated-files' }),
+    ]))
+
+    const report = applyUpgradePlan({ projectDir, confirm: true })
+
+    expect(report.ok).toBe(true)
+    expect(report.applied).toBe(true)
+    expect(report.changedFiles).toContain('docs/workflow/README.md')
+    expect(report.changedFiles).toContain('.scale/governance.lock.json')
+    const lock = JSON.parse(readFileSync(join(projectDir, '.scale', 'governance.lock.json'), 'utf-8')) as { packVersion: number }
+    expect(lock.packVersion).toBe(2)
   })
 
   it('refuses safe apply when generated files have local changes', () => {

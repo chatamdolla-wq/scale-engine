@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.26.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.23.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.26.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.23.0
+# SCALE Engine v0.26.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -142,6 +142,28 @@ Supported packs:
 If you are unsure, start with `standard`. Use a specialized pack when the project shape is clear:
 
 See [Getting Started](docs/start/README.md) for runnable tutorials and demo paths.
+
+## Workflow Upgrade
+
+Do not rerun `scale init` as a blind upgrade command in existing projects. Use the guarded upgrade flow:
+
+```bash
+scale upgrade check --dir . --lang en
+scale upgrade plan --dir . --html --lang en
+scale upgrade apply --dir . --confirm --lang en
+scale upgrade rollback --dir . --lang en
+```
+
+Chinese output is the default. Add `--lang en` for English prompts and English HTML plans.
+
+Upgrade rules:
+
+- Missing managed files can be restored automatically after plan review.
+- Clean managed files whose content still matches `.scale/governance.lock.json` can be refreshed when a governance pack version changes.
+- Locally edited managed files are marked `manual-review` and are not overwritten automatically.
+- Third-party skills, MCP servers, desktop automation, browser tools, and external CLIs are check-only; SCALE reports source and trust policy but does not auto-install them.
+
+See [Workflow Upgrade Guide](docs/start/workflow-upgrade.md) for the runnable path.
 
 ## Phase Workflow
 

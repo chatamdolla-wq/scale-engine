@@ -54,6 +54,23 @@ describe('upgrade CLI', () => {
     })
   }, 45000)
 
+  it('prints Chinese upgrade guidance by default and English guidance on request', async () => {
+    const scaleDir = makeDir('scale-upgrade-cli-')
+    const projectDir = makeDir('scale-upgrade-project-')
+    const init = await runScale(['init', '--dir', projectDir, '--governance-pack', 'project-scaffold', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+
+    const zh = await runScale(['upgrade', 'check', '--dir', projectDir], scaleDir, projectDir)
+    expect(zh.exitCode).toBe(0)
+    expect(zh.stdout).toContain('SCALE 升级检查')
+    expect(zh.stdout).toContain('下一步')
+
+    const en = await runScale(['upgrade', 'check', '--dir', projectDir, '--lang', 'en'], scaleDir, projectDir)
+    expect(en.exitCode).toBe(0)
+    expect(en.stdout).toContain('SCALE Upgrade Check')
+    expect(en.stdout).toContain('Next')
+  }, 45000)
+
   it('safe-applies missing generated files and can roll them back', async () => {
     const scaleDir = makeDir('scale-upgrade-cli-')
     const projectDir = makeDir('scale-upgrade-project-')

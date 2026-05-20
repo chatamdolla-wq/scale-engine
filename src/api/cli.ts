@@ -3136,13 +3136,15 @@ const governance = defineCommand({
 // ============================================================================
 
 const upgradeCheck = defineCommand({
-  meta: { name: 'check', description: 'Check SCALE workflow, governance pack, and third-party capability update status' },
+  meta: { name: 'check', description: '检查 SCALE 工作流、治理包和第三方能力更新状态 / Check SCALE workflow, governance pack, and third-party capability update status' },
   args: {
-    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
-    'target-version': { type: 'string', description: 'Target SCALE Engine version; defaults to the running CLI version' },
-    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    'target-version': { type: 'string', description: '目标 SCALE Engine 版本，默认使用当前 CLI 版本 / Target SCALE Engine version' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
   run({ args }) {
+    const lang = normalizeLangArg(args.lang)
     const report = createUpgradeCheckReport({
       projectDir: args.dir,
       targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
@@ -3151,62 +3153,84 @@ const upgradeCheck = defineCommand({
       console.log(JSON.stringify(report, null, 2))
       return
     }
-    console.log('SCALE Upgrade Check')
-    console.log(`  Project: ${report.projectDir}`)
-    console.log(`  Status: ${report.status}`)
-    console.log(`  SCALE Engine: ${report.scaleEngine.currentVersion ?? 'none'} -> ${report.scaleEngine.latestVersion}`)
-    console.log(`  Governance pack: ${report.governancePack.id ?? 'none'} v${report.governancePack.currentVersion ?? 'none'} -> v${report.governancePack.latestVersion ?? 'none'}`)
-    console.log(`  Generated files: ${report.generatedFiles.clean} clean, ${report.generatedFiles.changed} changed, ${report.generatedFiles.missing} missing`)
-    console.log(`  Third-party policy: ${report.thirdParty.policy}; review required: ${report.thirdParty.reviewRequired}`)
-    console.log('  Next:')
+    if (lang === 'zh') {
+      console.log('SCALE 升级检查')
+      console.log(`  项目: ${report.projectDir}`)
+      console.log(`  状态: ${report.status}`)
+      console.log(`  SCALE Engine: ${report.scaleEngine.currentVersion ?? '无'} -> ${report.scaleEngine.latestVersion}`)
+      console.log(`  治理包: ${report.governancePack.id ?? '无'} v${report.governancePack.currentVersion ?? '无'} -> v${report.governancePack.latestVersion ?? '无'}`)
+      console.log(`  受管生成文件: ${report.generatedFiles.clean} 个干净, ${report.generatedFiles.changed} 个本地改动, ${report.generatedFiles.missing} 个缺失`)
+      console.log(`  第三方能力策略: ${report.thirdParty.policy}; 需要人工审查: ${report.thirdParty.reviewRequired}`)
+      console.log('  下一步:')
+    } else {
+      console.log('SCALE Upgrade Check')
+      console.log(`  Project: ${report.projectDir}`)
+      console.log(`  Status: ${report.status}`)
+      console.log(`  SCALE Engine: ${report.scaleEngine.currentVersion ?? 'none'} -> ${report.scaleEngine.latestVersion}`)
+      console.log(`  Governance pack: ${report.governancePack.id ?? 'none'} v${report.governancePack.currentVersion ?? 'none'} -> v${report.governancePack.latestVersion ?? 'none'}`)
+      console.log(`  Generated files: ${report.generatedFiles.clean} clean, ${report.generatedFiles.changed} changed, ${report.generatedFiles.missing} missing`)
+      console.log(`  Third-party policy: ${report.thirdParty.policy}; review required: ${report.thirdParty.reviewRequired}`)
+      console.log('  Next:')
+    }
     for (const command of report.recommendedCommands) console.log(`    ${command}`)
   },
 })
 
 const upgradePlan = defineCommand({
-  meta: { name: 'plan', description: 'Create a non-destructive SCALE upgrade plan' },
+  meta: { name: 'plan', description: '生成非破坏性的 SCALE 升级计划 / Create a non-destructive SCALE upgrade plan' },
   args: {
-    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
-    'target-version': { type: 'string', description: 'Target SCALE Engine version; defaults to the running CLI version' },
-    html: { type: 'boolean', default: false, description: 'Write .scale/reports/upgrade-plan.html' },
-    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    'target-version': { type: 'string', description: '目标 SCALE Engine 版本，默认使用当前 CLI 版本 / Target SCALE Engine version' },
+    html: { type: 'boolean', default: false, description: '写入 .scale/reports/upgrade-plan.html / Write HTML plan' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
   run({ args }) {
+    const lang = normalizeLangArg(args.lang)
     const report = createUpgradePlanReport({
       projectDir: args.dir,
       targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
     })
-    const htmlPath = args.html ? writeUpgradePlanHtml(report) : undefined
+    const htmlPath = args.html ? writeUpgradePlanHtml(report, undefined, lang) : undefined
     if (args.json) {
       console.log(JSON.stringify({ ...report, htmlPath }, null, 2))
       return
     }
-    console.log('SCALE Upgrade Plan')
-    console.log(`  Project: ${report.projectDir}`)
-    console.log(`  Status: ${report.status}`)
-    console.log(`  Apply mode: ${report.applyMode}`)
-    if (report.blockers.length > 0) {
-      console.log('  Blockers:')
-      for (const blocker of report.blockers) console.log(`    [${blocker.code}] ${blocker.path ?? ''} ${blocker.message}`)
+    if (lang === 'zh') {
+      console.log('SCALE 升级计划')
+      console.log(`  项目: ${report.projectDir}`)
+      console.log(`  状态: ${report.status}`)
+      console.log(`  应用模式: ${report.applyMode}`)
+    } else {
+      console.log('SCALE Upgrade Plan')
+      console.log(`  Project: ${report.projectDir}`)
+      console.log(`  Status: ${report.status}`)
+      console.log(`  Apply mode: ${report.applyMode}`)
     }
-    console.log('  Steps:')
+    if (report.blockers.length > 0) {
+      console.log(lang === 'zh' ? '  阻塞项:' : '  Blockers:')
+      for (const blocker of report.blockers) console.log(`    [${blocker.code}] ${blocker.path ?? ''} ${formatUpgradeBlockerMessage(blocker.code, blocker.message, lang)}`)
+    }
+    console.log(lang === 'zh' ? '  步骤:' : '  Steps:')
     for (const step of report.steps) {
       const path = step.path ? ` ${step.path}` : ''
       const command = step.command ? ` -> ${step.command}` : ''
-      console.log(`    [${step.risk}] ${step.action}${path}: ${step.reason}${command}`)
+      console.log(`    [${step.risk}] ${step.action}${path}: ${formatUpgradeStepReason(step.action, step.reason, lang)}${command}`)
     }
     if (htmlPath) console.log(`  HTML: ${htmlPath}`)
   },
 })
 
 const upgradeApply = defineCommand({
-  meta: { name: 'apply', description: 'Guarded entrypoint for applying an upgrade plan' },
+  meta: { name: 'apply', description: '按已审阅计划安全应用升级 / Guarded entrypoint for applying an upgrade plan' },
   args: {
-    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
-    confirm: { type: 'boolean', default: false, description: 'Confirm that the current plan was reviewed' },
-    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    confirm: { type: 'boolean', default: false, description: '确认当前升级计划已经审阅 / Confirm the current plan was reviewed' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
   run({ args }) {
+    const lang = normalizeLangArg(args.lang)
     const result = applyUpgradePlan({
       projectDir: args.dir,
       confirm: isTruthyFlag(args.confirm),
@@ -3216,42 +3240,99 @@ const upgradeApply = defineCommand({
       if (!result.ok) process.exitCode = 1
       return
     }
-    console.log('SCALE Upgrade Apply')
-    console.log(`  Applied: ${result.applied}`)
-    console.log(`  Reason: ${result.reason}`)
-    console.log(`  Apply mode: ${result.plan.applyMode}`)
-    if (result.backup) console.log(`  Backup: ${result.backup.manifestPath}`)
-    for (const path of result.changedFiles) console.log(`  changed: ${path}`)
+    console.log(lang === 'zh' ? 'SCALE 应用升级' : 'SCALE Upgrade Apply')
+    console.log(lang === 'zh' ? `  已应用: ${result.applied}` : `  Applied: ${result.applied}`)
+    console.log(lang === 'zh' ? `  原因: ${formatUpgradeApplyReason(result.reason, lang)}` : `  Reason: ${result.reason}`)
+    console.log(lang === 'zh' ? `  应用模式: ${result.plan.applyMode}` : `  Apply mode: ${result.plan.applyMode}`)
+    if (result.backup) console.log(lang === 'zh' ? `  备份: ${result.backup.manifestPath}` : `  Backup: ${result.backup.manifestPath}`)
+    for (const path of result.changedFiles) console.log(lang === 'zh' ? `  已变更: ${path}` : `  changed: ${path}`)
     if (!result.ok) process.exitCode = 1
   },
 })
 
 const upgradeRollback = defineCommand({
-  meta: { name: 'rollback', description: 'Explain rollback state for SCALE upgrades' },
+  meta: { name: 'rollback', description: '回滚最近一次 SCALE 托管升级 / Roll back the latest SCALE-managed upgrade' },
   args: {
-    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
-    json: { type: 'boolean', default: false, description: 'Print JSON output' },
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
   run({ args }) {
+    const lang = normalizeLangArg(args.lang)
     const result = rollbackLatestUpgrade({ projectDir: args.dir })
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
       if (!result.ok) process.exitCode = 1
       return
     }
-    console.log('SCALE Upgrade Rollback')
-    console.log(`  Applied: ${result.applied}`)
-    console.log(`  Reason: ${result.reason}`)
-    if (result.backup) console.log(`  Backup: ${result.backup.manifestPath}`)
-    for (const path of result.restoredFiles) console.log(`  restored: ${path}`)
+    console.log(lang === 'zh' ? 'SCALE 升级回滚' : 'SCALE Upgrade Rollback')
+    console.log(lang === 'zh' ? `  已回滚: ${result.applied}` : `  Applied: ${result.applied}`)
+    console.log(lang === 'zh' ? `  原因: ${formatUpgradeApplyReason(result.reason, lang)}` : `  Reason: ${result.reason}`)
+    if (result.backup) console.log(lang === 'zh' ? `  备份: ${result.backup.manifestPath}` : `  Backup: ${result.backup.manifestPath}`)
+    for (const path of result.restoredFiles) console.log(lang === 'zh' ? `  已恢复: ${path}` : `  restored: ${path}`)
     if (!result.ok) process.exitCode = 1
   },
 })
 
 const upgrade = defineCommand({
-  meta: { name: 'upgrade', description: 'Safe update planning for SCALE workflow, generated templates, skills, MCP, and CLI tools' },
+  meta: { name: 'upgrade', description: 'SCALE 工作流、模板、skills、MCP、CLI 工具的安全升级规划 / Safe update planning for workflow assets' },
   subCommands: { check: upgradeCheck, plan: upgradePlan, apply: upgradeApply, rollback: upgradeRollback },
 })
+
+function formatUpgradeBlockerMessage(code: string, fallback: string, lang: 'zh' | 'en'): string {
+  if (lang !== 'zh') return fallback
+  if (code === 'missing-governance-lock') return '缺少治理锁文件，无法判断哪些生成文件可以安全升级。'
+  if (code === 'local-generated-file-changed') return '受管生成文件已有本地改动，需要三方对比或人工审阅后再升级。'
+  return fallback
+}
+
+function formatUpgradeStepReason(action: string, fallback: string, lang: 'zh' | 'en'): string {
+  if (lang !== 'zh') return fallback
+  switch (action) {
+    case 'initialize-governance-lock':
+      return '先创建治理锁文件，后续才能安全升级生成的治理资产。'
+    case 'upgrade-scale-engine':
+      return fallback.replace('SCALE Engine changed from', 'SCALE Engine 版本变化：').replace(' to ', ' -> ')
+    case 'upgrade-governance-pack':
+      return fallback.replace('Governance pack', '治理包').replace('changed from', '版本变化：').replace(' to ', ' -> ')
+    case 'refresh-managed-generated-files':
+      return fallback.replace('clean managed governance files can be refreshed automatically; local edits still block automatic apply.', '个干净受管治理文件可自动刷新；已有本地改动的文件仍会阻止自动应用。')
+    case 'restore-missing-generated-file':
+      return '该文件由治理锁管理，但当前本地缺失，可从当前治理包恢复。'
+    case 'review-local-change':
+      return '需要保留、合并或明确替换本地改动，不能自动覆盖。'
+    case 'review-third-party-capability':
+      return fallback
+        .replace('updates require manual-review; SCALE never auto-installs third-party capabilities.', '更新需要人工审阅；SCALE 不会自动安装第三方能力。')
+        .replace('updates require blocked; SCALE never auto-installs third-party capabilities.', '更新默认阻断；SCALE 不会自动安装第三方能力。')
+    case 'run-preflight':
+      return '完成已接受的升级后，运行项目级预检。'
+    default:
+      return fallback
+  }
+}
+
+function formatUpgradeApplyReason(reason: string, lang: 'zh' | 'en'): string {
+  if (lang !== 'zh') return reason
+  switch (reason) {
+    case 'Review scale upgrade plan first, then rerun with --confirm.':
+      return '请先审阅 SCALE 升级计划，再使用 --confirm 重新运行。'
+    case 'Upgrade requires manual review because generated files have local changes or the lock is missing.':
+      return '生成文件存在本地改动或缺少锁文件，本次升级需要人工审阅。'
+    case 'Cannot apply without a governance lock and pack id.':
+      return '缺少治理锁文件或治理包 ID，无法应用升级。'
+    case 'No safe upgrade changes were needed.':
+      return '没有需要应用的安全升级变更。'
+    case 'Safe upgrade changes were applied.':
+      return '已应用安全升级变更。'
+    case 'No SCALE-managed upgrade backup was found.':
+      return '未找到 SCALE 管理的升级备份。'
+    case 'Latest SCALE-managed upgrade backup was rolled back.':
+      return '已回滚最近一次 SCALE 管理的升级备份。'
+    default:
+      return reason
+  }
+}
 
 // ============================================================================
 // assets command - Resource lifecycle governance
@@ -3694,7 +3775,8 @@ function normalizeThemeArg(value: unknown): 'dark' | 'light' | 'auto' {
 }
 
 function normalizeLangArg(value: unknown): 'zh' | 'en' {
-  return String(value ?? 'zh').trim().toLowerCase() === 'en' ? 'en' : 'zh'
+  const raw = String(value ?? process.env.SCALE_LANG ?? 'zh').trim().toLowerCase()
+  return raw === 'en' || raw.startsWith('en-') || raw === 'english' ? 'en' : 'zh'
 }
 
 function launchLocalFile(path: string): void {

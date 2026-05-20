@@ -100,6 +100,7 @@ export interface UpgradePlanStep {
     | 'initialize-governance-lock'
     | 'upgrade-scale-engine'
     | 'upgrade-governance-pack'
+    | 'refresh-managed-generated-files'
     | 'restore-missing-generated-file'
     | 'review-local-change'
     | 'review-third-party-capability'
@@ -239,8 +240,16 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
       action: 'upgrade-governance-pack',
       risk: 'medium',
       reason: `Governance pack ${check.governancePack.id} changed from v${check.governancePack.currentVersion} to v${check.governancePack.latestVersion}.`,
-      command: `scale init --governance-pack ${check.governancePack.id}`,
+      command: `scale upgrade apply --dir . --confirm`,
     })
+    if (check.drift.clean.length > 0) {
+      steps.push({
+        action: 'refresh-managed-generated-files',
+        risk: 'medium',
+        reason: `${check.drift.clean.length} clean managed governance files can be refreshed automatically; local edits still block automatic apply.`,
+        command: `scale upgrade apply --dir . --confirm`,
+      })
+    }
   }
 
   for (const entry of check.drift.missing) {
@@ -310,19 +319,24 @@ export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeAppl
   if (!plan.check.governanceLock.exists || !plan.check.governancePack.id) {
     return upgradeApplyResult(projectDir, plan, false, false, 'Cannot apply without a governance lock and pack id.', [])
   }
-  if (!plan.check.governancePack.upToDate) {
-    return upgradeApplyResult(projectDir, plan, false, false, 'Governance pack version changes require manual review before automatic apply.', [])
-  }
-
   const missingFiles = plan.check.drift.missing.map(entry => entry.path)
-  const shouldRefreshLock = !plan.check.scaleEngine.upToDate || missingFiles.length > 0
+  const managedRefreshFiles = !plan.check.governancePack.upToDate
+    ? plan.check.drift.clean.map(entry => entry.path)
+    : []
+  const shouldRefreshLock = !plan.check.scaleEngine.upToDate || !plan.check.governancePack.upToDate || missingFiles.length > 0
   if (!shouldRefreshLock) {
     return upgradeApplyResult(projectDir, plan, true, false, 'No safe upgrade changes were needed.', [])
   }
 
-  const backup = createUpgradeBackup(projectDir, uniqueStrings([...missingFiles, '.scale/governance.lock.json']))
-  const result = writeGovernanceTemplates(projectDir, { pack: plan.check.governancePack.id })
+  const backup = createUpgradeBackup(projectDir, uniqueStrings([...missingFiles, ...managedRefreshFiles, '.scale/governance.lock.json']))
+  const result = writeGovernanceTemplates(projectDir, {
+    pack: plan.check.governancePack.id,
+    overwriteManaged: !plan.check.governancePack.upToDate,
+  })
   const createdFiles = result.created
+    .map(path => normalizeProjectRelativePath(projectDir, path))
+    .filter((path): path is string => Boolean(path))
+  const updatedFiles = result.updated
     .map(path => normalizeProjectRelativePath(projectDir, path))
     .filter((path): path is string => Boolean(path))
   mergeCreatedFilesIntoBackup(backup.manifestPath, createdFiles)
@@ -330,6 +344,7 @@ export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeAppl
   const changedFiles = uniqueStrings([
     ...missingFiles.filter(path => existsSync(join(projectDir, path))),
     ...createdFiles,
+    ...updatedFiles,
     '.scale/governance.lock.json',
   ])
 
@@ -505,10 +520,12 @@ function uniqueStrings(items: string[]): string[] {
   return [...new Set(items)]
 }
 
-export function writeUpgradePlanHtml(report: UpgradePlanReport, outputPath?: string): string {
+export type UpgradePlanHtmlLanguage = 'zh' | 'en'
+
+export function writeUpgradePlanHtml(report: UpgradePlanReport, outputPath?: string, lang: UpgradePlanHtmlLanguage = 'zh'): string {
   const target = outputPath ?? join(report.projectDir, '.scale', 'reports', 'upgrade-plan.html')
   mkdirSync(dirname(target), { recursive: true })
-  writeFileSync(target, renderUpgradePlanHtml(report), 'utf-8')
+  writeFileSync(target, renderUpgradePlanHtml(report, lang), 'utf-8')
   return target
 }
 
@@ -560,23 +577,59 @@ function updateReason(category: ToolCapabilityCategory, trust: ThirdPartyTrust):
   return 'Trusted source; check version and changelog before applying.'
 }
 
-function renderUpgradePlanHtml(report: UpgradePlanReport): string {
+function renderUpgradePlanHtml(report: UpgradePlanReport, lang: UpgradePlanHtmlLanguage): string {
+  const zh = lang === 'zh'
+  const labels = zh
+    ? {
+        title: 'SCALE 工作流升级计划',
+        project: '项目',
+        status: '状态',
+        applyMode: '应用模式',
+        blockers: '阻塞项',
+        noBlockers: '未发现阻塞项。',
+        steps: '步骤',
+        action: '动作',
+        path: '路径',
+        risk: '风险',
+        reason: '原因',
+        command: '命令',
+        thirdPartyPolicy: '第三方能力策略',
+        policy: '策略',
+        reviewRequired: '需要人工审查',
+      }
+    : {
+        title: 'SCALE Upgrade Plan',
+        project: 'Project',
+        status: 'Status',
+        applyMode: 'Apply mode',
+        blockers: 'Blockers',
+        noBlockers: 'No blockers detected.',
+        steps: 'Steps',
+        action: 'Action',
+        path: 'Path',
+        risk: 'Risk',
+        reason: 'Reason',
+        command: 'Command',
+        thirdPartyPolicy: 'Third-party Policy',
+        policy: 'Policy',
+        reviewRequired: 'Review required',
+      }
   const rows = report.steps.map(step => `
       <tr>
         <td>${escapeHtml(step.action)}</td>
         <td>${escapeHtml(step.path ?? '')}</td>
         <td>${escapeHtml(step.risk)}</td>
-        <td>${escapeHtml(step.reason)}</td>
+        <td>${escapeHtml(localizedUpgradeStepReason(step, lang))}</td>
         <td><code>${escapeHtml(step.command ?? '')}</code></td>
       </tr>`).join('')
   const blockers = report.blockers.length
-    ? report.blockers.map(blocker => `<li><strong>${escapeHtml(blocker.code)}</strong> ${escapeHtml(blocker.path ?? '')} ${escapeHtml(blocker.message)}</li>`).join('')
-    : '<li>No blockers detected.</li>'
+    ? report.blockers.map(blocker => `<li><strong>${escapeHtml(blocker.code)}</strong> ${escapeHtml(blocker.path ?? '')} ${escapeHtml(localizedUpgradeBlockerMessage(blocker, lang))}</li>`).join('')
+    : `<li>${labels.noBlockers}</li>`
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${zh ? 'zh-CN' : 'en'}">
 <head>
   <meta charset="utf-8" />
-  <title>SCALE Upgrade Plan</title>
+  <title>${labels.title}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #1f2937; }
     h1 { margin-bottom: 8px; }
@@ -588,21 +641,55 @@ function renderUpgradePlanHtml(report: UpgradePlanReport): string {
   </style>
 </head>
 <body>
-  <h1>SCALE Upgrade Plan</h1>
-  <p>Project: <code>${escapeHtml(report.projectDir)}</code></p>
-  <p>Status: <span class="badge">${escapeHtml(report.status)}</span> Apply mode: <span class="badge">${escapeHtml(report.applyMode)}</span></p>
-  <h2>Blockers</h2>
+  <h1>${labels.title}</h1>
+  <p>${labels.project}: <code>${escapeHtml(report.projectDir)}</code></p>
+  <p>${labels.status}: <span class="badge">${escapeHtml(report.status)}</span> ${labels.applyMode}: <span class="badge">${escapeHtml(report.applyMode)}</span></p>
+  <h2>${labels.blockers}</h2>
   <ul>${blockers}</ul>
-  <h2>Steps</h2>
+  <h2>${labels.steps}</h2>
   <table>
-    <thead><tr><th>Action</th><th>Path</th><th>Risk</th><th>Reason</th><th>Command</th></tr></thead>
+    <thead><tr><th>${labels.action}</th><th>${labels.path}</th><th>${labels.risk}</th><th>${labels.reason}</th><th>${labels.command}</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <h2>Third-party Policy</h2>
-  <p>Policy: ${escapeHtml(report.check.thirdParty.policy)}. Review required: ${report.check.thirdParty.reviewRequired}.</p>
+  <h2>${labels.thirdPartyPolicy}</h2>
+  <p>${labels.policy}: ${escapeHtml(report.check.thirdParty.policy)}. ${labels.reviewRequired}: ${report.check.thirdParty.reviewRequired}.</p>
 </body>
 </html>
 `
+}
+
+function localizedUpgradeBlockerMessage(blocker: UpgradePlanBlocker, lang: UpgradePlanHtmlLanguage): string {
+  if (lang !== 'zh') return blocker.message
+  switch (blocker.code) {
+    case 'missing-governance-lock':
+      return '缺少治理锁文件，无法判断哪些生成文件可以安全升级。'
+    case 'local-generated-file-changed':
+      return '受管生成文件已有本地改动，需要三方对比或人工审阅后再升级。'
+  }
+}
+
+function localizedUpgradeStepReason(step: UpgradePlanStep, lang: UpgradePlanHtmlLanguage): string {
+  if (lang !== 'zh') return step.reason
+  switch (step.action) {
+    case 'initialize-governance-lock':
+      return '先创建治理锁文件，后续才能安全升级生成的治理资产。'
+    case 'upgrade-scale-engine':
+      return step.reason.replace('SCALE Engine changed from', 'SCALE Engine 版本变化：').replace(' to ', ' -> ')
+    case 'upgrade-governance-pack':
+      return step.reason.replace('Governance pack', '治理包').replace('changed from', '版本变化：').replace(' to ', ' -> ')
+    case 'refresh-managed-generated-files':
+      return step.reason.replace('clean managed governance files can be refreshed automatically; local edits still block automatic apply.', '个干净受管治理文件可自动刷新；已有本地改动的文件仍会阻止自动应用。')
+    case 'restore-missing-generated-file':
+      return '该文件由治理锁管理，但当前本地缺失，可从当前治理包恢复。'
+    case 'review-local-change':
+      return '需要保留、合并或明确替换本地改动，不能自动覆盖。'
+    case 'review-third-party-capability':
+      return step.reason
+        .replace('updates require manual-review; SCALE never auto-installs third-party capabilities.', '更新需要人工审阅；SCALE 不会自动安装第三方能力。')
+        .replace('updates require blocked; SCALE never auto-installs third-party capabilities.', '更新默认阻断；SCALE 不会自动安装第三方能力。')
+    case 'run-preflight':
+      return '完成已接受的升级后，运行项目级预检。'
+  }
 }
 
 function escapeHtml(value: string): string {

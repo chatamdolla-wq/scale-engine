@@ -1,7 +1,7 @@
 {
   "version": 1,
   "scalePackage": "@hongmaple0820/scale-engine",
-  "scaleVersion": "0.25.0",
+  "scaleVersion": "0.26.0",
   "pack": "scale-engine-repo",
   "packVersion": 1,
   "generatedAt": "2026-05-20T13:30:17.090Z",

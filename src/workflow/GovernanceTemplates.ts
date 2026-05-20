@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { skillRoutingPolicyTemplate } from '../skills/routing/SkillPolicy.js'
-import { readGovernanceLock, writeGovernanceLock } from './GovernanceLock.js'
+import { computeGovernanceDrift, readGovernanceLock, writeGovernanceLock } from './GovernanceLock.js'
 import {
   resolveGovernanceTemplatePack,
   type GovernanceGeneratedFile,
@@ -48,10 +48,12 @@ export interface GovernanceTemplateOptions {
   pack?: GovernancePackId | string
   services?: VerificationService[]
   exclude?: string[]
+  overwriteManaged?: boolean
 }
 
 export interface GovernanceTemplateResult {
   created: string[]
+  updated: string[]
   skipped: string[]
 }
 
@@ -65,60 +67,63 @@ export function writeGovernanceTemplates(
   const packMode = pack.modeDefaults[mode]
   const services = options.services ?? pack.defaultServices ?? detectRootServices(projectDir, pack.id)
   const exclude = options.exclude ?? pack.exclude ?? ['node_modules', 'dist', 'tmp', 'vendor']
-  const result: GovernanceTemplateResult = { created: [], skipped: [] }
+  const result: GovernanceTemplateResult = { created: [], updated: [], skipped: [] }
   const lockFiles = new Map<string, { path: string; owned: boolean; sha256?: string }>()
   const packOverrides = new Set(pack.generatedFiles.map(file => file.path))
+  const overwritePaths = options.overwriteManaged
+    ? new Set(computeGovernanceDrift(projectDir).clean.map(entry => entry.path))
+    : new Set<string>()
   for (const file of readGovernanceLock(projectDir)?.files ?? []) {
     lockFiles.set(file.path, file)
   }
 
   if (!packOverrides.has('docs/workflow/README.md')) {
-    writeTracked(result, lockFiles, projectDir, 'docs/workflow/README.md', workflowReadme(projectName, mode, pack.id))
+    writeTracked(result, lockFiles, projectDir, 'docs/workflow/README.md', workflowReadme(projectName, mode, pack.id), overwritePaths)
   }
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/explore.md', governanceTemplateContent('explore.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-evidence.md', governanceTemplateContent('skill-evidence.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/runtime.md', governanceTemplateContent('runtime.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/reality-check.md', governanceTemplateContent('reality-check.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-cleanup.md', governanceTemplateContent('resource-cleanup.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/ui-spec.md', governanceTemplateContent('ui-spec.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/docs-impact.md', governanceTemplateContent('docs-impact.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-impact.md', governanceTemplateContent('resource-impact.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/standards-impact.md', governanceTemplateContent('standards-impact.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/architecture-review.md', governanceTemplateContent('architecture-review.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/product-smoke.md', governanceTemplateContent('product-smoke.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/plan.md', governanceTemplateContent('plan.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/verification.md', governanceTemplateContent('verification.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/review.md', governanceTemplateContent('review.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/summary.md', governanceTemplateContent('summary.md'))
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/github-actions-scale-preflight.yml', githubActionsPreflightTemplate())
-  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/pre-push-scale-preflight.sh', prePushPreflightTemplate())
-  writeTracked(result, lockFiles, projectDir, 'docs/worklog/metrics.md', metricsTemplate())
-  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.ps1', productSmokePowerShellScript())
-  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.sh', productSmokeShellScript())
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/explore.md', governanceTemplateContent('explore.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/mini-prd.md', governanceTemplateContent('mini-prd.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-plan.md', governanceTemplateContent('skill-plan.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/skill-evidence.md', governanceTemplateContent('skill-evidence.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/runtime.md', governanceTemplateContent('runtime.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/reality-check.md', governanceTemplateContent('reality-check.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-cleanup.md', governanceTemplateContent('resource-cleanup.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/ui-spec.md', governanceTemplateContent('ui-spec.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/visual-review.md', governanceTemplateContent('visual-review.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/api-contract.md', governanceTemplateContent('api-contract.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/docs-impact.md', governanceTemplateContent('docs-impact.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/resource-impact.md', governanceTemplateContent('resource-impact.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/standards-impact.md', governanceTemplateContent('standards-impact.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/architecture-review.md', governanceTemplateContent('architecture-review.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/security-review.md', governanceTemplateContent('security-review.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/db-change-plan.md', governanceTemplateContent('db-change-plan.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/e2e-plan.md', governanceTemplateContent('e2e-plan.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/product-smoke.md', governanceTemplateContent('product-smoke.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/plan.md', governanceTemplateContent('plan.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/verification.md', governanceTemplateContent('verification.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/review.md', governanceTemplateContent('review.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/summary.md', governanceTemplateContent('summary.md'), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/github-actions-scale-preflight.yml', githubActionsPreflightTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/workflow/templates/pre-push-scale-preflight.sh', prePushPreflightTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'docs/worklog/metrics.md', metricsTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.ps1', productSmokePowerShellScript(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, 'scripts/qa/product-smoke.sh', productSmokeShellScript(), overwritePaths)
   writeTracked(result, lockFiles, projectDir, '.scale/verification.json', verificationMatrixTemplate(mode, {
     services,
     exclude,
     artifactGate: packMode.artifactGate,
-  }))
-  writeTracked(result, lockFiles, projectDir, '.scale/skills.json', skillRoutingPolicyTemplate(mode))
-  writeTracked(result, lockFiles, projectDir, '.scale/tools.json', toolPolicyTemplate(toolModeFromGovernanceMode(mode)))
-  writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate())
-  writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate())
-  writeTracked(result, lockFiles, projectDir, '.scale/output-policy.json', outputPolicyTemplate())
-  writeTracked(result, lockFiles, projectDir, '.scale/product-smoke.json', productSmokeConfigTemplate(mode))
-  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate())
-  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards-baseline.json', engineeringStandardsBaselineTemplate())
-  writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate())
+  }), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/skills.json', skillRoutingPolicyTemplate(mode), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/tools.json', toolPolicyTemplate(toolModeFromGovernanceMode(mode)), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/resource-policy.json', resourcePolicyTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/assets.json', resourceManifestTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/output-policy.json', outputPolicyTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/product-smoke.json', productSmokeConfigTemplate(mode), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards.json', engineeringStandardsPolicyTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/engineering-standards-baseline.json', engineeringStandardsBaselineTemplate(), overwritePaths)
+  writeTracked(result, lockFiles, projectDir, '.scale/frameworks.json', frameworksCatalogTemplate(), overwritePaths)
 
   for (const file of pack.generatedFiles) {
-    writePackGeneratedFile(result, lockFiles, projectDir, pack.id, pack.version, file)
+    writePackGeneratedFile(result, lockFiles, projectDir, pack.id, pack.version, file, overwritePaths)
   }
 
   const lockPath = join(projectDir, '.scale', 'governance.lock.json')
@@ -160,16 +165,21 @@ export function governanceTemplateContent(name: GovernanceArtifactTemplateName):
   }
 }
 
-function writeIfMissing(result: GovernanceTemplateResult, path: string, content: string): boolean {
+function writeIfMissing(result: GovernanceTemplateResult, path: string, content: string, overwrite = false): 'created' | 'updated' | 'skipped' {
   if (existsSync(path)) {
+    if (overwrite) {
+      writeFileSync(path, content, 'utf-8')
+      result.updated.push(path)
+      return 'updated'
+    }
     result.skipped.push(path)
-    return false
+    return 'skipped'
   }
   const dir = path.split(/[\\/]/).slice(0, -1).join('/')
   if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true })
   writeFileSync(path, content, 'utf-8')
   result.created.push(path)
-  return true
+  return 'created'
 }
 
 function writeTracked(
@@ -178,9 +188,10 @@ function writeTracked(
   projectDir: string,
   relativePath: string,
   content: string,
+  overwritePaths: Set<string>,
 ): void {
-  const created = writeIfMissing(result, join(projectDir, relativePath), content)
-  if (created) lockFiles.set(relativePath, { path: relativePath, owned: true })
+  const status = writeIfMissing(result, join(projectDir, relativePath), content, overwritePaths.has(relativePath))
+  if (status !== 'skipped') lockFiles.set(relativePath, { path: relativePath, owned: true })
 }
 
 function writePackGeneratedFile(
@@ -190,12 +201,13 @@ function writePackGeneratedFile(
   packId: string,
   packVersion: number,
   file: GovernanceGeneratedFile,
+  overwritePaths: Set<string>,
 ): void {
   const content = shouldUseGeneratedHeader(file)
     ? generatedHeader(packId, packVersion) + file.content
     : file.content
-  const created = writeIfMissing(result, join(projectDir, file.path), content)
-  if (created) lockFiles.set(file.path, { path: file.path, owned: file.owned })
+  const status = writeIfMissing(result, join(projectDir, file.path), content, overwritePaths.has(file.path))
+  if (status !== 'skipped') lockFiles.set(file.path, { path: file.path, owned: file.owned })
 }
 
 function detectRootServices(projectDir: string, packId: GovernancePackId): VerificationService[] {

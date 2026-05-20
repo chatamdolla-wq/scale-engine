@@ -17,7 +17,7 @@ SCALE 把更新分成三层：
 | 层级 | 命令支持 | 默认行为 |
 | --- | --- | --- |
 | SCALE CLI | `npm install -g @hongmaple0820/scale-engine@latest` | 用户显式安装或升级 |
-| 生成的工作流文件 | `scale upgrade check/plan/apply/rollback` | 先安全检查和生成计划，只有 `--confirm` 才应用 |
+| 生成的工作流文件 | `scale upgrade check/plan/apply/rollback` | 先安全检查和生成计划；干净的受管文件可自动刷新，有本地改动则进入人工审阅 |
 | 项目级验证 | 仓库 `make` 目标和 `scripts/workflow/*` | 必须保留项目语义；SCALE 不猜业务路由、凭据和服务拓扑 |
 
 这意味着工作流适配不是 Codex-only。Codex 可以帮助审阅和处理 `manual-review`，但常规路径应该是命令驱动。
@@ -60,6 +60,13 @@ scale upgrade apply --dir . --confirm
 scale preflight --dir . --service all --preflight-profile quick
 ```
 
+默认输出是中文。需要英文命令提示或英文 HTML 计划时加 `--lang en`：
+
+```bash
+scale upgrade check --dir . --lang en
+scale upgrade plan --dir . --html --lang en
+```
+
 如果仓库已有本地封装，优先使用本地命令，因为它们编码了项目默认值：
 
 ```bash
@@ -81,10 +88,26 @@ scale upgrade rollback --dir .
 | --- | --- | --- |
 | clean | 生成的工作流集合和 lock 文件一致 | 运行项目级验证 |
 | missing | 生成文件缺失 | 通常可用 `apply --confirm` 恢复 |
-| outdated | SCALE 有更新的生成模板 | 审阅计划，确认安全后应用 |
+| updates-available | SCALE 版本、governance pack 或受管文件存在可应用更新 | 审阅计划，确认安全后应用 |
 | manual-review | 生成文件已有本地修改 | 检查 diff，不要自动覆盖 |
 
 `manual-review` 是有意设计。SCALE 不应该抹掉本地项目知识、服务命令或 Agent 规则。
+
+## 自动升级边界
+
+`scale upgrade apply --confirm` 现在覆盖三类安全场景：
+
+- 受管文件缺失：从当前 governance pack 恢复缺失文件。
+- SCALE CLI 版本变化：刷新 `.scale/governance.lock.json`，让项目记录当前 CLI 版本。
+- governance pack 版本变化：如果受管文件内容仍与 lock 哈希一致，自动刷新这些干净文件，让新模板、新门禁、新脚本和新文档入口落到旧项目。
+
+下面场景不会自动覆盖：
+
+- 文件相对 lock 已有本地改动。
+- 缺少 `.scale/governance.lock.json`，无法判断哪些文件由 SCALE 管理。
+- 第三方 skills、MCP、浏览器、桌面自动化或外部 CLI 需要新增、升级、执行安装脚本。
+
+这些情况会进入 `manual-review`，由维护者或 Agent 先看计划和 diff，再决定合并、保留本地改动，或重新初始化。
 
 ## 项目级适配
 
@@ -128,13 +151,13 @@ scale upgrade rollback --dir .
 
 ```makefile
 workflow-upgrade-check:
-	scale upgrade check --dir .
+	scale upgrade check --dir . --lang zh
 workflow-upgrade-plan:
-	scale upgrade plan --dir . --html
+	scale upgrade plan --dir . --html --lang zh
 workflow-upgrade-apply:
-	scale upgrade apply --dir . --confirm
+	scale upgrade apply --dir . --confirm --lang zh
 workflow-upgrade-rollback:
-	scale upgrade rollback --dir .
+	scale upgrade rollback --dir . --lang zh
 workflow-upgrade-verify:
 	scale preflight --dir . --service all --preflight-profile quick
 ```
@@ -146,6 +169,6 @@ workflow-upgrade-verify:
 - `scale --version` 输出预期版本。
 - `scale upgrade check --dir .` 没有非预期 drift。
 - 有变更时，`scale upgrade plan --dir . --html` 能生成可审阅计划。
-- `scale upgrade apply --dir . --confirm` 只在审阅计划后使用。
+- `scale upgrade apply --dir . --confirm` 只在审阅计划后使用；干净受管文件可自动刷新，本地改动必须人工审阅。
 - 项目级验证通过，或记录清楚已知失败。
 - `README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/workflow/README.md` 指向同一组工作流命令。

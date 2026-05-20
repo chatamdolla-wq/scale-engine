@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.23.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.26.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.23.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.26.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.23.0
+# SCALE Engine v0.26.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -152,10 +152,10 @@ scale --version
 SCALE 把升级分成三层：CLI 自身、已生成到项目里的 governance pack 文件、第三方 skills/MCP/CLI 能力。默认只检查和生成计划，不自动覆盖用户改过的文件，也不自动安装第三方工具。
 
 ```bash
-scale upgrade check --dir .
-scale upgrade plan --dir . --html
-scale upgrade apply --dir . --confirm
-scale upgrade rollback --dir .
+scale upgrade check --dir . --lang zh
+scale upgrade plan --dir . --html --lang zh
+scale upgrade apply --dir . --confirm --lang zh
+scale upgrade rollback --dir . --lang zh
 scale tools outdated --dir .
 scale skill outdated --dir .
 ```
@@ -164,14 +164,13 @@ scale skill outdated --dir .
 
 - `scale upgrade check` 读取 `.scale/governance.lock.json`，判断当前项目是干净、缺文件、模板过期，还是存在本地改动。
 - `scale upgrade plan` 生成非破坏性计划；遇到用户改过的生成文件时标记 `manual-review`。
-- `scale upgrade apply --confirm` 只恢复缺失生成文件和刷新锁文件，先写 `.scale/backups/upgrade-*` 回滚点。
+- `scale upgrade apply --confirm` 会在先写 `.scale/backups/upgrade-*` 回滚点后，恢复缺失文件、刷新锁文件，并自动更新仍与 lock 哈希一致的干净受管模板。
 - `scale upgrade rollback` 只撤回最近一次 SCALE 管理的安全应用。
 - `scale tools outdated` 和 `scale skill outdated` 只列出更新面、来源、信任等级和安全策略，不做自动安装。
 - 第三方社区来源默认人工评审，高权限桌面自动化默认阻断自动升级。
+- 默认命令输出是中文；需要英文提示或英文 HTML 计划时使用 `--lang en`。
 
-详细说明见 [升级管理](docs/UPGRADE_MANAGEMENT.md)。
-
-新用户和项目维护者可先看 [SCALE workflow upgrade guide](docs/start/workflow-upgrade.md)，它把 `scale init --interactive`、`scale upgrade check/plan/apply/rollback` 和仓库本地 `make workflow-upgrade-*` 入口放在一条可执行路径里。
+新用户和项目维护者可先看 [SCALE 工作流升级指南](docs/start/workflow-upgrade.md)，它把 `scale init --interactive`、`scale upgrade check/plan/apply/rollback`、`--lang zh/en` 和仓库本地 `make workflow-upgrade-*` 入口放在一条可执行路径里。
 
 ## Governance Pack
 
