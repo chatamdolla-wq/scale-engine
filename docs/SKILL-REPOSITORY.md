@@ -19,6 +19,7 @@
 - review-skill-frontmatter
 - inspect-scripts-directory
 - verify-license-and-source
+- verify-attribution-and-notice
 - pin-source-revision
 - npm-audit-signatures
 
@@ -26,6 +27,8 @@
 
 | ID | 类别 | 信任 | 主要用途 | 组合建议 |
 | --- | --- | --- | --- | --- |
+| `planning-with-files` | planning | community | Use persistent planning files, progress logs, findings, active-plan selection, and plan attestation for long-running agent work. | memory-brain, web-access, code-reviewer |
+| `agentmemory` | memory | community | Use as an optional external memory provider via REST or MCP when teams want cross-agent persistent memory beyond SCALE local Memory Brain. | memory-brain, mcp-chrome-devtools, codex-cli |
 | `frontend-design` | ui | official | UI 视觉方向、布局、组件状态和前端实现约束。 | awesome-design-md, ui-ux-pro-max, webapp-testing |
 | `awesome-design-md` | ui | ecosystem | 建立产品级设计规范和视觉语言。 | ui-ux-pro-max, frontend-design |
 | `ui-ux-pro-max` | ui | ecosystem | 补齐体验策略、交互状态和 UI 验收维度。 | awesome-design-md, webapp-testing |
@@ -43,3 +46,10 @@
 | `gemini-cli` | agent-cli | official | 外部 CLI 审查和命令级证据。 | codex-cli, opencode-cli |
 | `opencode-cli` | agent-cli | ecosystem | 外部 CLI 审查和命令级证据。 | codex-cli, gemini-cli |
 | `agency-agents-zh` | role-library | community | 提供 CEO、CTO、工程、设计、产品等角色预设参考。 | skill-safety-scan |
+
+## Third-Party Attribution
+
+| ID | License | Usage | Notice |
+| --- | --- | --- | --- |
+| `planning-with-files` | MIT | adapted-concept | Inspired by and compatible with OthmanAdi/planning-with-files. SCALE should not copy upstream files unless the MIT license text and attribution are included. |
+| `agentmemory` | Apache-2.0 | external-reference | Optional external integration only. Do not vendor agentmemory code into SCALE without preserving Apache-2.0 license text, modification notices, and any upstream NOTICE obligations. |

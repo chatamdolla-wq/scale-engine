@@ -117,6 +117,43 @@ describe('skill radar CLI', () => {
     expect(report.fallbacks.join('\n')).toContain('manual operator checklist')
   }, 120_000)
 
+  it('recommends planning and memory capabilities with attribution-aware evidence', async () => {
+    const scaleDir = makeDir('scale-skill-radar-scale-')
+    const projectDir = makeDir('scale-skill-radar-project-')
+
+    const result = await runScale([
+      'skill',
+      'radar',
+      '--task',
+      'Use long-running planning with findings progress and persistent memory knowledge recall through agentmemory',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      ok: boolean
+      detectedDomains: Array<{ domain: string }>
+      recommendations: Array<{ id: string; category: string; safetyLevel: string; requiredEvidence: string[] }>
+      requiredEvidence: string[]
+    }>(result.stdout)
+    expect(report.ok).toBe(true)
+    expect(report.detectedDomains).toEqual(expect.arrayContaining([
+      expect.objectContaining({ domain: 'planning' }),
+      expect.objectContaining({ domain: 'memory' }),
+    ]))
+    expect(report.recommendations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'planning-with-files', category: 'planning', safetyLevel: 'review-required' }),
+      expect.objectContaining({ id: 'agentmemory', category: 'memory', safetyLevel: 'review-required' }),
+    ]))
+    expect(report.requiredEvidence).toEqual(expect.arrayContaining([
+      'task-plan',
+      'plan-attestation',
+      'memory-provider-health',
+      'privacy-boundary',
+      'data-retention-policy',
+    ]))
+  }, 120_000)
+
   it('adds supply-chain safety details to skill doctor output', async () => {
     const scaleDir = makeDir('scale-skill-radar-scale-')
     const projectDir = makeDir('scale-skill-radar-project-')

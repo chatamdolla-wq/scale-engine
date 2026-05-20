@@ -318,7 +318,9 @@ scale skill doctor --supply-chain
 
 Desktop CUA and external agent CLIs are blocked by default through Tool Policy until deliberately enabled. Third-party skills stay review-required until source, scripts, license, and pinned revision are checked.
 
-See [Skill Radar](docs/SKILL_RADAR.md).
+新引入或借鉴的社区 skills 必须保留来源、授权、致谢和使用边界。当前外部参考包括 `OthmanAdi/planning-with-files`（MIT）和 `rohitg00/agentmemory`（Apache-2.0）；SCALE 目前只做治理登记、可选集成和方法借鉴，不直接 vendoring 上游源码。
+
+See [Skill Radar](docs/SKILL_RADAR.md) and [Third-Party Skills](docs/THIRD_PARTY_SKILLS.md).
 
 ## Memory Brain
 

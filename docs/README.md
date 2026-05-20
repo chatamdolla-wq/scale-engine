@@ -28,6 +28,7 @@
 | [CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md) | CodeGraph、Graphify 和显式 fallback 的代码智能与探索 ROI |
 | [WORKFLOW_EVAL.md](WORKFLOW_EVAL.md) | Workflow Eval、pass@k 指标、Failure Replay 和改进候选 |
 | [SKILL_RADAR.md](SKILL_RADAR.md) | Skill Radar、能力置信度、证据要求和供应链安全检查 |
+| [THIRD_PARTY_SKILLS.md](THIRD_PARTY_SKILLS.md) | 第三方 skill 致谢、授权边界、引用方式和 vendoring 策略 |
 | [UPGRADE_MANAGEMENT.md](UPGRADE_MANAGEMENT.md) | SCALE CLI、governance pack、skills、MCP 和 CLI 工具的安全升级流程 |
 | [GOVERNANCE_DASHBOARD.md](GOVERNANCE_DASHBOARD.md) | Runtime、eval、memory、resource、HTML artifact 的统一治理面板 |
 | [RELEASE_READINESS.md](RELEASE_READINESS.md) | 发版前质量门槛、官方 demo 和真实项目落地验收 |

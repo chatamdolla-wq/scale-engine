@@ -128,6 +128,20 @@ const DOMAIN_CONFIG: Record<string, {
     evidence: ['changed-docs', 'source-of-truth-map'],
     fallback: 'Update canonical Markdown directly and run doc drift checks.',
   },
+  planning: {
+    keywords: ['plan', 'planning', 'task_plan', 'findings', 'progress', 'attestation', 'long-running', 'multi-step', 'research plan', '规划', '计划'],
+    filePatterns: [/\.planning\//i, /(^|\/)(plans|worklog|tasks)\//i],
+    categories: ['planning'],
+    evidence: ['task-plan', 'findings-log', 'progress-log', 'plan-attestation'],
+    fallback: 'Use SCALE task artifacts under .planning/tasks and record plan, progress, findings, and verification manually.',
+  },
+  memory: {
+    keywords: ['memory', 'recall', 'remember', 'forget', 'mcp memory', 'persistent memory', 'knowledge', 'agentmemory', '记忆', '知识库', '沉淀'],
+    filePatterns: [/memory/i, /(^|\/)(knowledge|memories)\//i],
+    categories: ['memory'],
+    evidence: ['memory-provider-health', 'privacy-boundary', 'data-retention-policy', 'query-result'],
+    fallback: 'Use SCALE Memory Brain or Memory Fabric locally and record memory evidence before enabling an external provider.',
+  },
   discovery: {
     keywords: ['skill', 'mcp', 'tool', 'capability', 'discover', 'search'],
     filePatterns: [],
@@ -385,6 +399,8 @@ function riskFor(entry: SkillRepositoryEntry, safetyLevel: SkillRadarSafetyLevel
   if (entry.category === 'desktop') return 'Desktop automation can affect local applications and must stay inside an operator boundary.'
   if (entry.category === 'browser') return 'Browser automation may touch authenticated state and must capture console/network evidence.'
   if (entry.category === 'agent-cli') return 'External agent CLI can modify files or consume credentials; use dry-run or scoped commands.'
+  if (entry.category === 'memory') return 'External memory providers can retain project data; require privacy, retention, and delete-boundary review.'
+  if (entry.category === 'planning') return 'External planning workflows are low execution risk, but upstream license and attribution must be preserved.'
   if (safetyLevel === 'review-required') return 'Third-party skill requires supply-chain review before installation or promotion.'
   return 'Low operational risk, but completion still requires evidence.'
 }
@@ -405,6 +421,8 @@ function capabilityFor(entry: SkillRepositoryEntry): string {
     testing: 'test-automation',
     review: 'quality-review',
     docs: 'documentation',
+    planning: 'file-backed-planning',
+    memory: 'external-memory-provider',
     'agent-cli': 'external-agent-cli',
     'role-library': 'role-orchestration',
     discovery: 'skill-discovery',

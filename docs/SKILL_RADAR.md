@@ -55,6 +55,8 @@ The score is not a promise that the tool will work. It is a routing signal. Any 
 | `externalCli` | Codex, Gemini, OpenCode, external agent CLI | disabled by default; dry-run and output evidence |
 | `review` | PR, merge, release, code review | reviewer skills, severity findings |
 | `docs` | docs, README, ADR, governance asset | doc impact and source-of-truth evidence |
+| `planning` | plans, task_plan, findings, progress, long-running work | file-backed planning, progress logs, plan attestation |
+| `memory` | memory, recall, knowledge, persistent memory, agentmemory | local Memory Brain first, optional external memory provider |
 | `discovery` | skill, MCP, tool, capability discovery | find-skills plus safety review |
 
 ## Evidence Contract
@@ -66,6 +68,8 @@ Each recommendation carries required evidence. Examples:
 - Desktop work: `operator-boundary`, `desktop-screenshot`, `affected-app`
 - External CLI work: `cli-version-check`, `command`, `exit-code`, `output-summary`
 - Review work: `review-report`, `finding-list`, `severity`
+- Planning work: `task-plan`, `findings-log`, `progress-log`, `plan-attestation`
+- Memory work: `memory-provider-health`, `privacy-boundary`, `data-retention-policy`, `query-result`
 
 If evidence is missing, the final delivery should list the capability as unverified rather than claiming it was used successfully.
 
@@ -78,8 +82,11 @@ If evidence is missing, the final delivery should list the capability as unverif
 - destructive install patterns
 - npm/npx lifecycle script review
 - required source, license, and revision checks
+- third-party attribution and NOTICE checks
 
 This is intentionally conservative. Third-party skills should start in review-required mode and be promoted only after inspection.
+
+External skill references and acknowledgements are tracked in [Third-Party Skills and External References](THIRD_PARTY_SKILLS.md). SCALE should not vendor community skill code unless the license text, source revision, copyright notice, and modification notes are preserved.
 
 ## Policy Integration
 

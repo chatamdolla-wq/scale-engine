@@ -1,4 +1,6 @@
 export type SkillRepositoryCategory =
+  | 'planning'
+  | 'memory'
   | 'ui'
   | 'browser'
   | 'desktop'
@@ -33,6 +35,14 @@ export interface SkillRepositoryEntry {
   safety: {
     requiresReview: boolean
     requiredChecks: string[]
+  }
+  attribution: {
+    license: string
+    copyright: string
+    notice: string
+    usage: 'external-reference' | 'optional-install' | 'adapted-concept' | 'vendored'
+    sourceRevision?: string
+    modifiedFromUpstream: boolean
   }
 }
 
@@ -72,10 +82,49 @@ const DEFAULT_REQUIRED_CHECKS = [
   'review-skill-frontmatter',
   'inspect-scripts-directory',
   'verify-license-and-source',
+  'verify-attribution-and-notice',
   'pin-source-revision',
 ]
 
 export const SKILL_REPOSITORY: SkillRepositoryEntry[] = [
+  skill({
+    id: 'planning-with-files',
+    name: 'Planning with Files',
+    category: 'planning',
+    description: 'File-backed planning workflow for complex multi-step tasks with task_plan, findings, progress, and plan attestation patterns.',
+    sourceUrl: 'https://github.com/OthmanAdi/planning-with-files',
+    installCommand: 'Review and install from https://github.com/OthmanAdi/planning-with-files; do not vendor without preserving MIT license and attribution.',
+    trust: 'community',
+    primaryUse: 'Use persistent planning files, progress logs, findings, active-plan selection, and plan attestation for long-running agent work.',
+    combineWith: ['memory-brain', 'web-access', 'code-reviewer'],
+    evidence: ['task-plan', 'findings-log', 'progress-log', 'plan-attestation'],
+    attribution: {
+      license: 'MIT',
+      copyright: 'Copyright (c) 2026 Ahmad Adi',
+      notice: 'Inspired by and compatible with OthmanAdi/planning-with-files. SCALE should not copy upstream files unless the MIT license text and attribution are included.',
+      usage: 'adapted-concept',
+      modifiedFromUpstream: false,
+    },
+  }),
+  skill({
+    id: 'agentmemory',
+    name: 'agentmemory',
+    category: 'memory',
+    description: 'Optional external persistent memory server and MCP integration for coding agents.',
+    sourceUrl: 'https://github.com/rohitg00/agentmemory',
+    installCommand: 'Optional external service: npx -y @agentmemory/agentmemory@latest; MCP shim: npx -y @agentmemory/mcp',
+    trust: 'community',
+    primaryUse: 'Use as an optional external memory provider via REST or MCP when teams want cross-agent persistent memory beyond SCALE local Memory Brain.',
+    combineWith: ['memory-brain', 'mcp-chrome-devtools', 'codex-cli'],
+    evidence: ['memory-provider-health', 'mcp-tool-list', 'privacy-boundary', 'data-retention-policy'],
+    attribution: {
+      license: 'Apache-2.0',
+      copyright: 'Copyright per upstream rohitg00/agentmemory project contributors',
+      notice: 'Optional external integration only. Do not vendor agentmemory code into SCALE without preserving Apache-2.0 license text, modification notices, and any upstream NOTICE obligations.',
+      usage: 'external-reference',
+      modifiedFromUpstream: false,
+    },
+  }),
   skill({
     id: 'frontend-design',
     name: 'Frontend Design',
@@ -398,6 +447,7 @@ export function renderSkillRepositoryMarkdown(): string {
     '- review-skill-frontmatter',
     '- inspect-scripts-directory',
     '- verify-license-and-source',
+    '- verify-attribution-and-notice',
     '- pin-source-revision',
     '- npm-audit-signatures',
     '',
@@ -409,6 +459,16 @@ export function renderSkillRepositoryMarkdown(): string {
 
   for (const entry of SKILL_REPOSITORY) {
     lines.push(`| \`${entry.id}\` | ${entry.category} | ${entry.trust} | ${entry.orchestration.primaryUse} | ${entry.orchestration.combineWith.join(', ') || '-'} |`)
+  }
+  lines.push(
+    '',
+    '## Third-Party Attribution',
+    '',
+    '| ID | License | Usage | Notice |',
+    '| --- | --- | --- | --- |',
+  )
+  for (const entry of SKILL_REPOSITORY) {
+    lines.push(`| \`${entry.id}\` | ${entry.attribution.license} | ${entry.attribution.usage} | ${entry.attribution.notice} |`)
   }
   return lines.join('\n')
 }
@@ -424,6 +484,7 @@ function skill(input: {
   primaryUse: string
   combineWith: string[]
   evidence: string[]
+  attribution?: SkillRepositoryEntry['attribution']
 }): SkillRepositoryEntry {
   return {
     id: input.id,
@@ -446,6 +507,13 @@ function skill(input: {
     safety: {
       requiresReview: input.trust !== 'official',
       requiredChecks: [...DEFAULT_REQUIRED_CHECKS],
+    },
+    attribution: input.attribution ?? {
+      license: 'review-required',
+      copyright: 'review-required',
+      notice: 'License and attribution must be verified before installation, vendoring, or redistribution.',
+      usage: 'external-reference',
+      modifiedFromUpstream: false,
     },
   }
 }

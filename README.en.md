@@ -210,6 +210,14 @@ Git branch governance follows a GitLab Flow variant: short branches merge into `
 
 G7 `SecurityGate` includes a lightweight built-in scan for hardcoded secrets, private keys, disabled TLS verification, `eval`/`Function`, raw HTML injection, dangerous shell commands, shell execution, and empty `catch` blocks. Compatibility mode blocks CRITICAL findings; strict mode also blocks HIGH findings.
 
+## Skill and Tool Governance
+
+Skill Radar recommends skills, MCP servers, browser automation, desktop automation, planning workflows, memory providers, and external CLIs by task intent. It returns confidence, safety level, evidence requirements, attribution metadata, and fallback behavior.
+
+Third-party skills stay review-required until source, scripts, license, attribution, and pinned revision are checked. Current external references include `OthmanAdi/planning-with-files` (MIT) and `rohitg00/agentmemory` (Apache-2.0). SCALE records them as governed references, optional integrations, or adapted concepts; it does not vendor upstream source code.
+
+See [Skill Radar](docs/SKILL_RADAR.md) and [Third-Party Skills](docs/THIRD_PARTY_SKILLS.md).
+
 ## Supported Platforms
 
 SCALE Engine includes adapters for 16 agent platforms, including Claude Code, Codex CLI, OpenCode, Cursor, Gemini CLI, OpenClaw, Hermes, Trae, WorkBuddy, VS Code Copilot CLI, QCoder, DeepSeek-TUI, Aider, Windsurf, Kimi, and Doubao.

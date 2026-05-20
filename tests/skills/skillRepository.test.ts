@@ -11,6 +11,8 @@ describe('SkillRepository', () => {
     const ids = listSkillRepositoryEntries().map(entry => entry.id)
 
     expect(ids).toEqual(expect.arrayContaining([
+      'planning-with-files',
+      'agentmemory',
       'awesome-design-md',
       'ui-ux-pro-max',
       'web-access',
@@ -22,6 +24,25 @@ describe('SkillRepository', () => {
       'opencode-cli',
       'agency-agents-zh',
     ]))
+  })
+
+  it('records third-party attribution for external planning and memory references', () => {
+    const entries = listSkillRepositoryEntries()
+    const planning = entries.find(entry => entry.id === 'planning-with-files')
+    const memory = entries.find(entry => entry.id === 'agentmemory')
+
+    expect(planning?.category).toBe('planning')
+    expect(planning?.attribution.license).toBe('MIT')
+    expect(planning?.attribution.copyright).toContain('Ahmad Adi')
+    expect(planning?.attribution.usage).toBe('adapted-concept')
+    expect(planning?.attribution.modifiedFromUpstream).toBe(false)
+
+    expect(memory?.category).toBe('memory')
+    expect(memory?.attribution.license).toBe('Apache-2.0')
+    expect(memory?.attribution.usage).toBe('external-reference')
+    expect(memory?.attribution.modifiedFromUpstream).toBe(false)
+    expect(memory?.safety.requiresReview).toBe(true)
+    expect(memory?.safety.requiredChecks).toContain('verify-attribution-and-notice')
   })
 
   it('recommends a composable UI workflow with design and browser validation skills', () => {
@@ -84,5 +105,11 @@ describe('SkillRepository', () => {
     expect(markdown).toContain('安全安装')
     expect(markdown).toContain('供应链')
     expect(markdown).toContain('awesome-design-md')
+    expect(markdown).toContain('Third-Party Attribution')
+    expect(markdown).toContain('planning-with-files')
+    expect(markdown).toContain('agentmemory')
+    expect(markdown).toContain('MIT')
+    expect(markdown).toContain('Apache-2.0')
+    expect(markdown).toContain('verify-attribution-and-notice')
   })
 })
