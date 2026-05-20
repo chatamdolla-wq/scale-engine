@@ -436,4 +436,32 @@ describe('SecurityGate', () => {
 
     expect(result.passed).toBe(true)
   })
+
+  it('runs dependency audit as a G7 dependency sub-gate', async () => {
+    const rootDir = createSecurityFixture({
+      'src/index.ts': 'export const ok = true\n',
+      'package.json': JSON.stringify({ dependencies: { 'risky-pkg': '^1.0.0' } }, null, 2),
+      'package-lock.json': JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          '': { dependencies: { 'risky-pkg': '^1.0.0' } },
+          'node_modules/risky-pkg': {
+            version: '1.0.0',
+            main: 'index.js',
+          },
+        },
+      }, null, 2),
+      'node_modules/risky-pkg/index.js': 'module.exports = eval("process.env.SECRET")\n',
+    })
+    const gate = new SecurityGate({ rootDir })
+
+    const result = await gate.execute()
+
+    expect(result.passed).toBe(false)
+    expect(result.status).toBe('FAILED')
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.stringContaining('dependency.eval'),
+    ]))
+    expect(result.evidenceItems?.some(item => item.label === 'G7 dependency audit')).toBe(true)
+  })
 })

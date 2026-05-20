@@ -68,6 +68,8 @@ scale verify <task-id> --json
 
 `scale hunt scan` reuses the same standards findings as a readonly proactive hunt queue. It can create diagnostic-loop input through `scale hunt diagnose <finding-id>` and can suppress accepted debt with `scale hunt ignore <finding-id> --reason "..."`. See [BACKGROUND_HUNTER.md](BACKGROUND_HUNTER.md).
 
+`scale dependency audit` adds the supply-chain side of `G7 Security`. It audits lockfile-scoped packages for install scripts, bin scripts, deprecated packages, dynamic code execution, shell execution, and suspicious network access. See [DEPENDENCY_AUDIT.md](DEPENDENCY_AUDIT.md).
+
 `scale preflight` and `scale verify` consume `.scale/verification.json`:
 
 ```json

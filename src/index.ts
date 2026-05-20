@@ -78,6 +78,7 @@ export {
   DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector,
   BUILT_IN_ROLES,
 } from './guardrails/advancedDetectors.js'
+export * from './guardrails/DependencyAuditor.js'
 export {
   DetectorStatisticsTracker,
   DetectorRegistry,

@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
 import { compressCommandOutput, type CommandOutputCompressionResult } from '../../tools/CommandOutputCompressor.js'
 import { CommandRunLedger, type CommandRunEvidenceOptions } from '../../tools/CommandRunLedger.js'
+import { auditDependencies, type DependencyAuditMode, type DependencyAuditReport } from '../../guardrails/DependencyAuditor.js'
 
 export interface IGate {
   stage: GateStage
@@ -73,6 +74,10 @@ export interface SecurityGateOptions {
   maxFileBytes?: number
   maxFindings?: number
   strict?: boolean
+  scaleDir?: string
+  dependencyAudit?: boolean
+  dependencyAuditMode?: DependencyAuditMode
+  dependencyAuditChangedPackages?: string[]
 }
 
 function tail(value: string, maxLength = 1000): string {
@@ -958,6 +963,10 @@ export class SecurityGate implements IGate {
   private maxFileBytes: number
   private maxFindings: number
   private strict: boolean
+  private scaleDir: string
+  private dependencyAudit: boolean
+  private dependencyAuditMode?: DependencyAuditMode
+  private dependencyAuditChangedPackages?: string[]
 
   constructor(options: SecurityGateOptions = {}) {
     this.rootDir = options.rootDir ?? process.cwd()
@@ -965,13 +974,24 @@ export class SecurityGate implements IGate {
     this.maxFileBytes = options.maxFileBytes ?? 300_000
     this.maxFindings = options.maxFindings ?? 50
     this.strict = options.strict ?? false
+    this.scaleDir = options.scaleDir ?? '.scale'
+    this.dependencyAudit = options.dependencyAudit ?? true
+    this.dependencyAuditMode = options.dependencyAuditMode
+    this.dependencyAuditChangedPackages = options.dependencyAuditChangedPackages
   }
 
   async execute(): Promise<GateResult> {
     const findings = await this.scan()
+    const dependencyReport = this.dependencyAudit ? auditDependencies({
+      projectDir: this.rootDir,
+      scaleDir: this.scaleDir,
+      mode: this.dependencyAuditMode ?? (this.strict ? 'strict' : undefined),
+      changedPackages: this.dependencyAuditChangedPackages,
+    }) : null
     const blockers = findings
       .filter(finding => finding.severity === 'CRITICAL' || (this.strict && finding.severity === 'HIGH'))
       .map(finding => `${finding.severity} ${finding.ruleId} in ${finding.file}:${finding.line} - ${finding.description}`)
+    blockers.push(...(dependencyReport?.blockers ?? []))
     const passed = blockers.length === 0
     const summary = this.summarize(findings)
     const evidenceItems = [
@@ -993,6 +1013,7 @@ export class SecurityGate implements IGate {
         detail: `${finding.severity} line ${finding.line}: ${finding.description}; ${finding.evidence}`,
         source: 'built-in-security-scan',
       })),
+      ...this.dependencyEvidence(dependencyReport),
     ]
     return {
       gate: this.stage,
@@ -1175,6 +1196,39 @@ export class SecurityGate implements IGate {
       MEDIUM: findings.filter(f => f.severity === 'MEDIUM').length,
       LOW: findings.filter(f => f.severity === 'LOW').length,
     }
+  }
+
+  private dependencyEvidence(report: DependencyAuditReport | null): GateEvidence[] {
+    if (!report) {
+      return [
+        createEvidence({
+          kind: 'scan',
+          label: 'G7 dependency audit',
+          passed: true,
+          detail: 'dependency audit disabled',
+          source: 'dependency-audit',
+        }),
+      ]
+    }
+    const summary = report.summary
+    return [
+      createEvidence({
+        kind: 'scan',
+        label: 'G7 dependency audit',
+        passed: report.ok,
+        path: report.lockfilePath,
+        detail: `${summary.packagesAudited} package(s) audited, findings=${summary.totalFindings}, critical=${summary.bySeverity.CRITICAL}, high=${summary.bySeverity.HIGH}, medium=${summary.bySeverity.MEDIUM}, low=${summary.bySeverity.LOW}, mode=${report.mode}`,
+        source: 'dependency-audit',
+      }),
+      ...report.findings.slice(0, this.maxFindings).map(finding => createEvidence({
+        kind: 'scan' as const,
+        label: `Dependency finding ${finding.ruleId}`,
+        passed: !report.blockers.some(blocker => blocker.includes(finding.ruleId) && blocker.includes(finding.packageName)),
+        path: finding.path,
+        detail: `${finding.severity} ${finding.packageName}${finding.version ? `@${finding.version}` : ''}: ${finding.message}; ${finding.evidence ?? 'no detail'}`,
+        source: 'dependency-audit',
+      })),
+    ]
   }
 
   private isTestPath(file: string): boolean {

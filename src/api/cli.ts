@@ -11,6 +11,7 @@ import type { TaskPayload } from '../artifact/types.js'
 import { Gateway } from '../guardrails/Gateway.js'
 import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '../guardrails/detectors.js'
 import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
+import { auditDependencies } from '../guardrails/DependencyAuditor.js'
 import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { ProjectAnatomy } from '../context/ProjectAnatomy.js'
@@ -2000,6 +2001,48 @@ function printHuntReport(report: ReturnType<BackgroundHunter['scan']>): void {
   }
   if (report.findings.length > 20) console.log(`  ... ${report.findings.length - 20} more finding(s)`)
 }
+
+// ============================================================================
+// dependency command - supply-chain security audit
+// ============================================================================
+
+const dependencyAuditCommand = defineCommand({
+  meta: { name: 'audit', description: 'Audit lockfile-scoped dependency supply-chain risk' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    mode: { type: 'string', description: 'Audit mode: compatibility, strict, or offline' },
+    'changed-packages': { type: 'string', description: 'Comma-separated package names to audit instead of direct dependencies' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const mode = args.mode === 'compatibility' || args.mode === 'strict' || args.mode === 'offline'
+      ? args.mode
+      : undefined
+    const report = auditDependencies({
+      projectDir: args.dir ? String(args.dir) : PROJECT_DIR,
+      mode,
+      changedPackages: parseCommaList(args['changed-packages']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+    } else {
+      console.log(`SCALE Dependency Audit: ${report.ok ? 'OK' : 'FAILED'}`)
+      console.log(`  Packages audited: ${report.summary.packagesAudited}`)
+      console.log(`  Findings: ${report.summary.totalFindings}`)
+      console.log(`  Mode: ${report.mode}`)
+      for (const finding of report.findings.slice(0, 20)) {
+        console.log(`  [${finding.severity}] ${finding.ruleId} ${finding.packageName}${finding.version ? `@${finding.version}` : ''}: ${finding.message}`)
+      }
+      if (report.findings.length > 20) console.log(`  ... ${report.findings.length - 20} more finding(s)`)
+    }
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
+const dependency = defineCommand({
+  meta: { name: 'dependency', description: 'Supply-chain dependency governance' },
+  subCommands: { audit: dependencyAuditCommand },
+})
 
 // ============================================================================
 // tdd command - vertical slice RED/GREEN/REFACTOR loop
@@ -5459,6 +5502,7 @@ const main = defineCommand({
     memory,
     diagnose,
     hunt,
+    dependency,
     tdd,
     tool,
     tools: tool,
