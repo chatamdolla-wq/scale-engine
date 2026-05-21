@@ -472,4 +472,63 @@ describe('ai-os CLI', () => {
     expect(en.stdout).toContain('First run: ready (dry-run)')
     expect(en.stdout).toContain('next:')
   }, 120_000)
+
+  it('prints AI OS closed-loop status as JSON and localized human guidance', async () => {
+    const scaleDir = makeDir('scale-ai-os-status-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-status-cli-project-')
+
+    const empty = await runScale(['ai-os', 'status', '--dir', projectDir, '--json', '--lang', 'zh'], scaleDir, projectDir)
+
+    expect(empty.exitCode).toBe(1)
+    const emptyReport = parseJson<{
+      status: string
+      summary: { total: number; blocked: number }
+      nextActions: string[]
+    }>(empty.stdout)
+    expect(emptyReport.status).toBe('blocked')
+    expect(emptyReport.summary).toMatchObject({ total: 7, blocked: 7 })
+    expect(emptyReport.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('scale ai-os adopt'),
+    ]))
+
+    await runScale([
+      'ai-os',
+      'adopt',
+      '--task-id',
+      'TASK-AI-OS-STATUS-CLI',
+      '--task',
+      'Adopt AI OS runtime for status CLI',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--json',
+    ], scaleDir, projectDir)
+    await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-STATUS-CLI-GUARDED',
+      '--task',
+      'Verify status CLI guarded evidence',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const readyJson = await runScale(['ai-os', 'status', '--dir', projectDir, '--json', '--lang', 'en'], scaleDir, projectDir)
+    expect(readyJson.exitCode).toBe(0)
+    const readyReport = parseJson<{ status: string; summary: { blocked: number }; nextActions: string[] }>(readyJson.stdout)
+    expect(readyReport.status).toBe('ready')
+    expect(readyReport.summary.blocked).toBe(0)
+    expect(readyReport.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
+
+    const readyHuman = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
+    expect(readyHuman.exitCode).toBe(0)
+    expect(readyHuman.stdout).toContain('SCALE AI OS 状态')
+    expect(readyHuman.stdout).toContain('状态: ready')
+    expect(readyHuman.stdout).toContain('[ready] verification-evidence')
+  }, 120_000)
 })

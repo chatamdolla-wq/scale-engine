@@ -61,8 +61,11 @@ scale ai-os run \
 After multiple runs, use the dashboard to summarize ready/blocked runs, verification commands, pending evidence, and failure learning:
 
 ```bash
+scale ai-os status --lang en
 scale ai-os dashboard --json
 ```
+
+`status` is the 0.28.0 closed-loop visibility entry point. It checks runtime directories, plan/run evidence, guarded verification, dashboard health, benchmark evidence, and the adoption report in one place.
 
 Before a release or milestone review, run the fixed benchmark scenarios to compare context, memory, skill, governance, and dashboard metrics:
 

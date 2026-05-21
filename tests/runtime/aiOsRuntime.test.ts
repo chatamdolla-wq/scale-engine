@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun } from '../../src/runtime/AiOsRuntime.js'
+import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun, createAiOsStatus } from '../../src/runtime/AiOsRuntime.js'
 import { MemoryBrain } from '../../src/memory/MemoryBrain.js'
 import { SCALE_ENGINE_VERSION } from '../../src/version.js'
 
@@ -355,5 +355,67 @@ describe('AI OS runtime planner', () => {
     expect(report.artifacts.benchmarkReport).toContain('benchmarks')
     expect(existsSync(report.artifacts.adoptionReport)).toBe(true)
     expect(report.nextActions).toContain('AI OS runtime adoption is complete; use `scale ai-os run --mode guarded` for governed work.')
+  }, 120_000)
+
+  it('reports AI OS closed-loop status and missing evidence', async () => {
+    const projectDir = makeDir('scale-ai-os-status-project-')
+    const scaleDir = makeDir('scale-ai-os-status-scale-')
+
+    const empty = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(empty.status).toBe('blocked')
+    expect(empty.summary).toMatchObject({
+      total: 7,
+      ready: 0,
+      warning: 0,
+      blocked: 7,
+    })
+    expect(empty.checks.map(check => check.id)).toEqual([
+      'runtime-dirs',
+      'plan-evidence',
+      'run-evidence',
+      'verification-evidence',
+      'dashboard-health',
+      'benchmark-evidence',
+      'adoption-evidence',
+    ])
+    expect(empty.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'run-evidence', status: 'blocked' }),
+      expect.objectContaining({ id: 'benchmark-evidence', status: 'blocked' }),
+    ]))
+    expect(empty.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('scale ai-os adopt'),
+    ]))
+
+    await createAiOsAdoption({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-STATUS',
+      task: 'Adopt AI OS runtime before status check',
+      level: 'M',
+      files: ['src/runtime/AiOsRuntime.ts'],
+      budget: 2400,
+      lang: 'en',
+    })
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-STATUS-GUARDED',
+      task: 'Verify status sees guarded evidence',
+      level: 'M',
+      files: ['src/runtime/AiOsRuntime.ts'],
+      mode: 'guarded',
+      verificationCommands: ['node -v'],
+    })
+
+    const ready = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(ready.status).toBe('ready')
+    expect(ready.summary.blocked).toBe(0)
+    expect(ready.checks.every(check => check.status === 'ready')).toBe(true)
+    expect(ready.checks.find(check => check.id === 'verification-evidence')?.evidence).toEqual(expect.arrayContaining([
+      expect.stringContaining('TASK-AI-OS-STATUS-GUARDED'),
+    ]))
+    expect(ready.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
   }, 120_000)
 })

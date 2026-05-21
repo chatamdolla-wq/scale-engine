@@ -151,6 +151,7 @@ import {
   createAiOsMigration,
   createAiOsPlan,
   createAiOsRun,
+  createAiOsStatus,
   doctorRuntimeEvidence,
   evaluateFinalReportReadiness,
   type RuntimeEvidenceKind,
@@ -3422,10 +3423,57 @@ const aiOsAdoptCommand = defineCommand({
   },
 })
 
+const aiOsStatusCommand = defineCommand({
+  meta: { name: 'status', description: 'Show AI OS closed-loop readiness across runtime, run, verification, dashboard, benchmark, and adoption evidence' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    lang: { type: 'string', default: 'en', description: 'Output language zh/en' },
+    'benchmark-max-age-hours': { type: 'string', description: 'Maximum accepted benchmark report age in hours' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const lang = normalizeLangArg(args.lang)
+    const report = createAiOsStatus({
+      projectDir,
+      scaleDir,
+      benchmarkMaxAgeHours: parsePositiveIntArg(args['benchmark-max-age-hours'], '--benchmark-max-age-hours'),
+      lang,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (report.status === 'blocked') process.exitCode = 1
+      return
+    }
+    if (lang === 'zh') {
+      console.log('SCALE AI OS 状态')
+      console.log(`  状态: ${report.status}`)
+      console.log(`  检查: ${report.summary.ready} ready, ${report.summary.warning} warning, ${report.summary.blocked} blocked`)
+      console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
+      console.log(`  Doctor: ${report.doctor.status}`)
+      for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
+      for (const action of report.nextActions) console.log(`  下一步: ${action}`)
+      for (const warning of report.warnings) console.log(`  警告: ${warning}`)
+    } else {
+      console.log('SCALE AI OS Status')
+      console.log(`  Status: ${report.status}`)
+      console.log(`  Checks: ${report.summary.ready} ready, ${report.summary.warning} warning, ${report.summary.blocked} blocked`)
+      console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
+      console.log(`  Doctor: ${report.doctor.status}`)
+      for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
+      for (const action of report.nextActions) console.log(`  next: ${action}`)
+      for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+    }
+    if (report.status === 'blocked') process.exitCode = 1
+  },
+})
+
 const aiOs = defineCommand({
   meta: { name: 'ai-os', description: 'AI Engineering OS runtime planning and governance orchestration' },
   subCommands: {
     adopt: aiOsAdoptCommand,
+    status: aiOsStatusCommand,
     plan: aiOsPlanCommand,
     run: aiOsRunCommand,
     dashboard: aiOsDashboardCommand,

@@ -345,6 +345,7 @@ Current landing status:
 - `scale ai-os plan` exists as the unified planning entry point for governance, context, memory, skill routing, adaptive workflow, and ROI.
 - `scale ai-os run --dry-run` exists as the first beta execution slice.
 - `scale ai-os run --mode guarded --verify "<command>"` executes explicit verification commands through the safe command runner, records each command as runtime evidence, and blocks the run when verification fails.
+- `scale ai-os status --lang zh|en` checks runtime directories, plan/run evidence, guarded verification, dashboard health, benchmark evidence, and adoption evidence in one closed-loop readiness report.
 - `scale ai-os dashboard` summarizes persisted run reports into ready/blocked counts, guarded verification health, pending evidence, failure learning candidates, and next recommendations.
 - `scale ai-os benchmark` runs fixed beta scenarios and reports context token use, estimated savings, memory recall, skill steps, governance modes, and the current dashboard health snapshot.
 - `scale ai-os migrate` creates or verifies the `.scale/ai-os` runtime directories and writes an idempotent migration report.
@@ -394,8 +395,8 @@ Exit criteria:
 Current implementation status:
 
 - In progress on the post-0.27.1 development branch.
-- Runtime baseline, adoption, doctor, dashboard, benchmark, migration, upgrade integration, and bilingual adoption guidance are already landed.
-- Remaining 0.28.0 work should focus on status visibility, verification recommendation, failure-learning closure, and repeatable end-to-end demo evidence.
+- Runtime baseline, status visibility, adoption, doctor, dashboard, benchmark, migration, upgrade integration, and bilingual adoption guidance are already landed.
+- Remaining 0.28.0 work should focus on verification recommendation, failure-learning closure, and repeatable end-to-end demo evidence.
 - It does not yet create PRs or mutate source files; richer skill execution remains a later implementation slice unless explicitly approved.
 
 Explicitly deferred:

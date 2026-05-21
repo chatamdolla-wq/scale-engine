@@ -347,6 +347,50 @@ export interface AiOsAdoptionReport {
   nextActions: string[]
 }
 
+export interface AiOsStatusInput {
+  projectDir?: string
+  scaleDir?: string
+  benchmarkMaxAgeHours?: number
+  lang?: 'zh' | 'en'
+}
+
+export type AiOsClosedLoopStatus = 'ready' | 'warning' | 'blocked'
+export type AiOsStatusCheckId =
+  | 'runtime-dirs'
+  | 'plan-evidence'
+  | 'run-evidence'
+  | 'verification-evidence'
+  | 'dashboard-health'
+  | 'benchmark-evidence'
+  | 'adoption-evidence'
+
+export interface AiOsStatusCheck {
+  id: AiOsStatusCheckId
+  title: string
+  status: AiOsClosedLoopStatus
+  summary: string
+  evidence: string[]
+}
+
+export interface AiOsStatusReport {
+  version: string
+  generatedAt: string
+  status: AiOsClosedLoopStatus
+  projectDir: string
+  scaleRoot: string
+  checks: AiOsStatusCheck[]
+  summary: {
+    total: number
+    ready: number
+    warning: number
+    blocked: number
+  }
+  dashboard: AiOsDashboardReport
+  doctor: AiOsDoctorReport
+  nextActions: string[]
+  warnings: string[]
+}
+
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
   const projectDir = resolve(input.projectDir ?? process.cwd())
   const scaleDir = input.scaleDir ?? '.scale'
@@ -767,6 +811,119 @@ export async function createAiOsAdoption(input: AiOsAdoptionInput): Promise<AiOs
   return report
 }
 
+export function createAiOsStatus(input: AiOsStatusInput = {}): AiOsStatusReport {
+  const projectDir = resolve(input.projectDir ?? process.cwd())
+  const scaleDir = input.scaleDir ?? '.scale'
+  const lang = input.lang ?? 'en'
+  const scaleRoot = resolveScaleRoot(projectDir, scaleDir)
+  const warnings: string[] = []
+  const runsDir = resolveRunsDir(projectDir, scaleDir)
+  const runReports = readAiOsRunReports(runsDir, warnings)
+  const dashboard = createAiOsDashboard({ projectDir, scaleDir })
+  const doctor = createAiOsDoctor({
+    projectDir,
+    scaleDir,
+    benchmarkMaxAgeHours: input.benchmarkMaxAgeHours,
+    lang,
+  })
+  const requiredDirs = [
+    join(scaleRoot, 'ai-os'),
+    join(scaleRoot, 'ai-os', 'runs'),
+    join(scaleRoot, 'ai-os', 'benchmarks'),
+    join(scaleRoot, 'ai-os', 'migrations'),
+  ]
+  const missingDirs = requiredDirs.filter(dir => !existsSync(dir)).map(dir => normalizeProjectPath(projectDir, dir))
+  const runEvidence = runReports.map(report => report.artifacts.runReport)
+  const verificationEvidence = runReports
+    .filter(report => report.verification.commands.length > 0)
+    .flatMap(report => [report.artifacts.runReport, ...report.verification.commands.map(command => command.evidenceId)])
+  const benchmarkReport = resolveBenchmarkReportPath(projectDir, scaleDir)
+  const adoptionReport = resolveAdoptionReportPath(projectDir, scaleDir)
+  const checks: AiOsStatusCheck[] = [
+    {
+      id: 'runtime-dirs',
+      title: 'Runtime directories',
+      status: missingDirs.length === 0 ? 'ready' : 'blocked',
+      summary: missingDirs.length === 0
+        ? 'AI OS runtime directories exist.'
+        : `${missingDirs.length} AI OS runtime director${missingDirs.length === 1 ? 'y is' : 'ies are'} missing.`,
+      evidence: missingDirs.length === 0 ? requiredDirs.map(dir => normalizeProjectPath(projectDir, dir)) : missingDirs,
+    },
+    {
+      id: 'plan-evidence',
+      title: 'Plan evidence',
+      status: runReports.length > 0 ? 'ready' : 'blocked',
+      summary: runReports.length > 0
+        ? `${runReports.length} run report(s) include embedded AI OS plans.`
+        : 'No AI OS plan evidence is persisted through a run report.',
+      evidence: runEvidence,
+    },
+    {
+      id: 'run-evidence',
+      title: 'Run evidence',
+      status: runReports.length > 0 ? 'ready' : 'blocked',
+      summary: runReports.length > 0
+        ? `${runReports.length} AI OS run report(s) found.`
+        : 'No AI OS run reports found.',
+      evidence: runEvidence,
+    },
+    {
+      id: 'verification-evidence',
+      title: 'Verification evidence',
+      status: verificationEvidence.length > 0 ? 'ready' : 'blocked',
+      summary: verificationEvidence.length > 0
+        ? `${verificationEvidence.length} guarded verification evidence reference(s) found.`
+        : 'No guarded verification evidence found.',
+      evidence: verificationEvidence,
+    },
+    {
+      id: 'dashboard-health',
+      title: 'Dashboard health',
+      status: dashboard.health.status === 'healthy'
+        ? 'ready'
+        : dashboard.health.status === 'empty' || dashboard.health.status === 'blocked' ? 'blocked' : 'warning',
+      summary: `${dashboard.health.status} (${dashboard.health.score}): ${dashboard.health.reasons.join('; ')}`,
+      evidence: [runsDir],
+    },
+    {
+      id: 'benchmark-evidence',
+      title: 'Benchmark evidence',
+      status: doctor.benchmark.status === 'fresh' ? 'ready' : doctor.benchmark.status === 'stale' ? 'warning' : 'blocked',
+      summary: summarizeBenchmarkDoctor(doctor.benchmark),
+      evidence: [benchmarkReport],
+    },
+    {
+      id: 'adoption-evidence',
+      title: 'Adoption evidence',
+      status: existsSync(adoptionReport) ? 'ready' : 'blocked',
+      summary: existsSync(adoptionReport)
+        ? 'AI OS adoption report exists.'
+        : 'No AI OS adoption report found.',
+      evidence: [adoptionReport],
+    },
+  ]
+  const summary = {
+    total: checks.length,
+    ready: checks.filter(check => check.status === 'ready').length,
+    warning: checks.filter(check => check.status === 'warning').length,
+    blocked: checks.filter(check => check.status === 'blocked').length,
+  }
+  const status: AiOsClosedLoopStatus = summary.blocked > 0 ? 'blocked' : summary.warning > 0 ? 'warning' : 'ready'
+  return {
+    version: SCALE_ENGINE_VERSION,
+    generatedAt: new Date().toISOString(),
+    status,
+    projectDir,
+    scaleRoot,
+    checks,
+    summary,
+    dashboard,
+    doctor,
+    nextActions: aiOsStatusNextActions(status, checks, lang),
+    warnings: [...warnings, ...doctor.warnings],
+  }
+}
+
 function buildRunSteps(plan: AiOsRuntimePlan): AiOsRunStep[] {
   const steps = new Map<string, AiOsRunStep>()
   const upsert = (step: AiOsRunStep) => steps.set(step.id, step)
@@ -1046,6 +1203,30 @@ function aiOsAdoptionNextActions(status: AiOsAdoptionStatus, lang: 'zh' | 'en'):
   if (status === 'ready') return ['AI OS runtime adoption is complete; use `scale ai-os run --mode guarded` for governed work.']
   if (status === 'warning') return ['AI OS runtime is usable with warnings; run `scale ai-os doctor --json --lang en` and resolve remaining items.']
   return ['AI OS runtime adoption is blocked; inspect the adoption report and `scale ai-os doctor --json --lang en` failures.']
+}
+
+function aiOsStatusNextActions(
+  status: AiOsClosedLoopStatus,
+  checks: AiOsStatusCheck[],
+  lang: 'zh' | 'en',
+): string[] {
+  const blocked = new Set(checks.filter(check => check.status === 'blocked').map(check => check.id))
+  if (lang === 'zh') {
+    if (status === 'ready') return ['AI OS 闭环已就绪，可使用 `scale ai-os run --mode guarded` 执行受治理任务。']
+    if (blocked.has('runtime-dirs') || blocked.has('adoption-evidence')) {
+      return ['运行 `scale ai-os adopt --task "接入 AI OS runtime" --lang zh` 生成运行态、首份 dry-run、benchmark 和 doctor 报告。']
+    }
+    if (blocked.has('verification-evidence')) return ['运行 `scale ai-os run --mode guarded --verify "<command>"` 生成受治理验证证据。']
+    if (blocked.has('benchmark-evidence')) return ['运行 `scale ai-os benchmark --json` 生成闭环 benchmark 证据。']
+    return ['查看 status checks，补齐 blocked 项后重新运行 `scale ai-os status --lang zh`。']
+  }
+  if (status === 'ready') return ['AI OS closed loop is ready for guarded project work.']
+  if (blocked.has('runtime-dirs') || blocked.has('adoption-evidence')) {
+    return ['Run `scale ai-os adopt --task "Adopt AI OS runtime" --lang en` to create runtime state, first dry-run, benchmark, and doctor reports.']
+  }
+  if (blocked.has('verification-evidence')) return ['Run `scale ai-os run --mode guarded --verify "<command>"` to produce governed verification evidence.']
+  if (blocked.has('benchmark-evidence')) return ['Run `scale ai-os benchmark --json` to produce closed-loop benchmark evidence.']
+  return ['Inspect status checks, resolve blocked items, then rerun `scale ai-os status --lang en`.']
 }
 
 function inspectBenchmarkReport(

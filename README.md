@@ -61,8 +61,11 @@ scale ai-os run \
 运行多次后可以用 dashboard 汇总 ready/blocked、验证命令、pending evidence 和 failure learning：
 
 ```bash
+scale ai-os status --lang zh
 scale ai-os dashboard --json
 ```
+
+`status` 是 0.28.0 闭环可见性入口，会一次性检查 runtime 目录、plan/run 证据、guarded verification、dashboard health、benchmark 和 adoption 报告是否齐全。
 
 发版或阶段验收前，用 benchmark 固定样例对比 context、memory、skill、governance 和 dashboard 指标：
 
