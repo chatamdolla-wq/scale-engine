@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun } from '../../src/runtime/AiOsRuntime.js'
 import { MemoryBrain } from '../../src/memory/MemoryBrain.js'
+import { SCALE_ENGINE_VERSION } from '../../src/version.js'
 
 let dirs: string[] = []
 
@@ -49,7 +50,7 @@ describe('AI OS runtime planner', () => {
       budget: 2400,
     })
 
-    expect(plan.version).toBe('0.27.0')
+    expect(plan.version).toBe(SCALE_ENGINE_VERSION)
     expect(plan.governance.effectiveMode).toBe('critical')
     expect(plan.context.compiler?.strategy).toBe('relevance-budget-v1')
     expect(plan.memory.providerOrder).toEqual(['agentmemory', 'gbrain', 'scale-local'])

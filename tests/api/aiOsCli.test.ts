@@ -3,6 +3,7 @@ import { execa } from 'execa'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { SCALE_ENGINE_VERSION } from '../../src/version.js'
 
 let dirs: string[] = []
 
@@ -34,7 +35,7 @@ function parseJson<T>(stdout: string): T {
 }
 
 describe('ai-os CLI', () => {
-  it('prints a unified 0.27.0 runtime plan as JSON', async () => {
+  it('prints a unified AI OS runtime plan as JSON', async () => {
     const scaleDir = makeDir('scale-ai-os-cli-scale-')
     const projectDir = makeDir('scale-ai-os-cli-project-')
 
@@ -64,7 +65,7 @@ describe('ai-os CLI', () => {
       skillPlan: { executionPlan: { steps: Array<{ kind: string; id: string }> } }
       roi: { modules: Array<{ module: string }> }
     }>(result.stdout)
-    expect(report.version).toBe('0.27.0')
+    expect(report.version).toBe(SCALE_ENGINE_VERSION)
     expect(report.task.taskId).toBe('TASK-AI-OS-CLI')
     expect(report.governance.effectiveMode).toBe('critical')
     expect(report.context.compiler?.strategy).toBe('relevance-budget-v1')

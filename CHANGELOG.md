@@ -1,3 +1,18 @@
+## 0.27.1 - 2026-05-21
+
+### AI OS adoption checks
+
+- Added `scale ai-os doctor` to check AI OS runtime readiness, dashboard health, benchmark freshness, and migration state.
+- Wired AI OS runtime readiness into `scale upgrade check` and `scale upgrade plan`, including migration and doctor steps when a project has not adopted the AI OS runtime directories yet.
+- Updated Chinese and English documentation for AI OS runtime adoption, upgrade checks, and strategic positioning.
+- Added CLI and runtime regression coverage for AI OS doctor, migration, dashboard, benchmark, and upgrade readiness reports.
+
+### Verification
+
+- Verified the release candidate with typecheck, lint, build, targeted AI OS/upgrade tests, full Vitest suite, `git diff --check`, dist CLI smoke checks, and `npm pack --dry-run`.
+
+---
+
 ## 0.24.0 - 2026-05-20
 
 ### SCALE Engine V2 workflow hardening
