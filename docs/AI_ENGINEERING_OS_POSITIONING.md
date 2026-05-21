@@ -282,11 +282,15 @@ The promotion step must remain evidence-backed. Automatically generating rules w
 
 ### 6.1 Planning Principle
 
-The roadmap has two horizons:
+The roadmap has release horizons plus a long-range vision:
 
 | Horizon | Purpose | Claim boundary |
 | --- | --- | --- |
-| One-week closure | deliver a runnable AI OS beta loop that can be tested in real repositories | "usable beta", not "stable final OS" |
+| 0.27.x baseline | establish the AI OS Runtime primitives and adoption path | "runtime baseline", not "complete AI OS" |
+| 0.28.0 closure | make planning, execution, verification, dashboard, benchmark, and adoption usable as a closed loop | "usable closed-loop beta", not "stable final OS" |
+| 0.29.0 intelligence | make memory, context, and skill routing measurably smarter | "intelligence beta", not proven long-term cognition |
+| 0.30.0 governance maturity | strengthen enterprise governance, upgrade, evaluator, and evolution controls | "governance maturity", not commercial stability |
+| 1.0.0 beta | integrate the loop into a public AI Engineering OS beta | "public beta", backed by demos and benchmark evidence |
 | Long-range vision | keep SCALE moving toward an AI Engineering OS with memory, context, governance, and tool intelligence | directional until backed by eval data |
 
 The near-term work should be aggressive, but public wording must stay precise. SCALE can ship beta capabilities quickly; it should only claim stable, industry-leading AI OS behavior after repeated project evidence, benchmarks, and upgrade validation.
@@ -332,48 +336,67 @@ Exit criteria:
 - skill recommendations include why, when, and required proof: baseline implemented by skill execution plans
 - context pack generation reports token budget and omissions: baseline implemented by `context.pack.compiler`
 
-### 6.3 0.27.x: One-Week AI OS Beta Closure
+### 6.3 0.27.x: Runtime Baseline and Adoption Path
 
-Theme: turn `ai-os plan` into a runnable beta loop.
-
-Target timebox: one week.
-
-Core work:
-
-| Module | Outcome |
-| --- | --- |
-| `scale ai-os run` | execute the unified plan through workflow, context, memory, skill routing, and verification steps |
-| Memory Provider Bridge | make gbrain, agentmemory, code memory, and local memory selectable through one provider contract |
-| Context Compiler v2 | merge task intent, risk level, files, memory recall, and role into one explainable context pack |
-| Skill Router v2 | create an execution graph for skills, MCP tools, CLIs, artifacts, and required evidence |
-| Adaptive Workflow Profiles | choose light, standard, or strict gates from risk and changed-file signals |
-| Failure Learning | convert failed gates, test failures, and missing evidence into lesson and rule candidates |
-| AI OS Dashboard CLI | summarize gate health, memory hits, context budget, skill evidence, and ROI |
-| Upgrade/Migration | migrate older `.scale` state and warn about incompatible local governance files |
-| AI OS Adoption | provide a one-command migrate -> first dry-run -> benchmark -> doctor path for existing projects |
-| AI OS Doctor | check runtime directories, run history, dashboard health, and benchmark freshness before adoption or release |
-| Bilingual DX | keep key CLI help, errors, README guidance, and tutorials readable in Chinese and English |
-| Benchmark Pack | run fixed samples for token budget, recall, gate pass rate, and skill-routing evidence |
-
-Exit criteria:
-
-- `scale ai-os run` can complete at least one documentation task and one code task in dry-run or guarded execution mode
-- execution output records context decisions, memory provider choices, skill decisions, gate results, and failure lessons
-- benchmark output compares context token budget against a full-load baseline
-- beta docs clearly state what is automated, what is proposed, and what still requires human approval
+Theme: make the AI OS Runtime installable, inspectable, and safe to adopt.
 
 Current landing status:
 
-- `scale ai-os run --dry-run` exists as the first beta slice.
-- It reuses `createAiOsPlan`, expands it into run steps, evidence requirements, next actions, and a persisted `.scale/ai-os/runs/<task-id>.json` report.
+- `scale ai-os plan` exists as the unified planning entry point for governance, context, memory, skill routing, adaptive workflow, and ROI.
+- `scale ai-os run --dry-run` exists as the first beta execution slice.
 - `scale ai-os run --mode guarded --verify "<command>"` executes explicit verification commands through the safe command runner, records each command as runtime evidence, and blocks the run when verification fails.
 - `scale ai-os dashboard` summarizes persisted run reports into ready/blocked counts, guarded verification health, pending evidence, failure learning candidates, and next recommendations.
 - `scale ai-os benchmark` runs fixed beta scenarios and reports context token use, estimated savings, memory recall, skill steps, governance modes, and the current dashboard health snapshot.
 - `scale ai-os migrate` creates or verifies the `.scale/ai-os` runtime directories and writes an idempotent migration report.
 - `scale ai-os adopt` runs migrate, the first dry-run, benchmark, and doctor as one adoption path, then writes `.scale/ai-os/adoption.json`.
 - `scale ai-os doctor --lang zh|en` checks AI OS runtime readiness without mutating the project and blocks adoption when required directories or dashboard health are broken.
-- `scale upgrade check/plan` includes AI OS readiness, so existing projects see migration and doctor steps through the normal upgrade workflow.
-- It does not yet create PRs or mutate source files; richer skill execution remains the next implementation slice.
+- `scale upgrade check/plan` includes AI OS readiness, so existing projects see adoption, migration, and doctor steps through the normal upgrade workflow.
+- The upgrade and adoption CLI surfaces now have human-facing Chinese and English output while preserving JSON for scripts, CI, and agent integrations.
+
+Boundary:
+
+- 0.27.x is the baseline. It proves the runtime surface and adoption path, but it does not yet prove autonomous source mutation, PR creation, long-term memory, or stable commercial AI OS behavior.
+
+### 6.4 0.28.0: Usable Closed-Loop Enhancement
+
+Theme: turn `ai-os plan` into a runnable beta loop.
+
+Target timebox: 2-3 weeks.
+
+Core work:
+
+| Module | Outcome |
+| --- | --- |
+| `scale ai-os run` | execute the unified plan through workflow, context, memory, skill routing, and verification steps |
+| Runtime Status | show whether plan, run, verification, dashboard, benchmark, adoption, and doctor evidence exist for the project |
+| Verification Recommendation | derive suggested verification commands from task level, changed files, project verification profile, and risk signals |
+| Failure Learning Closure | convert failed guarded runs, gate failures, and missing evidence into reviewed lesson/rule candidates |
+| Closed-Loop Demo Pack | provide repeatable docs and code task demos that exercise plan -> run -> verify -> dashboard -> benchmark |
+| Memory Provider Bridge | keep gbrain, agentmemory, code memory, and local memory selectable through one provider contract |
+| Context Compiler v2 | merge task intent, risk level, files, memory recall, and role into one explainable context pack |
+| Skill Router v2 | create an execution graph for skills, MCP tools, CLIs, artifacts, and required evidence |
+| Adaptive Workflow Profiles | choose light, standard, or strict gates from risk and changed-file signals |
+| AI OS Dashboard CLI | summarize gate health, memory hits, context budget, skill evidence, and ROI |
+| Upgrade/Migration | migrate older `.scale` state and warn about incompatible local governance files |
+| AI OS Adoption and Doctor | keep one-command adoption and readiness checks aligned with the normal upgrade workflow |
+| Bilingual DX | keep key CLI help, errors, README guidance, and tutorials readable in Chinese and English |
+| Benchmark Pack | run fixed samples for token budget, recall, gate pass rate, and skill-routing evidence |
+
+Exit criteria:
+
+- `scale ai-os run` can complete at least one documentation task and one code task in dry-run or guarded execution mode
+- `scale ai-os status` or equivalent doctor output shows what is missing for a closed loop
+- verification recommendations are explainable and can be overridden by explicit `--verify` commands
+- execution output records context decisions, memory provider choices, skill decisions, gate results, and failure lessons
+- benchmark output compares context token budget against a full-load baseline
+- beta docs clearly state what is automated, what is proposed, and what still requires human approval
+
+Current implementation status:
+
+- In progress on the post-0.27.1 development branch.
+- Runtime baseline, adoption, doctor, dashboard, benchmark, migration, upgrade integration, and bilingual adoption guidance are already landed.
+- Remaining 0.28.0 work should focus on status visibility, verification recommendation, failure-learning closure, and repeatable end-to-end demo evidence.
+- It does not yet create PRs or mutate source files; richer skill execution remains a later implementation slice unless explicitly approved.
 
 Explicitly deferred:
 
@@ -382,9 +405,11 @@ Explicitly deferred:
 - full VLM visual judgment beyond screenshot capture and interface placeholders
 - claims of human-level long-term memory or fully autonomous engineering
 
-### 6.4 0.29.0: Memory, Context, and Skill Intelligence
+### 6.5 0.29.0: Memory, Context, and Skill Intelligence
 
 Theme: make the beta loop measurably smarter rather than only broader.
+
+Target timebox: 4-6 weeks.
 
 Core work:
 
@@ -403,9 +428,11 @@ Exit criteria:
 - skill routing decisions can be compared against outcome quality
 - release notes include measured deltas instead of aspirational percentages
 
-### 6.5 0.30.0: Enterprise Governance and Upgrade Maturity
+### 6.6 0.30.0: Enterprise Governance and Upgrade Maturity
 
 Theme: deepen adaptive governance beyond the v0.27.0 baseline.
+
+Target timebox: 6-10 weeks.
 
 Core work:
 
@@ -423,9 +450,11 @@ Exit criteria:
 - reasoning-heavy tasks get critique/evaluator gates
 - evolution proposals can be traced to failure evidence and validation results
 
-### 6.6 1.0.0 Beta: AI Engineering OS
+### 6.7 1.0.0 Beta: AI Engineering OS
 
 Theme: integrate governance, memory, context, and tools into an operating layer.
+
+Target timebox: 8-12 weeks.
 
 Target capabilities:
 
@@ -444,9 +473,9 @@ Release criteria:
 - bilingual docs explain the core workflow without requiring maintainer context
 - public claims are tied to `WORKFLOW_EVAL`, benchmark output, or release evidence
 
-### 6.7 Long-Range Vision: 3-12 Months
+### 6.8 1.0.0 Stable and Long-Range Vision
 
-This is the strategic north star, not the one-week beta promise.
+This is the strategic north star, not the 0.28.0 closed-loop promise.
 
 | Time horizon | Target state | Evidence required before public claim |
 | --- | --- | --- |

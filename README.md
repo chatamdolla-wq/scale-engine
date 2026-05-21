@@ -33,7 +33,7 @@ scale ai-os plan \
 
 这不是“完全替代人类判断”的声明；它是把 AI Engineering OS 的核心闭环先做成可测试、可解释、可度量的运行时规划层。
 
-短期目标是用一周冲刺把 `ai-os plan` 推进到可运行的 beta 闭环：`ai-os run`、记忆供应商、Context Compiler v2、Skill Router v2、Adaptive Workflow、Failure Learning、Dashboard、迁移和 benchmark。远景目标是 8-12 周形成 AI Engineering OS beta，3-6 个月进入稳定治理运行时，6-12 个月沉淀为跨 Agent 的工程操作层。完整路线图见 [AI Engineering OS 战略定位](docs/AI_ENGINEERING_OS_POSITIONING.md)。
+短期目标是把 `0.28.0` 做成可用闭环增强版：让 `ai-os plan`、`ai-os run`、验证建议、失败沉淀、Dashboard、benchmark、迁移和 adoption 串成可验证闭环。远景目标是 8-12 周形成 AI Engineering OS beta，3-6 个月进入稳定治理运行时，6-12 个月沉淀为跨 Agent 的工程操作层。完整路线图见 [AI Engineering OS 战略定位](docs/AI_ENGINEERING_OS_POSITIONING.md)。
 
 当前 0.27.0 beta runtime 已包含受控运行入口：`scale ai-os run --dry-run` 会复用统一 plan，生成执行步骤、证据要求、下一步动作，并把运行报告写入 `.scale/ai-os/runs/`。需要真实验证时可切到 guarded 模式并显式传入 `--verify`，命令默认通过 safe runner 执行并写入 runtime evidence；验证失败时 JSON 报告会返回 `blocked`，CLI 退出码为非零。
 

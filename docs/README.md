@@ -36,7 +36,7 @@
 | [CODE_INTELLIGENCE.md](CODE_INTELLIGENCE.md) | CodeGraph、Graphify 和显式 fallback 的代码智能与探索 ROI |
 | [WORKFLOW_EVAL.md](WORKFLOW_EVAL.md) | Workflow Eval、pass@k 指标、Failure Replay 和改进候选 |
 | [SKILL_RADAR.md](SKILL_RADAR.md) | Skill Radar、能力置信度、证据要求和供应链安全检查 |
-| [AI_ENGINEERING_OS_POSITIONING.md](AI_ENGINEERING_OS_POSITIONING.md) | Agent Governance Runtime / AI Engineering OS 方向、`scale ai-os plan/run/dashboard/benchmark/migrate/adopt/doctor` runtime 入口、一周 beta 闭环和 3-12 个月远景路线 |
+| [AI_ENGINEERING_OS_POSITIONING.md](AI_ENGINEERING_OS_POSITIONING.md) | Agent Governance Runtime / AI Engineering OS 方向、`scale ai-os plan/run/dashboard/benchmark/migrate/adopt/doctor` runtime 入口、`0.28.0` 可用闭环增强和 3-12 个月远景路线 |
 | [THIRD_PARTY_SKILLS.md](THIRD_PARTY_SKILLS.md) | 第三方 skill 致谢、授权边界、引用方式和 vendoring 策略 |
 | [EXTERNAL_REFERENCES.md](EXTERNAL_REFERENCES.md) | 外部项目、skills、MCP、CLI 和适配器引用的完整清单 |
 | [UPGRADE_MANAGEMENT.md](UPGRADE_MANAGEMENT.md) | SCALE CLI、governance pack、skills、MCP 和 CLI 工具的安全升级流程 |

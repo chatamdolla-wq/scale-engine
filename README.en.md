@@ -33,7 +33,7 @@ scale ai-os plan \
 
 This is not a claim that SCALE replaces human judgment. It is the first testable, explainable, and measurable runtime planning layer for the AI Engineering OS direction.
 
-The near-term target is a one-week push from `ai-os plan` to a runnable beta loop: `ai-os run`, memory providers, Context Compiler v2, Skill Router v2, Adaptive Workflow, Failure Learning, Dashboard, migration, and benchmark evidence. The long-range target is an AI Engineering OS beta in 8-12 weeks, a stable governance runtime in 3-6 months, and a cross-agent engineering operating layer in 6-12 months. See the full roadmap in [AI Engineering OS Strategic Positioning](docs/AI_ENGINEERING_OS_POSITIONING.md).
+The near-term target is `0.28.0` as a usable closed-loop enhancement: connect `ai-os plan`, `ai-os run`, verification recommendations, failure learning, dashboard, benchmark, migration, and adoption into one verifiable loop. The long-range target is an AI Engineering OS beta in 8-12 weeks, a stable governance runtime in 3-6 months, and a cross-agent engineering operating layer in 6-12 months. See the full roadmap in [AI Engineering OS Strategic Positioning](docs/AI_ENGINEERING_OS_POSITIONING.md).
 
 The current 0.27.0 beta runtime now includes the controlled run entry point: `scale ai-os run --dry-run` reuses the unified plan, produces execution steps, evidence requirements, next actions, and writes the run report to `.scale/ai-os/runs/`. When real verification is required, use guarded mode with explicit `--verify` commands. Commands run through the safe runner by default and are recorded as runtime evidence; failed verification returns a `blocked` JSON report and a non-zero CLI exit code.
 
