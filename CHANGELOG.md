@@ -1,3 +1,20 @@
+## 0.28.0 - 2026-05-21
+
+### AI OS closed-loop runtime
+
+- Added `scale ai-os adopt` to run migration, first dry-run, benchmark, and doctor checks as one project adoption path.
+- Added `scale ai-os status` to report closed-loop readiness across runtime directories, plan/run evidence, guarded verification, dashboard health, benchmark freshness, and adoption evidence.
+- Added concrete verification recommendations from `.scale/verification.json` or `package.json` scripts so agents can choose the next governed `--verify` command without guessing.
+- Extended `scale ai-os run --mode guarded --verify "<command>"` coverage with runtime evidence, failure-learning candidates, dashboard summaries, and non-zero exits for blocked runs.
+- Wired AI OS adoption guidance into upgrade workflows, governance Makefile targets, quickstart docs, workflow docs, and the strategic AI Engineering OS roadmap.
+- Improved Chinese and English documentation for AI OS adoption, status checks, upgrade guidance, and closed-loop runtime usage.
+
+### Verification
+
+- Verified the release candidate with full Vitest suite, typecheck, lint, build, production dependency audit, `git diff --check`, dist CLI smoke checks, and `npm pack --dry-run`.
+
+---
+
 ## 0.27.1 - 2026-05-21
 
 ### AI OS adoption checks
