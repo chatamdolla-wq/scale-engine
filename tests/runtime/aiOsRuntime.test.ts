@@ -493,6 +493,8 @@ describe('AI OS runtime planner', () => {
       'skill-routing',
       'evaluator-intelligence',
       'tool-strategy',
+      'adaptive-workflow',
+      'evolution-shadow',
       'benchmark-intelligence',
     ])
     expect(status.intelligence.summary.totalMemoryItems).toBeGreaterThan(0)
@@ -669,5 +671,185 @@ describe('AI OS runtime planner', () => {
     expect(status.nextActions).toEqual(expect.arrayContaining([
       'Run `scale ai-os run --mode guarded --verify "npm run build"` to produce governed verification evidence.',
     ]))
+  }, 120_000)
+
+  it('routes low-risk docs task to light profile', async () => {
+    const projectDir = makeDir('scale-ai-os-light-profile-project-')
+    const scaleDir = makeDir('scale-ai-os-light-profile-scale-')
+
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-PROFILE-LIGHT',
+      task: 'Update README with new usage examples',
+      level: 'S',
+      files: ['README.md'],
+      budget: 60,
+    })
+
+    expect(plan.adaptiveWorkflow.profile).toBe('light')
+    expect(plan.adaptiveWorkflow.escalationReasons).toEqual([])
+  })
+
+  it('routes standard code change to standard profile', async () => {
+    const projectDir = makeDir('scale-ai-os-standard-profile-project-')
+    const scaleDir = makeDir('scale-ai-os-standard-profile-scale-')
+
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-PROFILE-STANDARD',
+      task: 'Add pagination to user list query',
+      level: 'M',
+      files: ['src/db/users.ts'],
+      budget: 600,
+    })
+
+    expect(plan.adaptiveWorkflow.profile).toBe('standard')
+    expect(plan.adaptiveWorkflow.gates.length).toBeGreaterThan(0)
+  })
+
+  it('escalates to critical profile for auth/security task with high uncertainty', async () => {
+    const projectDir = makeDir('scale-ai-os-critical-profile-project-')
+    const scaleDir = makeDir('scale-ai-os-critical-profile-scale-')
+
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-PROFILE-CRITICAL',
+      task: 'Fix OAuth token refresh race condition causing auth bypass in production',
+      level: 'L',
+      files: ['src/auth/oauth.ts', 'src/auth/token.ts'],
+      budget: 2400,
+    })
+
+    expect(['strict', 'critical']).toContain(plan.adaptiveWorkflow.profile)
+    expect(plan.adaptiveWorkflow.escalationReasons.length).toBeGreaterThan(0)
+    expect(plan.adaptiveWorkflow.gates.length).toBeGreaterThan(0)
+  })
+
+  it('includes adaptive-workflow signal in intelligence report', async () => {
+    const projectDir = makeDir('scale-ai-os-aw-signal-project-')
+    const scaleDir = makeDir('scale-ai-os-aw-signal-scale-')
+
+    const run = await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-PROFILE-SIGNAL',
+      task: 'Refactor user service',
+      level: 'M',
+      files: ['src/services/user.ts'],
+      mode: 'dry-run',
+    })
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+    const awSignal = status.intelligence.signals.find(s => s.id === 'adaptive-workflow')
+
+    expect(awSignal).toBeDefined()
+    expect(awSignal!.status).toBe('ready')
+    expect(awSignal!.evidence.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  it('includes workflowProfile in benchmark scenario metrics', async () => {
+    const projectDir = makeDir('scale-ai-os-aw-bench-project-')
+    const scaleDir = makeDir('scale-ai-os-aw-bench-scale-')
+
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-PROFILE-BENCH',
+      task: 'Add rate limiting to API endpoints',
+      level: 'M',
+      files: ['src/api/middleware.ts'],
+      mode: 'dry-run',
+    })
+    const benchmark = await createAiOsBenchmark({ projectDir, scaleDir })
+
+    expect(benchmark.summary.workflowProfiles).toBeDefined()
+    expect(benchmark.summary.workflowProfiles.length).toBeGreaterThan(0)
+    expect(benchmark.scenarios.every(s => s.workflowProfile)).toBe(true)
+  }, 120_000)
+
+  it('generates evolution shadow proposals from high-risk governance signals', async () => {
+    const projectDir = makeDir('scale-ai-os-evo-shadow-project-')
+    const scaleDir = makeDir('scale-ai-os-evo-shadow-scale-')
+
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-EVO-SHADOW',
+      task: 'Fix OAuth token refresh race condition causing auth bypass in production',
+      level: 'L',
+      files: ['src/auth/oauth.ts', 'src/auth/token.ts'],
+      budget: 2400,
+    })
+
+    expect(plan.evolutionShadow).toBeDefined()
+    expect(plan.evolutionShadow.strategy).toBe('evolution-shadow-promotion-v1')
+    expect(plan.evolutionShadow.proposals.length).toBeGreaterThan(0)
+    expect(plan.evolutionShadow.proposals[0].sourceEvidenceIds.length).toBeGreaterThan(0)
+    expect(plan.evolutionShadow.summary.shadowRules).toBe(plan.evolutionShadow.proposals.length)
+    expect(plan.evolutionShadow.summary.pendingValidation).toBe(plan.evolutionShadow.proposals.length)
+  })
+
+  it('produces no evolution shadow proposals for low-risk tasks', async () => {
+    const projectDir = makeDir('scale-ai-os-evo-none-project-')
+    const scaleDir = makeDir('scale-ai-os-evo-none-scale-')
+
+    const plan = await createAiOsPlan({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-EVO-NONE',
+      task: 'Update README with usage examples',
+      level: 'S',
+      files: ['README.md'],
+      budget: 60,
+    })
+
+    expect(plan.evolutionShadow.summary.totalProposals).toBe(0)
+    expect(plan.evolutionShadow.summary.pendingValidation).toBe(0)
+  })
+
+  it('includes evolution-shadow signal in intelligence report', async () => {
+    const projectDir = makeDir('scale-ai-os-evo-signal-project-')
+    const scaleDir = makeDir('scale-ai-os-evo-signal-scale-')
+
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-EVO-SIGNAL',
+      task: 'Critical release migration requires security threat model',
+      level: 'CRITICAL',
+      files: ['src/auth/migration.ts'],
+      mode: 'dry-run',
+    })
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+    const evoSignal = status.intelligence.signals.find(s => s.id === 'evolution-shadow')
+
+    expect(evoSignal).toBeDefined()
+    expect(evoSignal!.status).toBeDefined()
+    expect(evoSignal!.evidence.length).toBeGreaterThan(0)
+    expect(status.intelligence.summary.evolutionQuality).toBeDefined()
+    expect(status.intelligence.summary.evolutionQuality.proposals).toBeGreaterThanOrEqual(0)
+  }, 120_000)
+
+  it('includes evolution proposals in benchmark summary', async () => {
+    const projectDir = makeDir('scale-ai-os-evo-bench-project-')
+    const scaleDir = makeDir('scale-ai-os-evo-bench-scale-')
+
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-EVO-BENCH',
+      task: 'Security audit for auth bypass vulnerability',
+      level: 'L',
+      files: ['src/auth/session.ts'],
+      mode: 'dry-run',
+    })
+    const benchmark = await createAiOsBenchmark({ projectDir, scaleDir })
+
+    expect(benchmark.summary.totalEvolutionProposals).toBeGreaterThanOrEqual(0)
+    expect(benchmark.scenarios.every(s => typeof s.metrics.evolutionProposals === 'number')).toBe(true)
   }, 120_000)
 })

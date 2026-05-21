@@ -543,6 +543,8 @@ describe('ai-os CLI', () => {
       'skill-routing',
       'evaluator-intelligence',
       'tool-strategy',
+      'adaptive-workflow',
+      'evolution-shadow',
       'benchmark-intelligence',
     ])
     expect(readyReport.intelligence.summary.skillSteps).toBeGreaterThan(0)
