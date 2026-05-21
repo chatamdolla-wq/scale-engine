@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun, createAiOsStatus } from '../../src/runtime/AiOsRuntime.js'
@@ -62,6 +62,16 @@ describe('AI OS runtime planner', () => {
       expect.objectContaining({ kind: 'verification', id: 'browser-run' }),
     ]))
     expect(plan.adaptiveWorkflow.requiredBehaviors).toContain('run security review')
+    expect(plan.evaluator.strategy).toBe('evaluator-intelligence-v1')
+    expect(plan.evaluator.required).toBe(true)
+    expect(plan.evaluator.gates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'security-threat-model', required: true }),
+      expect.objectContaining({ id: 'uncertainty-decision-log' }),
+    ]))
+    expect(plan.adaptiveWorkflow.gates).toEqual(expect.arrayContaining([
+      'security-threat-model',
+      'uncertainty-decision-log',
+    ]))
     expect(plan.roi.modules.map(module => module.module)).toEqual(expect.arrayContaining([
       'context-compiler',
       'memory-provider-runtime',
@@ -97,11 +107,16 @@ describe('AI OS runtime planner', () => {
       expect.objectContaining({ id: 'runtime-evidence', status: 'planned' }),
     ]))
     expect(report.steps.some(step => step.kind === 'skill' && step.required)).toBe(true)
+    expect(report.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'security-threat-model', kind: 'gate', status: 'planned' }),
+      expect.objectContaining({ id: 'uncertainty-decision-log', kind: 'gate', status: 'planned' }),
+    ]))
     expect(report.evidence.required).toEqual(expect.arrayContaining([
       'context-compiler',
       'memory-provider-recall',
       'skill-routing-engine',
       'runtime-evidence',
+      'gate:security-threat-model',
     ]))
     expect(report.failureLearning.candidates).toEqual([])
     expect(report.artifacts.runReport).toContain('TASK-AI-OS-RUN')
@@ -238,6 +253,7 @@ describe('AI OS runtime planner', () => {
     expect(benchmark.summary.scenarios).toBeGreaterThanOrEqual(3)
     expect(benchmark.summary.totalEstimatedTokens).toBeGreaterThanOrEqual(0)
     expect(benchmark.summary.totalSkillSteps).toBeGreaterThan(0)
+    expect(benchmark.summary.totalEvaluatorGates).toBeGreaterThan(0)
     expect(benchmark.summary.governanceModes.length).toBeGreaterThan(0)
     expect(benchmark.scenarios).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -245,6 +261,7 @@ describe('AI OS runtime planner', () => {
         metrics: expect.objectContaining({
           skillSteps: expect.any(Number),
           memoryItems: expect.any(Number),
+          evaluatorGates: expect.any(Number),
         }),
       }),
       expect.objectContaining({ id: 'security-code-change' }),
@@ -457,6 +474,7 @@ describe('AI OS runtime planner', () => {
       'memory-recall',
       'context-savings',
       'skill-routing',
+      'evaluator-intelligence',
       'benchmark-intelligence',
     ])
     expect(status.intelligence.summary.totalMemoryItems).toBeGreaterThan(0)
@@ -470,6 +488,7 @@ describe('AI OS runtime planner', () => {
     }))
     expect(status.intelligence.summary.memoryQuality.score).toBeGreaterThan(0)
     expect(status.intelligence.summary.memoryQuality.evidenceBackedItems).toBeGreaterThan(0)
+    expect(status.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
     expect(status.intelligence.signals).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'memory-recall',
@@ -481,6 +500,10 @@ describe('AI OS runtime planner', () => {
         status: 'ready',
       }),
       expect.objectContaining({
+        id: 'evaluator-intelligence',
+        status: expect.stringMatching(/ready|warning/),
+      }),
+      expect.objectContaining({
         id: 'benchmark-intelligence',
         status: 'ready',
       }),
@@ -488,6 +511,37 @@ describe('AI OS runtime planner', () => {
     expect(status.intelligence.nextActions).toEqual(expect.arrayContaining([
       expect.stringContaining('Use intelligence signals'),
     ]))
+  }, 120_000)
+
+  it('derives evaluator intelligence for older run reports without evaluator fields', async () => {
+    const projectDir = makeDir('scale-ai-os-legacy-evaluator-project-')
+    const scaleDir = makeDir('scale-ai-os-legacy-evaluator-scale-')
+
+    const run = await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-LEGACY-EVALUATOR',
+      task: 'Release auth migration and document rollback uncertainty',
+      level: 'CRITICAL',
+      files: ['src/auth/token.ts', 'CHANGELOG.md'],
+      mode: 'dry-run',
+    })
+    const persisted = JSON.parse(readFileSync(run.artifacts.runReport, 'utf-8')) as { plan: { evaluator?: unknown } }
+    delete persisted.plan.evaluator
+    writeFileSync(run.artifacts.runReport, JSON.stringify(persisted, null, 2), 'utf-8')
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(status.intelligence.signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'evaluator-intelligence',
+        evidence: expect.arrayContaining([
+          expect.stringContaining('security-threat-model'),
+          expect.stringContaining('release-readiness-review'),
+        ]),
+      }),
+    ]))
+    expect(status.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
   }, 120_000)
 
   it('warns when context compilation omits evidence-bearing sections', async () => {
@@ -521,6 +575,7 @@ describe('AI OS runtime planner', () => {
       ]),
       compressionRisk: 'high',
     }))
+    expect(status.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
     expect(status.intelligence.summary.contextQuality.omittedSections).toBeGreaterThan(0)
     expect(status.intelligence.signals).toEqual(expect.arrayContaining([
       expect.objectContaining({

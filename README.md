@@ -19,6 +19,8 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 
 ## 0.27.0 AI OS Runtime
 
+> 0.30.0 治理成熟度预览：AI OS Runtime 已加入 Evaluator Intelligence。`scale ai-os plan` 会识别架构、根因、安全、发版等推理风险任务，并把 architecture critique、root-cause review、security threat model、release readiness 和 uncertainty decision log 加入 adaptive workflow。`scale ai-os status` 会展示 evaluator gate 数量和 uncertainty，让评审者看到推理风险是否被门禁治理，而不是只藏在文字说明里。
+
 0.27.0 把战略方向落成了一个可执行入口：`scale ai-os plan`。它会在一次命令里同时生成风险治理模式、Context Compiler 预算结果、Memory Provider 召回结果、Skill Routing 执行计划和 Governance ROI，让 Agent 在开始任务前就知道应该加载什么上下文、调用什么能力、补什么证据、哪些风险会升级门禁。
 
 ```bash

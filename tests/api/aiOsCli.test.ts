@@ -529,6 +529,7 @@ describe('ai-os CLI', () => {
           skillSteps: number
           memoryQuality: { score: number }
           contextQuality: { compressionRisk: string }
+          evaluatorQuality: { requiredGates: number; averageUncertainty: number }
         }
       }
       nextActions: string[]
@@ -539,11 +540,13 @@ describe('ai-os CLI', () => {
       'memory-recall',
       'context-savings',
       'skill-routing',
+      'evaluator-intelligence',
       'benchmark-intelligence',
     ])
     expect(readyReport.intelligence.summary.skillSteps).toBeGreaterThan(0)
     expect(readyReport.intelligence.summary.memoryQuality.score).toEqual(expect.any(Number))
     expect(readyReport.intelligence.summary.contextQuality.compressionRisk).toEqual(expect.any(String))
+    expect(readyReport.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
     expect(readyReport.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
 
     const readyHuman = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
@@ -552,8 +555,10 @@ describe('ai-os CLI', () => {
     expect(readyHuman.stdout).toContain('状态: ready')
     expect(readyHuman.stdout).toContain('Intelligence:')
     expect(readyHuman.stdout).toContain('Context risk:')
+    expect(readyHuman.stdout).toContain('Evaluator gates:')
     expect(readyHuman.stdout).toContain('memory-recall')
     expect(readyHuman.stdout).toContain('skill-routing')
+    expect(readyHuman.stdout).toContain('evaluator-intelligence')
     expect(readyHuman.stdout).toContain('[ready] verification-evidence')
   }, 120_000)
 

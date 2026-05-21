@@ -43,7 +43,7 @@ scale context pack \
   --json
 ```
 
-Build the unified AI OS runtime plan that embeds the context pack with memory, skill routing, adaptive workflow, and ROI:
+Build the unified AI OS runtime plan that embeds the context pack with memory, skill routing, evaluator intelligence, adaptive workflow, and ROI:
 
 ```bash
 scale ai-os plan \
