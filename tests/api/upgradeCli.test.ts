@@ -54,6 +54,40 @@ describe('upgrade CLI', () => {
     })
   }, 45000)
 
+  it('includes AI OS runtime readiness in upgrade check and plan reports', async () => {
+    const scaleDir = makeDir('scale-upgrade-aios-cli-')
+    const projectDir = makeDir('scale-upgrade-aios-project-')
+    const init = await runScale(['init', '--dir', projectDir, '--governance-pack', 'project-scaffold', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+
+    const check = await runScale(['upgrade', 'check', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(check.exitCode).toBe(0)
+    const checkReport = parseJson<{
+      aiOsRuntime: {
+        status: string
+        summary: { blockedChecks: number }
+        nextActions: string[]
+      }
+      recommendedCommands: string[]
+    }>(check.stdout)
+    expect(checkReport.aiOsRuntime.status).toBe('blocked')
+    expect(checkReport.aiOsRuntime.summary.blockedChecks).toBeGreaterThan(0)
+    expect(checkReport.aiOsRuntime.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('scale ai-os migrate'),
+    ]))
+    expect(checkReport.recommendedCommands).toContain('scale ai-os doctor --dir . --json')
+
+    const plan = await runScale(['upgrade', 'plan', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planReport = parseJson<{
+      steps: Array<{ action: string; command?: string }>
+    }>(plan.stdout)
+    expect(planReport.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'migrate-ai-os-runtime', command: 'scale ai-os migrate --dir . --json' }),
+      expect.objectContaining({ action: 'check-ai-os-runtime', command: 'scale ai-os doctor --dir . --json' }),
+    ]))
+  }, 45000)
+
   it('prints Chinese upgrade guidance by default and English guidance on request', async () => {
     const scaleDir = makeDir('scale-upgrade-cli-')
     const projectDir = makeDir('scale-upgrade-project-')
@@ -63,6 +97,7 @@ describe('upgrade CLI', () => {
     const zh = await runScale(['upgrade', 'check', '--dir', projectDir], scaleDir, projectDir)
     expect(zh.exitCode).toBe(0)
     expect(zh.stdout).toContain('SCALE 升级检查')
+    expect(zh.stdout).toContain('AI OS Runtime:')
     expect(zh.stdout).toContain('下一步')
 
     const en = await runScale(['upgrade', 'check', '--dir', projectDir, '--lang', 'en'], scaleDir, projectDir)

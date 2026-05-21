@@ -33,6 +33,58 @@ scale ai-os plan \
 
 这不是“完全替代人类判断”的声明；它是把 AI Engineering OS 的核心闭环先做成可测试、可解释、可度量的运行时规划层。
 
+短期目标是用一周冲刺把 `ai-os plan` 推进到可运行的 beta 闭环：`ai-os run`、记忆供应商、Context Compiler v2、Skill Router v2、Adaptive Workflow、Failure Learning、Dashboard、迁移和 benchmark。远景目标是 8-12 周形成 AI Engineering OS beta，3-6 个月进入稳定治理运行时，6-12 个月沉淀为跨 Agent 的工程操作层。完整路线图见 [AI Engineering OS 战略定位](docs/AI_ENGINEERING_OS_POSITIONING.md)。
+
+当前 0.27.0 beta runtime 已包含受控运行入口：`scale ai-os run --dry-run` 会复用统一 plan，生成执行步骤、证据要求、下一步动作，并把运行报告写入 `.scale/ai-os/runs/`。需要真实验证时可切到 guarded 模式并显式传入 `--verify`，命令默认通过 safe runner 执行并写入 runtime evidence；验证失败时 JSON 报告会返回 `blocked`，CLI 退出码为非零。
+
+```bash
+scale ai-os run \
+  --task-id TASK-123 \
+  --task "修复 OAuth callback auth token 并验证浏览器回调流程" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --dry-run \
+  --json
+```
+
+```bash
+scale ai-os run \
+  --task-id TASK-123 \
+  --task "修复 OAuth callback auth token 并验证浏览器回调流程" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --mode guarded \
+  --verify "npm test -- tests/auth/oauth.test.ts" \
+  --json
+```
+
+运行多次后可以用 dashboard 汇总 ready/blocked、验证命令、pending evidence 和 failure learning：
+
+```bash
+scale ai-os dashboard --json
+```
+
+发版或阶段验收前，用 benchmark 固定样例对比 context、memory、skill、governance 和 dashboard 指标：
+
+```bash
+scale ai-os benchmark --json
+```
+
+旧项目接入 0.27.0 beta runtime 前，可先创建或核验 AI OS 运行态目录：
+
+```bash
+scale ai-os migrate --json
+```
+
+项目级就绪检查可使用 AI OS doctor。它会检查运行态目录、运行历史、dashboard 健康度、benchmark 新鲜度，并按中英文输出下一步动作：
+
+```bash
+scale ai-os doctor --lang zh --json
+scale ai-os doctor --lang en
+```
+
+标准升级入口也会带出这项检查。`scale upgrade check --json` 会包含 AI OS doctor 结果；当项目尚未接入运行态目录时，`scale upgrade plan --json` 会补充明确的 `ai-os migrate` / `ai-os doctor` 步骤。
+
 ## 先怎么学
 
 如果你第一次接触 SCALE，不要从完整命令列表开始读。按这个顺序更容易掌握：

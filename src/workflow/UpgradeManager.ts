@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { TOOL_CAPABILITY_CATALOG, type ToolCapabilityCategory } from '../tools/ToolCapabilityRegistry.js'
+import { createAiOsDoctor, type AiOsDoctorReport } from '../runtime/AiOsRuntime.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 import { computeGovernanceDrift, readGovernanceLock, type GovernanceDriftReport } from './GovernanceLock.js'
 import { listGovernanceTemplatePacks, resolveGovernanceTemplatePack, type GovernancePackId } from './GovernanceTemplatePacks.js'
@@ -14,6 +15,7 @@ export type ThirdPartyUpdatePolicy = 'check-only' | 'manual-review' | 'blocked'
 
 export interface UpgradeManagerOptions {
   projectDir?: string
+  scaleDir?: string
   targetScaleVersion?: string
 }
 
@@ -48,6 +50,7 @@ export interface UpgradeCheckReport {
   }
   drift: GovernanceDriftReport
   thirdParty: ThirdPartyUpdateReport
+  aiOsRuntime: AiOsDoctorReport
   recommendedCommands: string[]
 }
 
@@ -104,6 +107,8 @@ export interface UpgradePlanStep {
     | 'restore-missing-generated-file'
     | 'review-local-change'
     | 'review-third-party-capability'
+    | 'migrate-ai-os-runtime'
+    | 'check-ai-os-runtime'
     | 'run-preflight'
   path?: string
   risk: UpgradeRisk
@@ -159,11 +164,13 @@ export function createUpgradeCheckReport(options: UpgradeManagerOptions = {}): U
   const lock = readGovernanceLock(projectDir)
   const drift = computeGovernanceDrift(projectDir)
   const latestScaleVersion = normalizeTargetVersion(options.targetScaleVersion)
+  const scaleDir = options.scaleDir ?? join(projectDir, '.scale')
   const pack = lock ? resolveGovernanceTemplatePack(lock.pack) : null
   const scaleUpToDate = Boolean(lock && lock.scaleVersion === latestScaleVersion)
   const packUpToDate = Boolean(lock && pack && lock.packVersion === pack.version)
   const generatedTotal = drift.clean.length + drift.changed.length + drift.missing.length
   const thirdParty = createThirdPartyUpdateReport()
+  const aiOsRuntime = createAiOsDoctor({ projectDir, scaleDir })
   const status = resolveUpgradeStatus({
     hasLock: Boolean(lock),
     hasLocalChanges: drift.changed.length > 0,
@@ -199,8 +206,10 @@ export function createUpgradeCheckReport(options: UpgradeManagerOptions = {}): U
     },
     drift,
     thirdParty,
+    aiOsRuntime,
     recommendedCommands: [
       'scale upgrade plan --dir .',
+      'scale ai-os doctor --dir . --json',
       'scale tools outdated --dir .',
       'scale skill outdated --dir .',
       'scale preflight --preflight-profile quick',
@@ -281,6 +290,23 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
       action: 'review-third-party-capability',
       risk: entry.trust === 'high-risk' ? 'high' : 'medium',
       reason: `${entry.name} updates require ${entry.updatePolicy}; SCALE never auto-installs third-party capabilities.`,
+    })
+  }
+
+  if (check.aiOsRuntime.status !== 'ready') {
+    if (check.aiOsRuntime.checks.some(check => check.id === 'ai-os-runtime-dirs' && check.status === 'blocked')) {
+      steps.push({
+        action: 'migrate-ai-os-runtime',
+        risk: 'low',
+        reason: 'AI OS runtime directories are missing; create them before adopting the beta runtime.',
+        command: 'scale ai-os migrate --dir . --json',
+      })
+    }
+    steps.push({
+      action: 'check-ai-os-runtime',
+      risk: check.aiOsRuntime.status === 'blocked' ? 'medium' : 'low',
+      reason: 'AI OS runtime readiness should be checked before relying on AI OS beta orchestration.',
+      command: 'scale ai-os doctor --dir . --json',
     })
   }
 
@@ -687,9 +713,14 @@ function localizedUpgradeStepReason(step: UpgradePlanStep, lang: UpgradePlanHtml
       return step.reason
         .replace('updates require manual-review; SCALE never auto-installs third-party capabilities.', '更新需要人工审阅；SCALE 不会自动安装第三方能力。')
         .replace('updates require blocked; SCALE never auto-installs third-party capabilities.', '更新默认阻断；SCALE 不会自动安装第三方能力。')
+    case 'migrate-ai-os-runtime':
+      return 'Create missing AI OS runtime directories before adopting the beta runtime.'
+    case 'check-ai-os-runtime':
+      return 'Check AI OS runtime readiness before relying on beta orchestration.'
     case 'run-preflight':
       return '完成已接受的升级后，运行项目级预检。'
   }
+  return step.reason
 }
 
 function escapeHtml(value: string): string {

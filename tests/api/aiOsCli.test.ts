@@ -75,4 +75,314 @@ describe('ai-os CLI', () => {
       expect.objectContaining({ module: 'skill-routing-engine' }),
     ]))
   }, 120_000)
+
+  it('runs a dry-run AI OS execution loop as JSON', async () => {
+    const scaleDir = makeDir('scale-ai-os-run-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-run-cli-project-')
+
+    const result = await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-RUN-CLI',
+      '--task',
+      'Review auth token and browser callback flow',
+      '--level',
+      'L',
+      '--files',
+      'src/auth/token.ts,src/ui/callback.tsx',
+      '--budget',
+      '2400',
+      '--dry-run',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      mode: string
+      dryRun: boolean
+      status: string
+      plan: { task: { taskId: string } }
+      steps: Array<{ id: string; status: string; kind: string }>
+      evidence: { required: string[] }
+      artifacts: { runReport: string }
+      nextActions: string[]
+    }>(result.stdout)
+    expect(report.mode).toBe('dry-run')
+    expect(report.dryRun).toBe(true)
+    expect(report.status).toBe('ready')
+    expect(report.plan.task.taskId).toBe('TASK-AI-OS-RUN-CLI')
+    expect(report.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'runtime-plan', status: 'passed' }),
+      expect.objectContaining({ id: 'runtime-evidence', status: 'planned' }),
+    ]))
+    expect(report.evidence.required).toContain('skill-routing-engine')
+    expect(report.artifacts.runReport).toContain('TASK-AI-OS-RUN-CLI')
+    expect(report.nextActions.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  it('runs guarded verification commands and records runtime evidence as JSON', async () => {
+    const scaleDir = makeDir('scale-ai-os-guarded-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-guarded-cli-project-')
+
+    const result = await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-GUARDED-CLI',
+      '--task',
+      'Verify guarded AI OS CLI execution evidence',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--budget',
+      '2400',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -e "process.stdout.write(\'ok\')"',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      mode: string
+      status: string
+      verification: { commands: Array<{ status: string; exitCode: number; evidenceId: string }> }
+      evidence: { produced: string[] }
+      steps: Array<{ id: string; status: string }>
+    }>(result.stdout)
+    expect(report.mode).toBe('guarded')
+    expect(report.status).toBe('ready')
+    expect(report.verification.commands).toEqual([
+      expect.objectContaining({ status: 'passed', exitCode: 0 }),
+    ])
+    expect(report.verification.commands[0].evidenceId).toMatch(/^RTE-/)
+    expect(report.evidence.produced).toContain('runtime-evidence')
+    expect(report.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'verify-command:1', status: 'passed' }),
+    ]))
+  }, 120_000)
+
+  it('returns a blocked JSON report and non-zero exit code when guarded verification fails', async () => {
+    const scaleDir = makeDir('scale-ai-os-guarded-fail-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-guarded-fail-cli-project-')
+
+    const result = await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-GUARDED-FAIL-CLI',
+      '--task',
+      'Verify guarded AI OS CLI failure handling',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -e "process.exit(7)"',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(1)
+    const report = parseJson<{
+      status: string
+      verification: { commands: Array<{ status: string; exitCode: number }> }
+      failureLearning: { status: string; candidates: unknown[] }
+    }>(result.stdout)
+    expect(report.status).toBe('blocked')
+    expect(report.verification.commands[0]).toEqual(expect.objectContaining({ status: 'failed', exitCode: 7 }))
+    expect(report.failureLearning.status).toBe('candidate-created')
+    expect(report.failureLearning.candidates.length).toBeGreaterThan(0)
+  }, 120_000)
+
+  it('prints AI OS dashboard summary as JSON', async () => {
+    const scaleDir = makeDir('scale-ai-os-dashboard-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-dashboard-cli-project-')
+
+    await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-DASH-CLI-READY',
+      '--task',
+      'Verify ready dashboard CLI run',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+    await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-DASH-CLI-BLOCKED',
+      '--task',
+      'Verify blocked dashboard CLI run',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node definitely-missing-scale-dashboard-cli-file.js',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const result = await runScale(['ai-os', 'dashboard', '--json'], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const dashboard = parseJson<{
+      summary: {
+        totalRuns: number
+        readyRuns: number
+        blockedRuns: number
+        failedVerificationCommands: number
+        failureLearningCandidates: number
+      }
+      health: { status: string }
+      latestRuns: Array<{ taskId: string; status: string }>
+    }>(result.stdout)
+    expect(dashboard.summary).toMatchObject({
+      totalRuns: 2,
+      readyRuns: 1,
+      blockedRuns: 1,
+      failedVerificationCommands: 1,
+      failureLearningCandidates: 1,
+    })
+    expect(dashboard.health.status).toBe('attention')
+    expect(dashboard.latestRuns[0]).toMatchObject({ taskId: 'TASK-AI-OS-DASH-CLI-BLOCKED', status: 'blocked' })
+  }, 120_000)
+
+  it('prints AI OS benchmark metrics as JSON', async () => {
+    const scaleDir = makeDir('scale-ai-os-benchmark-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-benchmark-cli-project-')
+
+    await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-BENCH-CLI-RUN',
+      '--task',
+      'Verify benchmark CLI dashboard input',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const result = await runScale(['ai-os', 'benchmark', '--json'], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const benchmark = parseJson<{
+      summary: {
+        scenarios: number
+        totalEstimatedTokens: number
+        totalSkillSteps: number
+        governanceModes: string[]
+      }
+      dashboard: { summary: { totalRuns: number } }
+      artifacts: { benchmarkReport: string }
+      scenarios: Array<{ id: string; metrics: { skillSteps: number } }>
+    }>(result.stdout)
+    expect(benchmark.summary.scenarios).toBeGreaterThanOrEqual(3)
+    expect(benchmark.summary.totalEstimatedTokens).toBeGreaterThanOrEqual(0)
+    expect(benchmark.summary.totalSkillSteps).toBeGreaterThan(0)
+    expect(benchmark.summary.governanceModes.length).toBeGreaterThan(0)
+    expect(benchmark.dashboard.summary.totalRuns).toBe(1)
+    expect(benchmark.artifacts.benchmarkReport).toContain('benchmarks')
+    expect(benchmark.scenarios.map(scenario => scenario.id)).toEqual(expect.arrayContaining([
+      'docs-governance',
+      'security-code-change',
+      'browser-ui-flow',
+    ]))
+  }, 120_000)
+
+  it('prints AI OS migration status as JSON', async () => {
+    const scaleDir = makeDir('scale-ai-os-migrate-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-migrate-cli-project-')
+
+    const result = await runScale(['ai-os', 'migrate', '--json'], scaleDir, projectDir)
+    const second = await runScale(['ai-os', 'migrate', '--json'], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    expect(second.exitCode).toBe(0)
+    const firstReport = parseJson<{
+      status: string
+      created: string[]
+      files: { migrationReport: string }
+    }>(result.stdout)
+    const secondReport = parseJson<{ status: string; created: string[] }>(second.stdout)
+    expect(firstReport.status).toBe('migrated')
+    expect(firstReport.created).toEqual(expect.arrayContaining([
+      expect.stringContaining('ai-os/runs'),
+      expect.stringContaining('ai-os/benchmarks'),
+    ]))
+    expect(firstReport.files.migrationReport).toContain('migration.json')
+    expect(secondReport.status).toBe('compatible')
+    expect(secondReport.created).toEqual([])
+  }, 120_000)
+
+  it('prints AI OS doctor readiness as JSON with bilingual next actions', async () => {
+    const scaleDir = makeDir('scale-ai-os-doctor-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-doctor-cli-project-')
+
+    const blocked = await runScale(['ai-os', 'doctor', '--json', '--lang', 'zh'], scaleDir, projectDir)
+
+    expect(blocked.exitCode).toBe(1)
+    const blockedReport = parseJson<{
+      status: string
+      nextActions: string[]
+    }>(blocked.stdout)
+    expect(blockedReport.status).toBe('blocked')
+    expect(blockedReport.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('scale ai-os migrate'),
+    ]))
+
+    await runScale(['ai-os', 'migrate', '--json'], scaleDir, projectDir)
+    await runScale([
+      'ai-os',
+      'run',
+      '--task-id',
+      'TASK-AI-OS-DOCTOR-CLI',
+      '--task',
+      'Verify AI OS doctor CLI readiness',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--mode',
+      'guarded',
+      '--verify',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+    await runScale(['ai-os', 'benchmark', '--json'], scaleDir, projectDir)
+
+    const ready = await runScale(['ai-os', 'doctor', '--json', '--lang', 'en'], scaleDir, projectDir)
+
+    expect(ready.exitCode).toBe(0)
+    const readyReport = parseJson<{
+      status: string
+      summary: { blockedChecks: number }
+      nextActions: string[]
+    }>(ready.stdout)
+    expect(readyReport.status).toBe('ready')
+    expect(readyReport.summary.blockedChecks).toBe(0)
+    expect(readyReport.nextActions).toContain('AI OS beta runtime is ready for guarded project tasks.')
+  }, 120_000)
 })

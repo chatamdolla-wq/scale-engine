@@ -144,7 +144,12 @@ import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
 import {
   RuntimeEvidenceLedger,
   SessionLedger,
+  createAiOsBenchmark,
+  createAiOsDashboard,
+  createAiOsDoctor,
+  createAiOsMigration,
   createAiOsPlan,
+  createAiOsRun,
   doctorRuntimeEvidence,
   evaluateFinalReportReadiness,
   type RuntimeEvidenceKind,
@@ -3174,9 +3179,194 @@ const aiOsPlanCommand = defineCommand({
   },
 })
 
+const aiOsRunCommand = defineCommand({
+  meta: { name: 'run', description: 'Run the AI OS beta loop in dry-run or guarded mode and write an execution report' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id' },
+    task: { type: 'string', required: true, description: 'Task or requirement description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the context compiler' },
+    'requested-mode': { type: 'string', description: 'Requested governance mode: minimal, standard, expanded, or critical' },
+    verify: { type: 'string', description: 'Comma-separated guarded verification commands to run without shell by default' },
+    timeout: { type: 'string', description: 'Verification command timeout in milliseconds' },
+    mode: { type: 'string', description: 'Run mode: dry-run or guarded' },
+    'dry-run': { type: 'boolean', default: false, description: 'Force dry-run mode without executing external commands' },
+    'allow-shell': { type: 'boolean', default: false, description: 'Allow shell execution for trusted local guarded runs' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      task: String(args.task),
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      services: parseCommaList(args.services),
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+      requestedMode: normalizeGovernanceMode(args['requested-mode']),
+      mode: normalizeAiOsRunMode(args.mode, Boolean(args['dry-run'])),
+      verificationCommands: parseCommaList(args.verify),
+      commandTimeoutMs: parsePositiveIntArg(args.timeout, '--timeout'),
+      allowShell: Boolean(args['allow-shell']),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (report.status === 'blocked') process.exitCode = 1
+      return
+    }
+    console.log('SCALE AI OS Runtime Run')
+    console.log(`  Version: ${report.version}`)
+    console.log(`  Mode: ${report.mode}`)
+    console.log(`  Status: ${report.status}`)
+    console.log(`  Task: ${report.plan.task.taskId ?? 'n/a'} ${report.plan.task.task}`)
+    console.log(`  Steps: ${report.steps.filter(step => step.status === 'passed').length} passed, ${report.steps.filter(step => step.status === 'planned').length} planned, ${report.steps.filter(step => step.status === 'blocked').length} blocked`)
+    console.log(`  Verification: ${report.verification.commands.filter(command => command.status === 'passed').length}/${report.verification.commands.length} passed`)
+    console.log(`  Evidence: ${report.evidence.produced.length} produced, ${report.evidence.pending.length} pending`)
+    console.log(`  Report: ${report.artifacts.runReport}`)
+    for (const action of report.nextActions.slice(0, 6)) console.log(`  next: ${action}`)
+    if (report.status === 'blocked') process.exitCode = 1
+  },
+})
+
+const aiOsDashboardCommand = defineCommand({
+  meta: { name: 'dashboard', description: 'Summarize AI OS runtime run reports and verification health' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    limit: { type: 'string', description: 'Maximum latest run rows to include' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const dashboard = createAiOsDashboard({
+      projectDir,
+      scaleDir,
+      limit: parsePositiveIntArg(args.limit, '--limit'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(dashboard, null, 2))
+      return
+    }
+    console.log('SCALE AI OS Dashboard')
+    console.log(`  Health: ${dashboard.health.status} (${dashboard.health.score})`)
+    console.log(`  Runs: ${dashboard.summary.totalRuns} total, ${dashboard.summary.readyRuns} ready, ${dashboard.summary.blockedRuns} blocked`)
+    console.log(`  Verification: ${dashboard.summary.verificationCommands} command(s), ${dashboard.summary.failedVerificationCommands} failed`)
+    console.log(`  Failure learning: ${dashboard.summary.failureLearningCandidates} candidate(s)`)
+    for (const run of dashboard.latestRuns) {
+      console.log(`  [${run.status}] ${run.taskId ?? 'n/a'} ${run.task}`)
+    }
+    for (const recommendation of dashboard.recommendations) console.log(`  recommendation: ${recommendation}`)
+    for (const warning of dashboard.warnings) console.log(`  warning: ${warning}`)
+  },
+})
+
+const aiOsBenchmarkCommand = defineCommand({
+  meta: { name: 'benchmark', description: 'Run fixed AI OS beta benchmark scenarios for context, memory, skill, governance, and dashboard metrics' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    budget: { type: 'string', description: 'Scenario context budget' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const benchmark = await createAiOsBenchmark({
+      projectDir,
+      scaleDir,
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(benchmark, null, 2))
+      return
+    }
+    console.log('SCALE AI OS Benchmark')
+    console.log(`  Scenarios: ${benchmark.summary.scenarios}`)
+    console.log(`  Tokens: ${benchmark.summary.totalEstimatedTokens}/${benchmark.summary.totalBudget}; saved ${benchmark.summary.totalEstimatedTokenSavings}`)
+    console.log(`  Memory items: ${benchmark.summary.totalMemoryItems}`)
+    console.log(`  Skill steps: ${benchmark.summary.totalSkillSteps} (${benchmark.summary.requiredSkillSteps} required)`)
+    console.log(`  Governance modes: ${benchmark.summary.governanceModes.join(', ') || 'none'}`)
+    console.log(`  Dashboard health: ${benchmark.dashboard.health.status}`)
+    for (const scenario of benchmark.scenarios) {
+      console.log(`  [${scenario.governanceMode}] ${scenario.id}: tokens=${scenario.metrics.estimatedTokens}, skills=${scenario.metrics.skillSteps}, memory=${scenario.metrics.memoryItems}`)
+    }
+    for (const recommendation of benchmark.recommendations) console.log(`  recommendation: ${recommendation}`)
+  },
+})
+
+const aiOsMigrateCommand = defineCommand({
+  meta: { name: 'migrate', description: 'Create or verify AI OS runtime state directories for this project' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = createAiOsMigration({ projectDir, scaleDir })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE AI OS Migration')
+    console.log(`  Status: ${report.status}`)
+    console.log(`  Created: ${report.created.length}`)
+    console.log(`  Existing: ${report.existing.length}`)
+    console.log(`  Report: ${report.files.migrationReport}`)
+    for (const action of report.nextActions) console.log(`  next: ${action}`)
+    for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+  },
+})
+
+const aiOsDoctorCommand = defineCommand({
+  meta: { name: 'doctor', description: 'Check AI OS beta runtime readiness, dashboard health, and benchmark freshness' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    lang: { type: 'string', default: 'en', description: 'Output language zh/en' },
+    'benchmark-max-age-hours': { type: 'string', description: 'Maximum accepted benchmark report age in hours' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = createAiOsDoctor({
+      projectDir,
+      scaleDir,
+      lang: normalizeLangArg(args.lang),
+      benchmarkMaxAgeHours: parsePositiveIntArg(args['benchmark-max-age-hours'], '--benchmark-max-age-hours'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (report.status === 'blocked') process.exitCode = 1
+      return
+    }
+    console.log('SCALE AI OS Doctor')
+    console.log(`  Status: ${report.status}`)
+    console.log(`  Checks: ${report.summary.passedChecks} passed, ${report.summary.warningChecks} warning, ${report.summary.blockedChecks} blocked`)
+    console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
+    console.log(`  Benchmark: ${report.benchmark.status}`)
+    for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
+    for (const action of report.nextActions) console.log(`  next: ${action}`)
+    for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+    if (report.status === 'blocked') process.exitCode = 1
+  },
+})
+
 const aiOs = defineCommand({
   meta: { name: 'ai-os', description: 'AI Engineering OS runtime planning and governance orchestration' },
-  subCommands: { plan: aiOsPlanCommand },
+  subCommands: {
+    plan: aiOsPlanCommand,
+    run: aiOsRunCommand,
+    dashboard: aiOsDashboardCommand,
+    benchmark: aiOsBenchmarkCommand,
+    migrate: aiOsMigrateCommand,
+    doctor: aiOsDoctorCommand,
+  },
 })
 
 // ============================================================================
@@ -3193,8 +3383,10 @@ const upgradeCheck = defineCommand({
   },
   run({ args }) {
     const lang = normalizeLangArg(args.lang)
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
     const report = createUpgradeCheckReport({
-      projectDir: args.dir,
+      projectDir,
+      scaleDir: resolveScaleDirForProject(projectDir),
       targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
     })
     if (args.json) {
@@ -3209,6 +3401,7 @@ const upgradeCheck = defineCommand({
       console.log(`  治理包: ${report.governancePack.id ?? '无'} v${report.governancePack.currentVersion ?? '无'} -> v${report.governancePack.latestVersion ?? '无'}`)
       console.log(`  受管生成文件: ${report.generatedFiles.clean} 个干净, ${report.generatedFiles.changed} 个本地改动, ${report.generatedFiles.missing} 个缺失`)
       console.log(`  第三方能力策略: ${report.thirdParty.policy}; 需要人工审查: ${report.thirdParty.reviewRequired}`)
+      console.log(`  AI OS Runtime: ${report.aiOsRuntime.status}`)
       console.log('  下一步:')
     } else {
       console.log('SCALE Upgrade Check')
@@ -3218,6 +3411,7 @@ const upgradeCheck = defineCommand({
       console.log(`  Governance pack: ${report.governancePack.id ?? 'none'} v${report.governancePack.currentVersion ?? 'none'} -> v${report.governancePack.latestVersion ?? 'none'}`)
       console.log(`  Generated files: ${report.generatedFiles.clean} clean, ${report.generatedFiles.changed} changed, ${report.generatedFiles.missing} missing`)
       console.log(`  Third-party policy: ${report.thirdParty.policy}; review required: ${report.thirdParty.reviewRequired}`)
+      console.log(`  AI OS Runtime: ${report.aiOsRuntime.status}`)
       console.log('  Next:')
     }
     for (const command of report.recommendedCommands) console.log(`    ${command}`)
@@ -3235,8 +3429,10 @@ const upgradePlan = defineCommand({
   },
   run({ args }) {
     const lang = normalizeLangArg(args.lang)
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
     const report = createUpgradePlanReport({
-      projectDir: args.dir,
+      projectDir,
+      scaleDir: resolveScaleDirForProject(projectDir),
       targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
     })
     const htmlPath = args.html ? writeUpgradePlanHtml(report, undefined, lang) : undefined
@@ -3279,8 +3475,10 @@ const upgradeApply = defineCommand({
   },
   run({ args }) {
     const lang = normalizeLangArg(args.lang)
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
     const result = applyUpgradePlan({
-      projectDir: args.dir,
+      projectDir,
+      scaleDir: resolveScaleDirForProject(projectDir),
       confirm: isTruthyFlag(args.confirm),
     })
     if (args.json) {
@@ -5267,6 +5465,13 @@ function parseToolIds(value: unknown): string[] | undefined {
 
 function parseCommaList(value: unknown): string[] {
   return parseToolIds(value) ?? []
+}
+
+function normalizeAiOsRunMode(value: unknown, forceDryRun = false): 'dry-run' | 'guarded' {
+  if (forceDryRun) return 'dry-run'
+  const normalized = String(value ?? 'dry-run').trim().toLowerCase()
+  if (normalized === 'dry-run' || normalized === 'guarded') return normalized
+  throw new Error(`Invalid AI OS run mode "${String(value)}"; expected dry-run or guarded.`)
 }
 
 function createToolExecutionPlanFromArgs(args: Record<string, unknown>) {

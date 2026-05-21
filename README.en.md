@@ -33,6 +33,58 @@ scale ai-os plan \
 
 This is not a claim that SCALE replaces human judgment. It is the first testable, explainable, and measurable runtime planning layer for the AI Engineering OS direction.
 
+The near-term target is a one-week push from `ai-os plan` to a runnable beta loop: `ai-os run`, memory providers, Context Compiler v2, Skill Router v2, Adaptive Workflow, Failure Learning, Dashboard, migration, and benchmark evidence. The long-range target is an AI Engineering OS beta in 8-12 weeks, a stable governance runtime in 3-6 months, and a cross-agent engineering operating layer in 6-12 months. See the full roadmap in [AI Engineering OS Strategic Positioning](docs/AI_ENGINEERING_OS_POSITIONING.md).
+
+The current 0.27.0 beta runtime now includes the controlled run entry point: `scale ai-os run --dry-run` reuses the unified plan, produces execution steps, evidence requirements, next actions, and writes the run report to `.scale/ai-os/runs/`. When real verification is required, use guarded mode with explicit `--verify` commands. Commands run through the safe runner by default and are recorded as runtime evidence; failed verification returns a `blocked` JSON report and a non-zero CLI exit code.
+
+```bash
+scale ai-os run \
+  --task-id TASK-123 \
+  --task "Fix OAuth callback auth token handling and verify browser callback flow" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --dry-run \
+  --json
+```
+
+```bash
+scale ai-os run \
+  --task-id TASK-123 \
+  --task "Fix OAuth callback auth token handling and verify browser callback flow" \
+  --level L \
+  --files src/auth/oauth.ts,src/ui/callback.tsx \
+  --mode guarded \
+  --verify "npm test -- tests/auth/oauth.test.ts" \
+  --json
+```
+
+After multiple runs, use the dashboard to summarize ready/blocked runs, verification commands, pending evidence, and failure learning:
+
+```bash
+scale ai-os dashboard --json
+```
+
+Before a release or milestone review, run the fixed benchmark scenarios to compare context, memory, skill, governance, and dashboard metrics:
+
+```bash
+scale ai-os benchmark --json
+```
+
+Before adopting the 0.27.0 beta runtime in an existing project, create or verify the AI OS runtime state directories:
+
+```bash
+scale ai-os migrate --json
+```
+
+For project-level readiness, run the AI OS doctor. It checks runtime directories, run history, dashboard health, benchmark freshness, and prints the next required action in English or Chinese:
+
+```bash
+scale ai-os doctor --lang en --json
+scale ai-os doctor --lang zh
+```
+
+The standard upgrade path also surfaces this readiness. `scale upgrade check --json` now includes the AI OS doctor result, and `scale upgrade plan --json` adds explicit `ai-os migrate` / `ai-os doctor` steps when a project has not yet adopted the runtime state.
+
 ## Community
 
 SCALE Engine is an engineering workflow governance project for real AI-agent delivery. Contributions, issues, PRs, governance-pack ideas, and field reports are welcome through the source repositories. Chinese users can also follow the WeChat public account for updates, examples, and community entry points.

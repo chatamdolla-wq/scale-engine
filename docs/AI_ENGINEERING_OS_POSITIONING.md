@@ -280,18 +280,16 @@ The promotion step must remain evidence-backed. Automatically generating rules w
 
 ## 6. Roadmap Direction
 
-### 6.1 Immediate Patch: 0.26.1
+### 6.1 Planning Principle
 
-Goal: publish the security patch before expanding strategic scope.
+The roadmap has two horizons:
 
-Primary outcomes:
+| Horizon | Purpose | Claim boundary |
+| --- | --- | --- |
+| One-week closure | deliver a runnable AI OS beta loop that can be tested in real repositories | "usable beta", not "stable final OS" |
+| Long-range vision | keep SCALE moving toward an AI Engineering OS with memory, context, governance, and tool intelligence | directional until backed by eval data |
 
-- remove `verify-task` shell execution risk from the published package
-- document safe verification command semantics
-- pin and override flagged dependency versions where applicable
-- preserve production dependency audit health
-
-This is a trust-maintenance release. It should not be mixed with large roadmap changes.
+The near-term work should be aggressive, but public wording must stay precise. SCALE can ship beta capabilities quickly; it should only claim stable, industry-leading AI OS behavior after repeated project evidence, benchmarks, and upgrade validation.
 
 ### 6.2 0.27.0: Cognitive Runtime Layer
 
@@ -334,7 +332,76 @@ Exit criteria:
 - skill recommendations include why, when, and required proof: baseline implemented by skill execution plans
 - context pack generation reports token budget and omissions: baseline implemented by `context.pack.compiler`
 
-### 6.3 0.28.0: Adaptive Governance
+### 6.3 0.27.x: One-Week AI OS Beta Closure
+
+Theme: turn `ai-os plan` into a runnable beta loop.
+
+Target timebox: one week.
+
+Core work:
+
+| Module | Outcome |
+| --- | --- |
+| `scale ai-os run` | execute the unified plan through workflow, context, memory, skill routing, and verification steps |
+| Memory Provider Bridge | make gbrain, agentmemory, code memory, and local memory selectable through one provider contract |
+| Context Compiler v2 | merge task intent, risk level, files, memory recall, and role into one explainable context pack |
+| Skill Router v2 | create an execution graph for skills, MCP tools, CLIs, artifacts, and required evidence |
+| Adaptive Workflow Profiles | choose light, standard, or strict gates from risk and changed-file signals |
+| Failure Learning | convert failed gates, test failures, and missing evidence into lesson and rule candidates |
+| AI OS Dashboard CLI | summarize gate health, memory hits, context budget, skill evidence, and ROI |
+| Upgrade/Migration | migrate older `.scale` state and warn about incompatible local governance files |
+| AI OS Doctor | check runtime directories, run history, dashboard health, and benchmark freshness before adoption or release |
+| Bilingual DX | keep key CLI help, errors, README guidance, and tutorials readable in Chinese and English |
+| Benchmark Pack | run fixed samples for token budget, recall, gate pass rate, and skill-routing evidence |
+
+Exit criteria:
+
+- `scale ai-os run` can complete at least one documentation task and one code task in dry-run or guarded execution mode
+- execution output records context decisions, memory provider choices, skill decisions, gate results, and failure lessons
+- benchmark output compares context token budget against a full-load baseline
+- beta docs clearly state what is automated, what is proposed, and what still requires human approval
+
+Current landing status:
+
+- `scale ai-os run --dry-run` exists as the first beta slice.
+- It reuses `createAiOsPlan`, expands it into run steps, evidence requirements, next actions, and a persisted `.scale/ai-os/runs/<task-id>.json` report.
+- `scale ai-os run --mode guarded --verify "<command>"` executes explicit verification commands through the safe command runner, records each command as runtime evidence, and blocks the run when verification fails.
+- `scale ai-os dashboard` summarizes persisted run reports into ready/blocked counts, guarded verification health, pending evidence, failure learning candidates, and next recommendations.
+- `scale ai-os benchmark` runs fixed beta scenarios and reports context token use, estimated savings, memory recall, skill steps, governance modes, and the current dashboard health snapshot.
+- `scale ai-os migrate` creates or verifies the `.scale/ai-os` runtime directories and writes an idempotent migration report.
+- `scale ai-os doctor --lang zh|en` checks AI OS runtime readiness without mutating the project and blocks adoption when required directories or dashboard health are broken.
+- `scale upgrade check/plan` includes AI OS readiness, so existing projects see migration and doctor steps through the normal upgrade workflow.
+- It does not yet create PRs or mutate source files; richer skill execution remains the next implementation slice.
+
+Explicitly deferred:
+
+- default automatic PR creation or merge without review
+- deep dynamic dependency sandboxing beyond audit, lockfile diff, and high-risk pattern checks
+- full VLM visual judgment beyond screenshot capture and interface placeholders
+- claims of human-level long-term memory or fully autonomous engineering
+
+### 6.4 0.29.0: Memory, Context, and Skill Intelligence
+
+Theme: make the beta loop measurably smarter rather than only broader.
+
+Core work:
+
+| Module | Outcome |
+| --- | --- |
+| Memory Quality Scoring | score recall precision, contradiction risk, accepted memory rate, and stale-memory risk |
+| Provider Fallback Policy | choose between gbrain, agentmemory, code memory, local memory, or no memory with an explicit reason |
+| Context Compression | summarize low-risk context while preserving high-risk evidence verbatim |
+| Skill Strategy Learning | learn preferred tools from successful evidence, failures, and user overrides |
+| Workflow Eval Integration | turn benchmark results into release-gate evidence |
+
+Exit criteria:
+
+- memory recall has acceptance/rejection feedback
+- context packs show savings, omissions, and evidence-loss warnings
+- skill routing decisions can be compared against outcome quality
+- release notes include measured deltas instead of aspirational percentages
+
+### 6.5 0.30.0: Enterprise Governance and Upgrade Maturity
 
 Theme: deepen adaptive governance beyond the v0.27.0 baseline.
 
@@ -354,7 +421,7 @@ Exit criteria:
 - reasoning-heavy tasks get critique/evaluator gates
 - evolution proposals can be traced to failure evidence and validation results
 
-### 6.4 0.29.0+: Agent Engineering OS
+### 6.6 1.0.0 Beta: AI Engineering OS
 
 Theme: integrate governance, memory, context, and tools into an operating layer.
 
@@ -366,6 +433,37 @@ Target capabilities:
 - adaptive workflow templates
 - measurable token and quality reports
 - ecosystem-safe skill and MCP lifecycle governance
+
+Release criteria:
+
+- install, upgrade, run, dashboard, benchmark, and migration flows work on clean projects
+- at least three representative project types have documented smoke results
+- failure learning produces reviewed rule candidates without silently hardening bad rules
+- bilingual docs explain the core workflow without requiring maintainer context
+- public claims are tied to `WORKFLOW_EVAL`, benchmark output, or release evidence
+
+### 6.7 Long-Range Vision: 3-12 Months
+
+This is the strategic north star, not the one-week beta promise.
+
+| Time horizon | Target state | Evidence required before public claim |
+| --- | --- | --- |
+| 8-12 weeks | AI Engineering OS beta: usable end-to-end loop across planning, execution, verification, memory, and dashboard | repeatable demo projects and benchmark reports |
+| 3-6 months | stable governance runtime: upgrades, adapters, memory providers, and eval gates are reliable in real repositories | release-to-release regression data and field reports |
+| 6-12 months | industry-leading agent engineering layer: adaptive workflows, strategy memory, tool intelligence, and cross-agent governance mature together | comparative evals, sustained issue closure, external adoption evidence |
+
+Long-range capability themes:
+
+- Cognitive memory: working, episodic, semantic, procedural, and strategy memory with explicit source and freshness controls.
+- Adaptive orchestration: workflows selected by risk, ownership, failure history, and tool reliability instead of one fixed path.
+- Tool intelligence: skills, MCP, CLIs, browser automation, and agent adapters treated as governed capabilities with cost, evidence, and fallback policy.
+- Evaluator intelligence: critique loops, uncertainty scoring, adversarial review, and evidence insufficiency verdicts for reasoning-heavy tasks.
+- Governance economics: token cost, gate friction, verification quality, and maintenance overhead measured as first-class product metrics.
+- Ecosystem governance: external skills, memory providers, adapters, and templates integrated through attribution, license, source pinning, and supply-chain checks.
+
+Non-negotiable boundary:
+
+> The long-range vision can guide architecture, but it must not be used as a release claim until the corresponding evidence exists.
 
 ## 7. Measurement Plan
 
