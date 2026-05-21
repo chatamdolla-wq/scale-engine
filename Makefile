@@ -1,4 +1,4 @@
-.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
+.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify workflow-aios-adopt scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
 
 SCALE ?= scale
 SCALE_VERSION ?= locked
@@ -7,11 +7,12 @@ FILES ?= AGENTS.md,CLAUDE.md,README.md
 LEVEL ?= M
 PHASE ?= plan
 SERVICES ?=
+BUDGET ?= 2400
 
 help:
 	@echo "make preflight | make new-task NAME=x LEVEL=M | make explore FILES='...' MSG='...'"
 	@echo "make plan NAME=x LEVEL=M | make gate-workflow | make gate-quality | make verify PROFILE=default"
-	@echo "make bootstrap-scale | make workflow-upgrade-check | make workflow-upgrade-plan"
+	@echo "make bootstrap-scale | make workflow-upgrade-check | make workflow-upgrade-plan | make workflow-aios-adopt"
 
 gate:
 	bash scripts/gates/all.sh --all
@@ -80,6 +81,9 @@ workflow-upgrade-rollback:
 
 workflow-upgrade-verify:
 	$(SCALE) preflight --dir . --service all --preflight-profile quick
+
+workflow-aios-adopt:
+	$(SCALE) ai-os adopt --dir . --task "$(TASK)" --files "$(FILES)" --level "$(LEVEL)" --budget "$(BUDGET)" --lang zh
 
 scale-version:
 	$(SCALE) --version

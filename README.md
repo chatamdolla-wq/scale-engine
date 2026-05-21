@@ -70,13 +70,13 @@ scale ai-os dashboard --json
 scale ai-os benchmark --json
 ```
 
-旧项目接入 0.27.0 beta runtime 前，可先创建或核验 AI OS 运行态目录：
+旧项目接入 AI OS beta runtime 前，可先创建或核验 AI OS 运行态目录：
 
 ```bash
 scale ai-os migrate --json
 ```
 
-下一版起也可以使用一键接入入口，它会按顺序执行 migrate、首个 dry-run、benchmark、doctor，并把采用报告写入 `.scale/ai-os/adoption.json`：
+也可以使用一键接入入口，它会按顺序执行 migrate、首个 dry-run、benchmark、doctor，并把采用报告写入 `.scale/ai-os/adoption.json`：
 
 ```bash
 scale ai-os adopt \
@@ -92,7 +92,7 @@ scale ai-os doctor --lang zh --json
 scale ai-os doctor --lang en
 ```
 
-标准升级入口也会带出这项检查。`scale upgrade check --json` 会包含 AI OS doctor 结果；当项目尚未接入运行态目录时，`scale upgrade plan --json` 会补充明确的 `ai-os migrate` / `ai-os doctor` 步骤。
+标准升级入口也会带出这项检查。`scale upgrade check --json` 会包含 AI OS doctor 结果；当项目尚未接入运行态目录时，`scale upgrade plan --json` 会补充明确的 `ai-os adopt`、`ai-os migrate` 和 `ai-os doctor` 步骤。
 
 ## 先怎么学
 

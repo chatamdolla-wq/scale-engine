@@ -60,6 +60,18 @@ scale upgrade apply --dir . --confirm
 scale preflight --dir . --service all --preflight-profile quick
 ```
 
+如果升级计划提示 AI OS runtime 尚未接入，优先使用一键接入命令。它会创建运行态目录、生成首个 `dry-run` 运行报告、写入 benchmark，并用 doctor 复核就绪状态：
+
+```bash
+scale ai-os adopt \
+  --dir . \
+  --task "接入 AI OS runtime 并生成首份治理证据" \
+  --files "README.md,AGENTS.md" \
+  --lang zh
+```
+
+接入完成后会写入 `.scale/ai-os/adoption.json`。后续真实任务再使用 `scale ai-os run --mode guarded` 生成受治理的执行证据。
+
 默认输出是中文。需要英文命令提示或英文 HTML 计划时加 `--lang en`：
 
 ```bash
@@ -73,6 +85,7 @@ scale upgrade plan --dir . --html --lang en
 make workflow-upgrade-check
 make workflow-upgrade-plan
 make workflow-upgrade-apply
+make workflow-aios-adopt
 make workflow-upgrade-verify
 ```
 
@@ -160,6 +173,8 @@ workflow-upgrade-rollback:
 	scale upgrade rollback --dir . --lang zh
 workflow-upgrade-verify:
 	scale preflight --dir . --service all --preflight-profile quick
+workflow-aios-adopt:
+	scale ai-os adopt --dir . --task "$(TASK)" --files "$(FILES)" --level "$(LEVEL)" --budget "$(BUDGET)" --lang zh
 ```
 
 如果 Windows 环境没有 `make`，提供等价 PowerShell 脚本，或在文档里写清原始 `scale` 命令。

@@ -3376,6 +3376,7 @@ const aiOsAdoptCommand = defineCommand({
   async run({ args }) {
     const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
     const scaleDir = resolveScaleDirForProject(projectDir)
+    const lang = normalizeLangArg(args.lang)
     const report = await createAiOsAdoption({
       projectDir,
       scaleDir,
@@ -3386,7 +3387,7 @@ const aiOsAdoptCommand = defineCommand({
       services: parseCommaList(args.services),
       budget: parsePositiveIntArg(args.budget, '--budget'),
       requestedMode: normalizeGovernanceMode(args['requested-mode']),
-      lang: normalizeLangArg(args.lang),
+      lang,
       benchmarkMaxAgeHours: parsePositiveIntArg(args['benchmark-max-age-hours'], '--benchmark-max-age-hours'),
     })
     if (args.json) {
@@ -3394,16 +3395,29 @@ const aiOsAdoptCommand = defineCommand({
       if (report.status === 'blocked') process.exitCode = 1
       return
     }
-    console.log('SCALE AI OS Adoption')
-    console.log(`  Status: ${report.status}`)
-    console.log(`  Migration: ${report.migration.status}`)
-    console.log(`  First run: ${report.run.status} (${report.run.mode})`)
-    console.log(`  Benchmark: ${report.benchmark.summary.scenarios} scenario(s)`)
-    console.log(`  Doctor: ${report.doctor.status}`)
-    console.log(`  Report: ${report.artifacts.adoptionReport}`)
-    for (const phase of report.phases) console.log(`  [${phase.status}] ${phase.id}: ${phase.summary}`)
-    for (const action of report.nextActions) console.log(`  next: ${action}`)
-    for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+    if (lang === 'zh') {
+      console.log('SCALE AI OS 接入')
+      console.log(`  状态: ${report.status}`)
+      console.log(`  迁移: ${report.migration.status}`)
+      console.log(`  首次运行: ${report.run.status} (${report.run.mode})`)
+      console.log(`  基准: ${report.benchmark.summary.scenarios} 个场景`)
+      console.log(`  Doctor: ${report.doctor.status}`)
+      console.log(`  报告: ${report.artifacts.adoptionReport}`)
+      for (const phase of report.phases) console.log(`  [${phase.status}] ${phase.id}: ${phase.summary}`)
+      for (const action of report.nextActions) console.log(`  下一步: ${action}`)
+      for (const warning of report.warnings) console.log(`  警告: ${warning}`)
+    } else {
+      console.log('SCALE AI OS Adoption')
+      console.log(`  Status: ${report.status}`)
+      console.log(`  Migration: ${report.migration.status}`)
+      console.log(`  First run: ${report.run.status} (${report.run.mode})`)
+      console.log(`  Benchmark: ${report.benchmark.summary.scenarios} scenario(s)`)
+      console.log(`  Doctor: ${report.doctor.status}`)
+      console.log(`  Report: ${report.artifacts.adoptionReport}`)
+      for (const phase of report.phases) console.log(`  [${phase.status}] ${phase.id}: ${phase.summary}`)
+      for (const action of report.nextActions) console.log(`  next: ${action}`)
+      for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+    }
     if (report.status === 'blocked') process.exitCode = 1
   },
 })

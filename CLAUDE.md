@@ -19,6 +19,7 @@ make verify PROFILE=default
 make scale-smoke TASK='workflow adaptation' FILES='AGENTS.md,README.md'
 make workflow-upgrade-check
 make workflow-upgrade-plan
+make workflow-aios-adopt
 ```
 
 ## 约束

@@ -70,13 +70,13 @@ Before a release or milestone review, run the fixed benchmark scenarios to compa
 scale ai-os benchmark --json
 ```
 
-Before adopting the 0.27.0 beta runtime in an existing project, create or verify the AI OS runtime state directories:
+Before adopting the AI OS beta runtime in an existing project, create or verify the AI OS runtime state directories:
 
 ```bash
 scale ai-os migrate --json
 ```
 
-The next release also adds a one-command adoption path. It runs migrate, the first dry-run, benchmark, and doctor in order, then writes the adoption report to `.scale/ai-os/adoption.json`:
+You can also use the one-command adoption path. It runs migrate, the first dry-run, benchmark, and doctor in order, then writes the adoption report to `.scale/ai-os/adoption.json`:
 
 ```bash
 scale ai-os adopt \
@@ -92,7 +92,7 @@ scale ai-os doctor --lang en --json
 scale ai-os doctor --lang zh
 ```
 
-The standard upgrade path also surfaces this readiness. `scale upgrade check --json` now includes the AI OS doctor result, and `scale upgrade plan --json` adds explicit `ai-os migrate` / `ai-os doctor` steps when a project has not yet adopted the runtime state.
+The standard upgrade path also surfaces this readiness. `scale upgrade check --json` now includes the AI OS doctor result, and `scale upgrade plan --json` adds explicit `ai-os adopt`, `ai-os migrate`, and `ai-os doctor` steps when a project has not yet adopted the runtime state.
 
 ## Community
 

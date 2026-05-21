@@ -31,6 +31,7 @@ make verify PROFILE=default
 make bootstrap-scale
 make workflow-upgrade-check
 make workflow-upgrade-plan
+make workflow-aios-adopt
 ```
 
 PowerShell:

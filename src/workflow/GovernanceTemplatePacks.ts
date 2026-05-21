@@ -1790,6 +1790,7 @@ make verify PROFILE=default
 make bootstrap-scale
 make workflow-upgrade-check
 make workflow-upgrade-plan
+make workflow-aios-adopt
 \`\`\`
 
 PowerShell:
@@ -1840,6 +1841,7 @@ make verify PROFILE=default
 make scale-smoke TASK='workflow adaptation' FILES='AGENTS.md,README.md'
 make workflow-upgrade-check
 make workflow-upgrade-plan
+make workflow-aios-adopt
 \`\`\`
 
 ## 约束
@@ -1852,7 +1854,7 @@ make workflow-upgrade-plan
 }
 
 function scaleEngineRepoMakefile(): string {
-  return `.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
+  return `.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify workflow-aios-adopt scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
 
 SCALE ?= scale
 SCALE_VERSION ?= locked
@@ -1861,11 +1863,12 @@ FILES ?= AGENTS.md,CLAUDE.md,README.md
 LEVEL ?= M
 PHASE ?= plan
 SERVICES ?=
+BUDGET ?= 2400
 
 help:
 \t@echo "make preflight | make new-task NAME=x LEVEL=M | make explore FILES='...' MSG='...'"
 \t@echo "make plan NAME=x LEVEL=M | make gate-workflow | make gate-quality | make verify PROFILE=default"
-\t@echo "make bootstrap-scale | make workflow-upgrade-check | make workflow-upgrade-plan"
+\t@echo "make bootstrap-scale | make workflow-upgrade-check | make workflow-upgrade-plan | make workflow-aios-adopt"
 
 gate:
 \tbash scripts/gates/all.sh --all
@@ -1934,6 +1937,9 @@ workflow-upgrade-rollback:
 
 workflow-upgrade-verify:
 \t$(SCALE) preflight --dir . --service all --preflight-profile quick
+
+workflow-aios-adopt:
+\t$(SCALE) ai-os adopt --dir . --task "$(TASK)" --files "$(FILES)" --level "$(LEVEL)" --budget "$(BUDGET)" --lang zh
 
 scale-version:
 \t$(SCALE) --version

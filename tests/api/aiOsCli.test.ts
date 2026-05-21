@@ -426,4 +426,50 @@ describe('ai-os CLI', () => {
       expect.stringContaining('scale ai-os run --mode guarded'),
     ]))
   }, 120_000)
+
+  it('prints localized AI OS adoption guidance for humans', async () => {
+    const zhScaleDir = makeDir('scale-ai-os-adopt-zh-cli-scale-')
+    const zhProjectDir = makeDir('scale-ai-os-adopt-zh-cli-project-')
+    const enScaleDir = makeDir('scale-ai-os-adopt-en-cli-scale-')
+    const enProjectDir = makeDir('scale-ai-os-adopt-en-cli-project-')
+
+    const zh = await runScale([
+      'ai-os',
+      'adopt',
+      '--task-id',
+      'TASK-AI-OS-ADOPT-ZH-CLI',
+      '--task',
+      '接入 AI OS 运行态',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--lang',
+      'zh',
+    ], zhScaleDir, zhProjectDir)
+
+    expect(zh.exitCode).toBe(0)
+    expect(zh.stdout).toContain('SCALE AI OS 接入')
+    expect(zh.stdout).toContain('状态: ready')
+    expect(zh.stdout).toContain('首次运行: ready (dry-run)')
+    expect(zh.stdout).toContain('下一步:')
+    expect(zh.stdout).toContain('scale ai-os run --mode guarded')
+
+    const en = await runScale([
+      'ai-os',
+      'adopt',
+      '--task-id',
+      'TASK-AI-OS-ADOPT-EN-CLI',
+      '--task',
+      'Adopt AI OS runtime',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--lang',
+      'en',
+    ], enScaleDir, enProjectDir)
+
+    expect(en.exitCode).toBe(0)
+    expect(en.stdout).toContain('SCALE AI OS Adoption')
+    expect(en.stdout).toContain('Status: ready')
+    expect(en.stdout).toContain('First run: ready (dry-run)')
+    expect(en.stdout).toContain('next:')
+  }, 120_000)
 })
