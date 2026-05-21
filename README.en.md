@@ -76,6 +76,15 @@ Before adopting the 0.27.0 beta runtime in an existing project, create or verify
 scale ai-os migrate --json
 ```
 
+The next release also adds a one-command adoption path. It runs migrate, the first dry-run, benchmark, and doctor in order, then writes the adoption report to `.scale/ai-os/adoption.json`:
+
+```bash
+scale ai-os adopt \
+  --task "Adopt AI OS runtime and generate the first governance evidence" \
+  --files "README.md,src/runtime/AiOsRuntime.ts" \
+  --json
+```
+
 For project-level readiness, run the AI OS doctor. It checks runtime directories, run history, dashboard health, benchmark freshness, and prints the next required action in English or Chinese:
 
 ```bash

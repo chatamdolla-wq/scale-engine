@@ -311,6 +311,42 @@ export interface AiOsDoctorReport {
   nextActions: string[]
 }
 
+export interface AiOsAdoptionInput extends AiOsRuntimeInput {
+  benchmarkMaxAgeHours?: number
+  lang?: 'zh' | 'en'
+}
+
+export type AiOsAdoptionStatus = 'ready' | 'warning' | 'blocked'
+export type AiOsAdoptionPhaseStatus = 'passed' | 'warning' | 'blocked'
+
+export interface AiOsAdoptionPhase {
+  id: 'migrate' | 'first-run' | 'benchmark' | 'doctor'
+  status: AiOsAdoptionPhaseStatus
+  summary: string
+  evidence: string[]
+}
+
+export interface AiOsAdoptionReport {
+  version: string
+  generatedAt: string
+  status: AiOsAdoptionStatus
+  projectDir: string
+  scaleRoot: string
+  phases: AiOsAdoptionPhase[]
+  migration: AiOsMigrationReport
+  run: AiOsRunReport
+  benchmark: AiOsBenchmarkReport
+  doctor: AiOsDoctorReport
+  artifacts: {
+    migrationReport: string
+    runReport: string
+    benchmarkReport: string
+    adoptionReport: string
+  }
+  warnings: string[]
+  nextActions: string[]
+}
+
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
   const projectDir = resolve(input.projectDir ?? process.cwd())
   const scaleDir = input.scaleDir ?? '.scale'
@@ -651,6 +687,86 @@ export function createAiOsDoctor(input: AiOsDoctorInput = {}): AiOsDoctorReport 
   }
 }
 
+export async function createAiOsAdoption(input: AiOsAdoptionInput): Promise<AiOsAdoptionReport> {
+  const projectDir = resolve(input.projectDir ?? process.cwd())
+  const scaleDir = input.scaleDir ?? '.scale'
+  const scaleRoot = resolveScaleRoot(projectDir, scaleDir)
+  const generatedAt = new Date().toISOString()
+  const migration = createAiOsMigration({ projectDir, scaleDir })
+  const run = await createAiOsRun({
+    ...input,
+    projectDir,
+    scaleDir,
+    taskId: input.taskId ?? `AIOS-ADOPT-${Date.now()}`,
+    mode: 'dry-run',
+  })
+  const benchmark = await createAiOsBenchmark({
+    projectDir,
+    scaleDir,
+    budget: input.budget,
+  })
+  const doctor = createAiOsDoctor({
+    projectDir,
+    scaleDir,
+    benchmarkMaxAgeHours: input.benchmarkMaxAgeHours,
+    lang: input.lang,
+  })
+  const phases: AiOsAdoptionPhase[] = [
+    {
+      id: 'migrate',
+      status: migration.status === 'migrated' || migration.status === 'compatible' ? 'passed' : 'blocked',
+      summary: migration.status === 'migrated'
+        ? `Created ${migration.created.length} AI OS runtime path(s).`
+        : 'AI OS runtime paths were already compatible.',
+      evidence: [migration.files.migrationReport, ...migration.created, ...migration.existing],
+    },
+    {
+      id: 'first-run',
+      status: run.status === 'ready' ? 'passed' : 'blocked',
+      summary: `Created first ${run.mode} AI OS run report with ${run.steps.length} step(s).`,
+      evidence: [run.artifacts.runReport, ...run.evidence.produced],
+    },
+    {
+      id: 'benchmark',
+      status: benchmark.summary.scenarios > 0 ? 'passed' : 'blocked',
+      summary: `Created AI OS benchmark report with ${benchmark.summary.scenarios} scenario(s).`,
+      evidence: [benchmark.artifacts.benchmarkReport],
+    },
+    {
+      id: 'doctor',
+      status: doctor.status === 'ready' ? 'passed' : doctor.status === 'warning' ? 'warning' : 'blocked',
+      summary: `AI OS doctor status is ${doctor.status}: ${doctor.summary.passedChecks}/${doctor.summary.totalChecks} checks passed.`,
+      evidence: doctor.checks.flatMap(check => check.evidence),
+    },
+  ]
+  const status: AiOsAdoptionStatus = phases.some(phase => phase.status === 'blocked')
+    ? 'blocked'
+    : phases.some(phase => phase.status === 'warning') ? 'warning' : 'ready'
+  const adoptionReport = resolveAdoptionReportPath(projectDir, scaleDir)
+  const report: AiOsAdoptionReport = {
+    version: SCALE_ENGINE_VERSION,
+    generatedAt,
+    status,
+    projectDir,
+    scaleRoot,
+    phases,
+    migration,
+    run,
+    benchmark,
+    doctor,
+    artifacts: {
+      migrationReport: migration.files.migrationReport,
+      runReport: run.artifacts.runReport,
+      benchmarkReport: benchmark.artifacts.benchmarkReport,
+      adoptionReport,
+    },
+    warnings: [...migration.warnings, ...doctor.warnings],
+    nextActions: aiOsAdoptionNextActions(status, input.lang ?? 'en'),
+  }
+  writeFileSync(adoptionReport, JSON.stringify(report, null, 2), 'utf-8')
+  return report
+}
+
 function buildRunSteps(plan: AiOsRuntimePlan): AiOsRunStep[] {
   const steps = new Map<string, AiOsRunStep>()
   const upsert = (step: AiOsRunStep) => steps.set(step.id, step)
@@ -915,6 +1031,21 @@ function resolveRunsDir(projectDir: string, scaleDir: string): string {
 
 function resolveBenchmarkReportPath(projectDir: string, scaleDir: string): string {
   return join(resolveScaleRoot(projectDir, scaleDir), 'ai-os', 'benchmarks', 'latest.json')
+}
+
+function resolveAdoptionReportPath(projectDir: string, scaleDir: string): string {
+  return join(resolveScaleRoot(projectDir, scaleDir), 'ai-os', 'adoption.json')
+}
+
+function aiOsAdoptionNextActions(status: AiOsAdoptionStatus, lang: 'zh' | 'en'): string[] {
+  if (lang === 'zh') {
+    if (status === 'ready') return ['AI OS runtime 接入完成；后续真实任务使用 `scale ai-os run --mode guarded`。']
+    if (status === 'warning') return ['AI OS runtime 已可用但仍有警告；先运行 `scale ai-os doctor --json --lang zh` 处理剩余项。']
+    return ['AI OS runtime 接入被阻断；查看 adoption report 和 `scale ai-os doctor --json --lang zh` 的失败项。']
+  }
+  if (status === 'ready') return ['AI OS runtime adoption is complete; use `scale ai-os run --mode guarded` for governed work.']
+  if (status === 'warning') return ['AI OS runtime is usable with warnings; run `scale ai-os doctor --json --lang en` and resolve remaining items.']
+  return ['AI OS runtime adoption is blocked; inspect the adoption report and `scale ai-os doctor --json --lang en` failures.']
 }
 
 function inspectBenchmarkReport(

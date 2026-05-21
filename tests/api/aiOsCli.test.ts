@@ -386,4 +386,44 @@ describe('ai-os CLI', () => {
     expect(readyReport.summary.blockedChecks).toBe(0)
     expect(readyReport.nextActions).toContain('AI OS beta runtime is ready for guarded project tasks.')
   }, 120_000)
+
+  it('prints AI OS adoption report as JSON and prepares a project for guarded use', async () => {
+    const scaleDir = makeDir('scale-ai-os-adopt-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-adopt-cli-project-')
+
+    const result = await runScale([
+      'ai-os',
+      'adopt',
+      '--task-id',
+      'TASK-AI-OS-ADOPT-CLI',
+      '--task',
+      'Adopt AI OS runtime from the CLI',
+      '--level',
+      'M',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--budget',
+      '2400',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = parseJson<{
+      status: string
+      phases: Array<{ id: string; status: string }>
+      run: { mode: string }
+      doctor: { status: string }
+      artifacts: { adoptionReport: string }
+      nextActions: string[]
+    }>(result.stdout)
+    expect(report.status).toBe('ready')
+    expect(report.phases.map(phase => phase.id)).toEqual(['migrate', 'first-run', 'benchmark', 'doctor'])
+    expect(report.phases.every(phase => phase.status === 'passed')).toBe(true)
+    expect(report.run.mode).toBe('dry-run')
+    expect(report.doctor.status).toBe('ready')
+    expect(report.artifacts.adoptionReport).toContain('adoption.json')
+    expect(report.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('scale ai-os run --mode guarded'),
+    ]))
+  }, 120_000)
 })

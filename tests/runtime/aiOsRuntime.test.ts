@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun } from '../../src/runtime/AiOsRuntime.js'
+import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun } from '../../src/runtime/AiOsRuntime.js'
 import { MemoryBrain } from '../../src/memory/MemoryBrain.js'
 import { SCALE_ENGINE_VERSION } from '../../src/version.js'
 
@@ -321,5 +321,39 @@ describe('AI OS runtime planner', () => {
       expect.objectContaining({ id: 'ai-os-benchmark', status: 'passed' }),
     ]))
     expect(ready.nextActions).toContain('AI OS beta runtime is ready for guarded project tasks.')
+  }, 120_000)
+
+  it('adopts AI OS runtime through migrate, first dry-run, benchmark, and doctor phases', async () => {
+    const projectDir = makeDir('scale-ai-os-adopt-project-')
+    const scaleDir = makeDir('scale-ai-os-adopt-scale-')
+
+    const report = await createAiOsAdoption({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-ADOPT',
+      task: 'Adopt AI OS runtime for a new project',
+      level: 'M',
+      files: ['src/runtime/AiOsRuntime.ts'],
+      budget: 2400,
+      lang: 'en',
+    })
+
+    expect(report.status).toBe('ready')
+    expect(report.phases.map(phase => phase.id)).toEqual([
+      'migrate',
+      'first-run',
+      'benchmark',
+      'doctor',
+    ])
+    expect(report.phases.every(phase => phase.status === 'passed')).toBe(true)
+    expect(report.migration.status).toBe('migrated')
+    expect(report.run.mode).toBe('dry-run')
+    expect(report.benchmark.summary.scenarios).toBeGreaterThanOrEqual(3)
+    expect(report.doctor.status).toBe('ready')
+    expect(report.artifacts.migrationReport).toContain('migration.json')
+    expect(report.artifacts.runReport).toContain('runs')
+    expect(report.artifacts.benchmarkReport).toContain('benchmarks')
+    expect(existsSync(report.artifacts.adoptionReport)).toBe(true)
+    expect(report.nextActions).toContain('AI OS runtime adoption is complete; use `scale ai-os run --mode guarded` for governed work.')
   }, 120_000)
 })

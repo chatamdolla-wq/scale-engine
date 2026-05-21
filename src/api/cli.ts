@@ -144,6 +144,7 @@ import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
 import {
   RuntimeEvidenceLedger,
   SessionLedger,
+  createAiOsAdoption,
   createAiOsBenchmark,
   createAiOsDashboard,
   createAiOsDoctor,
@@ -3357,9 +3358,60 @@ const aiOsDoctorCommand = defineCommand({
   },
 })
 
+const aiOsAdoptCommand = defineCommand({
+  meta: { name: 'adopt', description: 'Prepare a project for AI OS runtime use by running migrate, first dry-run, benchmark, and doctor' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    'task-id': { type: 'string', description: 'Task id for the first adoption dry-run report' },
+    task: { type: 'string', required: true, description: 'Task or adoption scenario description' },
+    level: { type: 'string', default: 'M', description: 'Task level: S, M, L, or CRITICAL' },
+    files: { type: 'string', description: 'Comma-separated changed or target files' },
+    services: { type: 'string', description: 'Comma-separated affected services' },
+    budget: { type: 'string', description: 'Maximum estimated tokens for the adoption plan and benchmark' },
+    'requested-mode': { type: 'string', description: 'Requested governance mode: minimal, standard, expanded, or critical' },
+    lang: { type: 'string', default: 'en', description: 'Output language zh/en' },
+    'benchmark-max-age-hours': { type: 'string', description: 'Maximum accepted benchmark report age in hours' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const report = await createAiOsAdoption({
+      projectDir,
+      scaleDir,
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      task: String(args.task),
+      level: normalizeTaskArtifactLevel(args.level),
+      files: parseCommaList(args.files),
+      services: parseCommaList(args.services),
+      budget: parsePositiveIntArg(args.budget, '--budget'),
+      requestedMode: normalizeGovernanceMode(args['requested-mode']),
+      lang: normalizeLangArg(args.lang),
+      benchmarkMaxAgeHours: parsePositiveIntArg(args['benchmark-max-age-hours'], '--benchmark-max-age-hours'),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (report.status === 'blocked') process.exitCode = 1
+      return
+    }
+    console.log('SCALE AI OS Adoption')
+    console.log(`  Status: ${report.status}`)
+    console.log(`  Migration: ${report.migration.status}`)
+    console.log(`  First run: ${report.run.status} (${report.run.mode})`)
+    console.log(`  Benchmark: ${report.benchmark.summary.scenarios} scenario(s)`)
+    console.log(`  Doctor: ${report.doctor.status}`)
+    console.log(`  Report: ${report.artifacts.adoptionReport}`)
+    for (const phase of report.phases) console.log(`  [${phase.status}] ${phase.id}: ${phase.summary}`)
+    for (const action of report.nextActions) console.log(`  next: ${action}`)
+    for (const warning of report.warnings) console.log(`  warning: ${warning}`)
+    if (report.status === 'blocked') process.exitCode = 1
+  },
+})
+
 const aiOs = defineCommand({
   meta: { name: 'ai-os', description: 'AI Engineering OS runtime planning and governance orchestration' },
   subCommands: {
+    adopt: aiOsAdoptCommand,
     plan: aiOsPlanCommand,
     run: aiOsRunCommand,
     dashboard: aiOsDashboardCommand,

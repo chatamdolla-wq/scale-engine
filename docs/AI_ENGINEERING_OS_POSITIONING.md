@@ -350,6 +350,7 @@ Core work:
 | Failure Learning | convert failed gates, test failures, and missing evidence into lesson and rule candidates |
 | AI OS Dashboard CLI | summarize gate health, memory hits, context budget, skill evidence, and ROI |
 | Upgrade/Migration | migrate older `.scale` state and warn about incompatible local governance files |
+| AI OS Adoption | provide a one-command migrate -> first dry-run -> benchmark -> doctor path for existing projects |
 | AI OS Doctor | check runtime directories, run history, dashboard health, and benchmark freshness before adoption or release |
 | Bilingual DX | keep key CLI help, errors, README guidance, and tutorials readable in Chinese and English |
 | Benchmark Pack | run fixed samples for token budget, recall, gate pass rate, and skill-routing evidence |
@@ -369,6 +370,7 @@ Current landing status:
 - `scale ai-os dashboard` summarizes persisted run reports into ready/blocked counts, guarded verification health, pending evidence, failure learning candidates, and next recommendations.
 - `scale ai-os benchmark` runs fixed beta scenarios and reports context token use, estimated savings, memory recall, skill steps, governance modes, and the current dashboard health snapshot.
 - `scale ai-os migrate` creates or verifies the `.scale/ai-os` runtime directories and writes an idempotent migration report.
+- `scale ai-os adopt` runs migrate, the first dry-run, benchmark, and doctor as one adoption path, then writes `.scale/ai-os/adoption.json`.
 - `scale ai-os doctor --lang zh|en` checks AI OS runtime readiness without mutating the project and blocks adoption when required directories or dashboard health are broken.
 - `scale upgrade check/plan` includes AI OS readiness, so existing projects see migration and doctor steps through the normal upgrade workflow.
 - It does not yet create PRs or mutate source files; richer skill execution remains the next implementation slice.

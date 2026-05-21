@@ -76,6 +76,15 @@ scale ai-os benchmark --json
 scale ai-os migrate --json
 ```
 
+下一版起也可以使用一键接入入口，它会按顺序执行 migrate、首个 dry-run、benchmark、doctor，并把采用报告写入 `.scale/ai-os/adoption.json`：
+
+```bash
+scale ai-os adopt \
+  --task "接入 AI OS runtime 并生成首份治理证据" \
+  --files "README.md,src/runtime/AiOsRuntime.ts" \
+  --json
+```
+
 项目级就绪检查可使用 AI OS doctor。它会检查运行态目录、运行历史、dashboard 健康度、benchmark 新鲜度，并按中英文输出下一步动作：
 
 ```bash
