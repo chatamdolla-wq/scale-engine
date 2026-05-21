@@ -456,6 +456,8 @@ Current first slice:
 - Architecture, root-cause, security, and release-risk tasks can automatically add `architecture-critique`, `root-cause-review`, `security-threat-model`, `release-readiness-review`, and `uncertainty-decision-log` gates to the adaptive workflow.
 - `scale ai-os run` carries evaluator gates into the executable step list and evidence requirements, so reasoning-heavy work cannot be represented as a plain low-friction run.
 - `scale ai-os status` now includes an `evaluator-intelligence` signal plus evaluator gate count and average uncertainty for release and milestone review.
+- `scale ai-os plan` now emits `toolStrategy` with strategy `tool-strategy-v1`, converting skill, artifact, and verification steps into a cost, retry, fallback, side-effect, and evidence graph.
+- `scale ai-os status` now includes a `tool-strategy` signal plus tool step count, estimated cost units, high-risk step count, and fallback coverage.
 
 Exit criteria:
 

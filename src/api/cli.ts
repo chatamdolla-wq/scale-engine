@@ -3455,6 +3455,7 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  Intelligence: ${report.intelligence.status} (${report.intelligence.summary.ready} ready, ${report.intelligence.summary.warning} warning, ${report.intelligence.summary.blocked} blocked)`)
       console.log(`  Context risk: ${report.intelligence.summary.contextQuality.compressionRisk}; omitted ${report.intelligence.summary.contextQuality.omittedSections} section(s), evidence warnings ${report.intelligence.summary.contextQuality.evidenceLossWarnings.length}`)
       console.log(`  Evaluator gates: ${report.intelligence.summary.evaluatorQuality.requiredGates}; uncertainty ${report.intelligence.summary.evaluatorQuality.averageUncertainty}`)
+      console.log(`  Tool strategy: ${report.intelligence.summary.toolStrategyQuality.totalSteps} step(s), cost ${report.intelligence.summary.toolStrategyQuality.estimatedCostUnits}, fallback ${report.intelligence.summary.toolStrategyQuality.fallbackCoverage}`)
       for (const signal of report.intelligence.signals) console.log(`  [${signal.status}] ${signal.id}: ${signal.summary}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
       if (report.verificationRecommendations.length > 0) {
@@ -3474,6 +3475,7 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  Intelligence: ${report.intelligence.status} (${report.intelligence.summary.ready} ready, ${report.intelligence.summary.warning} warning, ${report.intelligence.summary.blocked} blocked)`)
       console.log(`  Context risk: ${report.intelligence.summary.contextQuality.compressionRisk}; omitted ${report.intelligence.summary.contextQuality.omittedSections} section(s), evidence warnings ${report.intelligence.summary.contextQuality.evidenceLossWarnings.length}`)
       console.log(`  Evaluator gates: ${report.intelligence.summary.evaluatorQuality.requiredGates}; uncertainty ${report.intelligence.summary.evaluatorQuality.averageUncertainty}`)
+      console.log(`  Tool strategy: ${report.intelligence.summary.toolStrategyQuality.totalSteps} step(s), cost ${report.intelligence.summary.toolStrategyQuality.estimatedCostUnits}, fallback ${report.intelligence.summary.toolStrategyQuality.fallbackCoverage}`)
       for (const signal of report.intelligence.signals) console.log(`  [${signal.status}] ${signal.id}: ${signal.summary}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
       if (report.verificationRecommendations.length > 0) {

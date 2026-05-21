@@ -68,6 +68,19 @@ describe('AI OS runtime planner', () => {
       expect.objectContaining({ id: 'security-threat-model', required: true }),
       expect.objectContaining({ id: 'uncertainty-decision-log' }),
     ]))
+    expect(plan.toolStrategy.strategy).toBe('tool-strategy-v1')
+    expect(plan.toolStrategy.summary.totalSteps).toBe(plan.skillPlan.executionPlan.steps.length)
+    expect(plan.toolStrategy.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'skill:security-review',
+        retry: expect.objectContaining({ maxAttempts: 1 }),
+        fallback: expect.stringContaining('fallback'),
+      }),
+      expect.objectContaining({
+        id: 'verification:browser-run',
+        cost: expect.objectContaining({ timeRisk: 'medium' }),
+      }),
+    ]))
     expect(plan.adaptiveWorkflow.gates).toEqual(expect.arrayContaining([
       'security-threat-model',
       'uncertainty-decision-log',
@@ -254,6 +267,8 @@ describe('AI OS runtime planner', () => {
     expect(benchmark.summary.totalEstimatedTokens).toBeGreaterThanOrEqual(0)
     expect(benchmark.summary.totalSkillSteps).toBeGreaterThan(0)
     expect(benchmark.summary.totalEvaluatorGates).toBeGreaterThan(0)
+    expect(benchmark.summary.totalToolStrategySteps).toBeGreaterThan(0)
+    expect(benchmark.summary.totalToolStrategyCostUnits).toBeGreaterThan(0)
     expect(benchmark.summary.governanceModes.length).toBeGreaterThan(0)
     expect(benchmark.scenarios).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -262,6 +277,8 @@ describe('AI OS runtime planner', () => {
           skillSteps: expect.any(Number),
           memoryItems: expect.any(Number),
           evaluatorGates: expect.any(Number),
+          toolStrategySteps: expect.any(Number),
+          toolStrategyCostUnits: expect.any(Number),
         }),
       }),
       expect.objectContaining({ id: 'security-code-change' }),
@@ -475,6 +492,7 @@ describe('AI OS runtime planner', () => {
       'context-savings',
       'skill-routing',
       'evaluator-intelligence',
+      'tool-strategy',
       'benchmark-intelligence',
     ])
     expect(status.intelligence.summary.totalMemoryItems).toBeGreaterThan(0)
@@ -489,6 +507,8 @@ describe('AI OS runtime planner', () => {
     expect(status.intelligence.summary.memoryQuality.score).toBeGreaterThan(0)
     expect(status.intelligence.summary.memoryQuality.evidenceBackedItems).toBeGreaterThan(0)
     expect(status.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
+    expect(status.intelligence.summary.toolStrategyQuality.totalSteps).toBeGreaterThan(0)
+    expect(status.intelligence.summary.toolStrategyQuality.fallbackCoverage).toBe(1)
     expect(status.intelligence.signals).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'memory-recall',
@@ -504,6 +524,10 @@ describe('AI OS runtime planner', () => {
         status: expect.stringMatching(/ready|warning/),
       }),
       expect.objectContaining({
+        id: 'tool-strategy',
+        status: 'ready',
+      }),
+      expect.objectContaining({
         id: 'benchmark-intelligence',
         status: 'ready',
       }),
@@ -513,7 +537,7 @@ describe('AI OS runtime planner', () => {
     ]))
   }, 120_000)
 
-  it('derives evaluator intelligence for older run reports without evaluator fields', async () => {
+  it('derives evaluator and tool strategy intelligence for older run reports without new fields', async () => {
     const projectDir = makeDir('scale-ai-os-legacy-evaluator-project-')
     const scaleDir = makeDir('scale-ai-os-legacy-evaluator-scale-')
 
@@ -526,8 +550,9 @@ describe('AI OS runtime planner', () => {
       files: ['src/auth/token.ts', 'CHANGELOG.md'],
       mode: 'dry-run',
     })
-    const persisted = JSON.parse(readFileSync(run.artifacts.runReport, 'utf-8')) as { plan: { evaluator?: unknown } }
+    const persisted = JSON.parse(readFileSync(run.artifacts.runReport, 'utf-8')) as { plan: { evaluator?: unknown; toolStrategy?: unknown } }
     delete persisted.plan.evaluator
+    delete persisted.plan.toolStrategy
     writeFileSync(run.artifacts.runReport, JSON.stringify(persisted, null, 2), 'utf-8')
 
     const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
@@ -540,8 +565,15 @@ describe('AI OS runtime planner', () => {
           expect.stringContaining('release-readiness-review'),
         ]),
       }),
+      expect.objectContaining({
+        id: 'tool-strategy',
+        evidence: expect.arrayContaining([
+          expect.stringContaining('skill:security-review'),
+        ]),
+      }),
     ]))
     expect(status.intelligence.summary.evaluatorQuality.requiredGates).toBeGreaterThan(0)
+    expect(status.intelligence.summary.toolStrategyQuality.totalSteps).toBeGreaterThan(0)
   }, 120_000)
 
   it('warns when context compilation omits evidence-bearing sections', async () => {
