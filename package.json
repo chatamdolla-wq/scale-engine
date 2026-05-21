@@ -58,6 +58,7 @@
     "test": "vitest run --reporter dot --pool=forks --poolOptions.forks.maxForks=1 --poolOptions.forks.minForks=1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
+    "release:check": "npm run typecheck && npm run lint && npm test && npm run build && npm audit --omit=dev && npm pack --dry-run",
     "mcp": "node dist/api/mcp.js",
     "serve": "node dist/api/http.js"
   },
