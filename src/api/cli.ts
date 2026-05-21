@@ -3452,6 +3452,8 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  检查: ${report.summary.ready} ready, ${report.summary.warning} warning, ${report.summary.blocked} blocked`)
       console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
       console.log(`  Doctor: ${report.doctor.status}`)
+      console.log(`  Intelligence: ${report.intelligence.status} (${report.intelligence.summary.ready} ready, ${report.intelligence.summary.warning} warning, ${report.intelligence.summary.blocked} blocked)`)
+      for (const signal of report.intelligence.signals) console.log(`  [${signal.status}] ${signal.id}: ${signal.summary}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
       if (report.verificationRecommendations.length > 0) {
         console.log('  验证建议:')
@@ -3467,6 +3469,8 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  Checks: ${report.summary.ready} ready, ${report.summary.warning} warning, ${report.summary.blocked} blocked`)
       console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
       console.log(`  Doctor: ${report.doctor.status}`)
+      console.log(`  Intelligence: ${report.intelligence.status} (${report.intelligence.summary.ready} ready, ${report.intelligence.summary.warning} warning, ${report.intelligence.summary.blocked} blocked)`)
+      for (const signal of report.intelligence.signals) console.log(`  [${signal.status}] ${signal.id}: ${signal.summary}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
       if (report.verificationRecommendations.length > 0) {
         console.log('  Verification recommendations:')

@@ -399,9 +399,39 @@ export interface AiOsStatusReport {
   }
   dashboard: AiOsDashboardReport
   doctor: AiOsDoctorReport
+  intelligence: AiOsIntelligenceReport
   verificationRecommendations: AiOsVerificationRecommendation[]
   nextActions: string[]
   warnings: string[]
+}
+
+export type AiOsIntelligenceSignalId =
+  | 'memory-recall'
+  | 'context-savings'
+  | 'skill-routing'
+  | 'benchmark-intelligence'
+
+export interface AiOsIntelligenceSignal {
+  id: AiOsIntelligenceSignalId
+  status: AiOsClosedLoopStatus
+  summary: string
+  evidence: string[]
+  recommendations: string[]
+}
+
+export interface AiOsIntelligenceReport {
+  status: AiOsClosedLoopStatus
+  summary: {
+    ready: number
+    warning: number
+    blocked: number
+    totalMemoryItems: number
+    selectedProviders: string[]
+    estimatedTokenSavings: number
+    skillSteps: number
+  }
+  signals: AiOsIntelligenceSignal[]
+  nextActions: string[]
 }
 
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
@@ -853,6 +883,15 @@ export function createAiOsStatus(input: AiOsStatusInput = {}): AiOsStatusReport 
   const verificationRecommendations = buildVerificationRecommendations(projectDir, scaleDir, lang)
   const benchmarkReport = resolveBenchmarkReportPath(projectDir, scaleDir)
   const adoptionReport = resolveAdoptionReportPath(projectDir, scaleDir)
+  const intelligence = buildAiOsIntelligenceReport({
+    projectDir,
+    scaleDir,
+    runReports,
+    benchmark: readAiOsBenchmarkReport(benchmarkReport, warnings),
+    benchmarkStatus: doctor.benchmark.status,
+    benchmarkReport,
+    lang,
+  })
   const checks: AiOsStatusCheck[] = [
     {
       id: 'runtime-dirs',
@@ -933,10 +972,134 @@ export function createAiOsStatus(input: AiOsStatusInput = {}): AiOsStatusReport 
     summary,
     dashboard,
     doctor,
+    intelligence,
     verificationRecommendations,
     nextActions: aiOsStatusNextActions(status, checks, lang, verificationRecommendations),
     warnings: [...warnings, ...doctor.warnings],
   }
+}
+
+function buildAiOsIntelligenceReport(input: {
+  projectDir: string
+  scaleDir: string
+  runReports: AiOsRunReport[]
+  benchmark?: AiOsBenchmarkReport
+  benchmarkStatus: AiOsDoctorReport['benchmark']['status']
+  benchmarkReport: string
+  lang: 'zh' | 'en'
+}): AiOsIntelligenceReport {
+  const runMemoryItems = input.runReports.flatMap(report => report.plan.memory.items)
+  const benchmarkMemoryItems = input.benchmark?.summary.totalMemoryItems ?? 0
+  const runProviders = input.runReports.flatMap(report => report.plan.memory.selectedProviders)
+  const benchmarkProviders = input.benchmark?.scenarios.flatMap(scenario => scenario.metrics.selectedProviders) ?? []
+  const selectedProviders = [...new Set([...runProviders, ...benchmarkProviders])].sort()
+  const runTokenSavings = input.runReports.reduce((sum, report) => sum + (report.plan.context.compiler?.estimatedTokenSavings ?? 0), 0)
+  const benchmarkTokenSavings = input.benchmark?.summary.totalEstimatedTokenSavings ?? 0
+  const estimatedTokenSavings = runTokenSavings + benchmarkTokenSavings
+  const runSkillSteps = input.runReports.reduce((sum, report) => sum + report.plan.skillPlan.executionPlan.steps.length, 0)
+  const benchmarkSkillSteps = input.benchmark?.summary.totalSkillSteps ?? 0
+  const skillSteps = runSkillSteps + benchmarkSkillSteps
+  const totalMemoryItems = runMemoryItems.length + benchmarkMemoryItems
+
+  const memoryEvidence = [
+    ...runMemoryItems.map(item => `${item.provider}:${item.id}`),
+    ...(benchmarkMemoryItems > 0 ? [`benchmark:${input.benchmarkReport}:${benchmarkMemoryItems}`] : []),
+  ]
+  const contextEvidence = [
+    ...input.runReports.map(report => `${report.artifacts.runReport}:saved=${report.plan.context.compiler?.estimatedTokenSavings ?? 0}`),
+    ...(input.benchmark ? [`${input.benchmarkReport}:saved=${input.benchmark.summary.totalEstimatedTokenSavings}`] : []),
+  ]
+  const skillEvidence = [
+    ...input.runReports.flatMap(report => report.plan.skillPlan.executionPlan.steps.map(step => `${report.artifacts.runReport}:${step.id}`)),
+    ...(input.benchmark ? [`${input.benchmarkReport}:steps=${input.benchmark.summary.totalSkillSteps}`] : []),
+  ]
+  const benchmarkEvidence = input.benchmark ? [
+    `${input.benchmarkReport}:scenarios=${input.benchmark.summary.scenarios}`,
+    `${input.benchmarkReport}:memory=${input.benchmark.summary.totalMemoryItems}`,
+    `${input.benchmarkReport}:skills=${input.benchmark.summary.totalSkillSteps}`,
+  ] : [input.benchmarkReport]
+
+  const signals: AiOsIntelligenceSignal[] = [
+    {
+      id: 'memory-recall',
+      status: totalMemoryItems > 0 ? 'ready' : selectedProviders.length > 0 ? 'warning' : 'blocked',
+      summary: totalMemoryItems > 0
+        ? `${totalMemoryItems} memory item(s) recalled through ${selectedProviders.join(', ') || 'configured providers'}.`
+        : selectedProviders.length > 0
+          ? `Memory providers were selected (${selectedProviders.join(', ')}) but no relevant item was recalled.`
+          : 'No memory recall evidence found in AI OS runs or benchmarks.',
+      evidence: memoryEvidence,
+      recommendations: totalMemoryItems > 0
+        ? ['Keep recording memory item ids with every run so later context assembly can explain recall.']
+        : ['Run an AI OS task that should match durable project memory before claiming memory intelligence.'],
+    },
+    {
+      id: 'context-savings',
+      status: estimatedTokenSavings > 0 ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: estimatedTokenSavings > 0
+        ? `${estimatedTokenSavings} estimated token(s) saved by context compilation evidence.`
+        : 'Context compiler evidence exists but has not shown measurable token savings yet.',
+      evidence: contextEvidence,
+      recommendations: estimatedTokenSavings > 0
+        ? ['Track savings deltas across releases before publishing token reduction claims.']
+        : ['Add larger representative tasks to benchmark context slicing and token savings.'],
+    },
+    {
+      id: 'skill-routing',
+      status: skillSteps > 0 ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: skillSteps > 0
+        ? `${skillSteps} skill routing step(s) planned across runs and benchmark scenarios.`
+        : 'No skill routing step evidence found.',
+      evidence: skillEvidence,
+      recommendations: skillSteps > 0
+        ? ['Use skill routing evidence in reviews to check why a skill, MCP, or CLI path was selected.']
+        : ['Create a task with files or services that should trigger required skill routing.'],
+    },
+    {
+      id: 'benchmark-intelligence',
+      status: input.benchmark && input.benchmarkStatus === 'fresh'
+        ? 'ready'
+        : input.benchmark && input.benchmarkStatus === 'stale' ? 'warning' : 'blocked',
+      summary: input.benchmark
+        ? `${input.benchmark.summary.scenarios} benchmark scenario(s); benchmark status ${input.benchmarkStatus}.`
+        : 'No AI OS benchmark report available for intelligence metrics.',
+      evidence: benchmarkEvidence,
+      recommendations: input.benchmark && input.benchmarkStatus === 'fresh'
+        ? ['Use intelligence signals alongside benchmark deltas for release readiness reviews.']
+        : ['Run `scale ai-os benchmark --json` to refresh memory/context/skill intelligence metrics.'],
+    },
+  ]
+  const summary = {
+    ready: signals.filter(signal => signal.status === 'ready').length,
+    warning: signals.filter(signal => signal.status === 'warning').length,
+    blocked: signals.filter(signal => signal.status === 'blocked').length,
+    totalMemoryItems,
+    selectedProviders,
+    estimatedTokenSavings,
+    skillSteps,
+  }
+  const status: AiOsClosedLoopStatus = summary.blocked > 0 ? 'blocked' : summary.warning > 0 ? 'warning' : 'ready'
+  const nextActions = aiOsIntelligenceNextActions(status, signals, input.lang)
+  return { status, summary, signals, nextActions }
+}
+
+function aiOsIntelligenceNextActions(
+  status: AiOsClosedLoopStatus,
+  signals: AiOsIntelligenceSignal[],
+  lang: 'zh' | 'en',
+): string[] {
+  const actions: string[] = []
+  if (signals.some(signal => signal.status === 'ready')) {
+    actions.push('Use intelligence signals during release review to prove memory, context, and skill routing gains.')
+  }
+  if (status === 'ready') return actions
+  const blocked = signals.filter(signal => signal.status === 'blocked').map(signal => signal.id)
+  if (lang === 'zh') {
+    actions.push(`Refresh AI OS intelligence evidence for: ${blocked.join(', ') || 'warning signals'}.`)
+    return actions
+  }
+  actions.push(`Refresh AI OS intelligence evidence for: ${blocked.join(', ') || 'warning signals'}.`)
+  return actions
 }
 
 function buildRunSteps(plan: AiOsRuntimePlan): AiOsRunStep[] {
@@ -1365,6 +1528,21 @@ function inspectBenchmarkReport(
   } catch (error) {
     warnings.push(`Unreadable AI OS benchmark report: ${reportPath} (${error instanceof Error ? error.message : String(error)})`)
     return { status: 'invalid', reportPath }
+  }
+}
+
+function readAiOsBenchmarkReport(reportPath: string, warnings: string[]): AiOsBenchmarkReport | undefined {
+  if (!existsSync(reportPath)) return undefined
+  try {
+    const parsed = JSON.parse(readFileSync(reportPath, 'utf-8')) as AiOsBenchmarkReport
+    if (!parsed || !parsed.summary || !Array.isArray(parsed.scenarios)) {
+      warnings.push(`Ignored invalid AI OS benchmark report: ${reportPath}`)
+      return undefined
+    }
+    return parsed
+  } catch (error) {
+    warnings.push(`Ignored unreadable AI OS benchmark report: ${reportPath} (${error instanceof Error ? error.message : String(error)})`)
+    return undefined
   }
 }
 

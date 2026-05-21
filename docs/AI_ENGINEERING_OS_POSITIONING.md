@@ -422,6 +422,11 @@ Core work:
 | Skill Strategy Learning | learn preferred tools from successful evidence, failures, and user overrides |
 | Workflow Eval Integration | turn benchmark results into release-gate evidence |
 
+Current first slice:
+
+- `scale ai-os status --json` now includes an `intelligence` report with `memory-recall`, `context-savings`, `skill-routing`, and `benchmark-intelligence` signals.
+- Human `scale ai-os status --lang zh|en` output surfaces the same intelligence readiness summary so release reviewers can see whether 0.29.0 memory/context/skill gains are backed by run and benchmark evidence.
+
 Exit criteria:
 
 - memory recall has acceptance/rejection feedback

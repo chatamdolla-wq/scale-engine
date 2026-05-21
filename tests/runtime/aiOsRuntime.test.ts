@@ -419,6 +419,69 @@ describe('AI OS runtime planner', () => {
     expect(ready.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
   }, 120_000)
 
+  it('surfaces memory, context, skill, and benchmark intelligence in AI OS status', async () => {
+    const projectDir = makeDir('scale-ai-os-status-intel-project-')
+    const scaleDir = makeDir('scale-ai-os-status-intel-scale-')
+    const brain = new MemoryBrain({ projectDir, scaleDir })
+    try {
+      brain.addNode({
+        id: 'MEM-AI-OS-INTEL',
+        type: 'decision',
+        title: 'OAuth callbacks use Redis state',
+        summary: 'OAuth callbacks must resolve provider and user context from server-side Redis state.',
+        source: 'manual',
+        evidencePaths: ['docs/oauth-state.md'],
+        confidence: 0.91,
+        scope: 'project',
+        status: 'active',
+      })
+    } finally {
+      brain.close()
+    }
+
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-INTEL',
+      task: 'Fix OAuth callback auth token handling and verify browser flow',
+      level: 'L',
+      files: ['src/auth/oauth.ts', 'src/ui/callback.tsx'],
+      budget: 2400,
+      mode: 'dry-run',
+    })
+    await createAiOsBenchmark({ projectDir, scaleDir })
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(status.intelligence.signals.map(signal => signal.id)).toEqual([
+      'memory-recall',
+      'context-savings',
+      'skill-routing',
+      'benchmark-intelligence',
+    ])
+    expect(status.intelligence.summary.totalMemoryItems).toBeGreaterThan(0)
+    expect(status.intelligence.summary.skillSteps).toBeGreaterThan(0)
+    expect(status.intelligence.summary.selectedProviders).toContain('scale-local')
+    expect(status.intelligence.signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'memory-recall',
+        status: 'ready',
+        evidence: expect.arrayContaining([expect.stringContaining('MEM-AI-OS-INTEL')]),
+      }),
+      expect.objectContaining({
+        id: 'skill-routing',
+        status: 'ready',
+      }),
+      expect.objectContaining({
+        id: 'benchmark-intelligence',
+        status: 'ready',
+      }),
+    ]))
+    expect(status.intelligence.nextActions).toEqual(expect.arrayContaining([
+      expect.stringContaining('Use intelligence signals'),
+    ]))
+  }, 120_000)
+
   it('recommends concrete guarded verification commands from the verification matrix', async () => {
     const projectDir = makeDir('scale-ai-os-status-verify-project-')
     const scaleDir = makeDir('scale-ai-os-status-verify-scale-')

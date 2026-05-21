@@ -520,15 +520,33 @@ describe('ai-os CLI', () => {
 
     const readyJson = await runScale(['ai-os', 'status', '--dir', projectDir, '--json', '--lang', 'en'], scaleDir, projectDir)
     expect(readyJson.exitCode).toBe(0)
-    const readyReport = parseJson<{ status: string; summary: { blocked: number }; nextActions: string[] }>(readyJson.stdout)
+    const readyReport = parseJson<{
+      status: string
+      summary: { blocked: number }
+      intelligence: {
+        signals: Array<{ id: string; status: string }>
+        summary: { skillSteps: number }
+      }
+      nextActions: string[]
+    }>(readyJson.stdout)
     expect(readyReport.status).toBe('ready')
     expect(readyReport.summary.blocked).toBe(0)
+    expect(readyReport.intelligence.signals.map(signal => signal.id)).toEqual([
+      'memory-recall',
+      'context-savings',
+      'skill-routing',
+      'benchmark-intelligence',
+    ])
+    expect(readyReport.intelligence.summary.skillSteps).toBeGreaterThan(0)
     expect(readyReport.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
 
     const readyHuman = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
     expect(readyHuman.exitCode).toBe(0)
     expect(readyHuman.stdout).toContain('SCALE AI OS 状态')
     expect(readyHuman.stdout).toContain('状态: ready')
+    expect(readyHuman.stdout).toContain('Intelligence:')
+    expect(readyHuman.stdout).toContain('memory-recall')
+    expect(readyHuman.stdout).toContain('skill-routing')
     expect(readyHuman.stdout).toContain('[ready] verification-evidence')
   }, 120_000)
 
