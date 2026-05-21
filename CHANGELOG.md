@@ -1,3 +1,20 @@
+## 0.29.0 - 2026-05-21
+
+### AI OS intelligence readiness
+
+- Added `scale ai-os status` intelligence signals for memory recall, context savings, skill routing, and benchmark readiness.
+- Added memory recall quality scoring based on confidence, relevance, evidence-backed items, missing evidence, and low-confidence recall.
+- Added context compression quality reporting with omitted sections, omitted token totals, compression risk, and evidence-loss warnings.
+- Downgraded context intelligence to warning when budgeted context compilation omits evidence-bearing runtime sections.
+- Added CLI human output for AI OS intelligence and context risk so release reviewers do not need to inspect JSON manually.
+- Added `npm run release:check` as the single reusable release readiness gate for typecheck, lint, full tests, build, production audit, and package dry-run.
+
+### Verification
+
+- Verified the release candidate with `npm run release:check`, including full Vitest suite, typecheck, lint, build, production dependency audit, and `npm pack --dry-run`.
+
+---
+
 ## 0.28.0 - 2026-05-21
 
 ### AI OS closed-loop runtime
