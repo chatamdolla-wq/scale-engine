@@ -71,8 +71,9 @@ scale status
 | 多仓库/MOE 工作区 | `scale init --governance-pack moe-workspace` |
 | 文档、报告、截图、脚本混乱 | `scale init --governance-pack resource-governance` |
 | 工作流或第三方能力要升级 | `scale upgrade check --lang zh && scale upgrade plan --html --lang zh` |
+| 已有项目接入 AI OS runtime | `scale ai-os adopt --task "接入 AI OS runtime" --lang zh` |
 
 
 ## 工作流升级短路径
 
-已有项目先看 [SCALE 工作流升级指南](workflow-upgrade.md)。它说明 `scale init --interactive`、`scale upgrade check/plan/apply/rollback`、`--lang zh/en` 双语输出、仓库本地 `make workflow-upgrade-*` 入口，以及生成文件更新和项目级验证之间的边界。
+已有项目先看 [SCALE 工作流升级指南](workflow-upgrade.md)。它说明 `scale init --interactive`、`scale upgrade check/plan/apply/rollback`、`scale ai-os adopt`、`--lang zh/en` 双语输出、仓库本地 `make workflow-upgrade-*` / `make workflow-aios-adopt` 入口，以及生成文件更新和项目级验证之间的边界。

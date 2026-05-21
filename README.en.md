@@ -231,6 +231,12 @@ scale upgrade apply --dir . --confirm --lang en
 scale upgrade rollback --dir . --lang en
 ```
 
+If the upgrade plan says the AI OS runtime has not been adopted yet, run:
+
+```bash
+scale ai-os adopt --dir . --task "Adopt AI OS runtime" --lang en
+```
+
 Chinese output is the default. Add `--lang en` for English prompts and English HTML plans.
 
 Upgrade rules:

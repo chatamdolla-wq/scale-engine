@@ -237,6 +237,12 @@ scale tools outdated --dir .
 scale skill outdated --dir .
 ```
 
+如果升级计划提示 AI OS runtime 尚未接入，先运行：
+
+```bash
+scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh
+```
+
 升级原则：
 
 - `scale upgrade check` 读取 `.scale/governance.lock.json`，判断当前项目是干净、缺文件、模板过期，还是存在本地改动。

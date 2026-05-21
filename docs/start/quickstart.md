@@ -131,6 +131,12 @@ scale upgrade plan --dir . --html --lang zh
 scale upgrade apply --dir . --confirm --lang zh
 ```
 
+如果升级计划提示 AI OS runtime 尚未接入，用一键接入命令生成运行态目录、首份 dry-run、benchmark 和 doctor 报告：
+
+```bash
+scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh
+```
+
 需要英文输出时把 `--lang zh` 换成 `--lang en`。干净的 SCALE 受管文件可以自动刷新；已有本地改动的文件会进入人工审阅，不会被自动覆盖。
 
 继续阅读 [官方 Demo Walkthrough](agent-governance-demo.md)，看一个真实任务如何从需求到验证证据。
