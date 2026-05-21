@@ -329,6 +329,7 @@ describe('writeGovernanceTemplates', () => {
     expect(readFileSync(join(dir, 'scripts', 'gates', 'all.sh'), 'utf-8')).toContain('preflight --service all')
     expect(readFileSync(join(dir, 'scripts', 'workflow', 'verify.sh'), 'utf-8')).toContain('scale preflight')
     expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('GitLab Flow')
+    expect(readFileSync(join(dir, 'docs', 'workflow', 'README.md'), 'utf-8')).toContain('make workflow-aios-adopt')
     expect(readFileSync(join(dir, 'Makefile'), 'utf-8')).toContain('workflow-aios-adopt:')
     expect(readFileSync(join(dir, 'AGENTS.md'), 'utf-8')).toContain('make workflow-aios-adopt')
     expect(readFileSync(join(dir, 'CLAUDE.md'), 'utf-8')).toContain('make workflow-aios-adopt')

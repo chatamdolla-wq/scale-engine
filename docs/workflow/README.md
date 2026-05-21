@@ -62,6 +62,7 @@ feature/fix/docs/chore/codex -> dev -> master
 make bootstrap-scale
 make workflow-upgrade-check
 make workflow-upgrade-plan
+make workflow-aios-adopt
 ```
 
-先审计划，再决定是否 `make workflow-upgrade-apply`。
+先审计划，再决定是否 `make workflow-upgrade-apply`。如果计划提示 AI OS runtime 尚未接入，使用 `make workflow-aios-adopt` 生成运行态目录、首份 dry-run、benchmark 和 doctor 报告。
