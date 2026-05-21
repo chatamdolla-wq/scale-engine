@@ -428,6 +428,7 @@ export interface AiOsIntelligenceReport {
     totalMemoryItems: number
     selectedProviders: string[]
     memoryQuality: AiOsMemoryQualitySummary
+    contextQuality: AiOsContextQualitySummary
     estimatedTokenSavings: number
     skillSteps: number
   }
@@ -442,6 +443,14 @@ export interface AiOsMemoryQualitySummary {
   lowConfidenceItems: number
   averageConfidence: number
   averageRelevance: number
+}
+
+export interface AiOsContextQualitySummary {
+  omittedSections: number
+  totalOmittedTokens: number
+  evidenceLossWarnings: string[]
+  highestOmittedTokens: number
+  compressionRisk: 'low' | 'medium' | 'high'
 }
 
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
@@ -1011,6 +1020,10 @@ function buildAiOsIntelligenceReport(input: {
   const skillSteps = runSkillSteps + benchmarkSkillSteps
   const totalMemoryItems = runMemoryItems.length + benchmarkMemoryItems
   const memoryQuality = summarizeMemoryQuality(runMemoryItems)
+  const contextQuality = summarizeContextQuality(input.runReports)
+  const contextSignalStatus: AiOsClosedLoopStatus = contextQuality.compressionRisk === 'high'
+    ? 'warning'
+    : estimatedTokenSavings > 0 ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked'
 
   const memoryEvidence = [
     ...runMemoryItems.map(item => `${item.provider}:${item.id}`),
@@ -1046,13 +1059,15 @@ function buildAiOsIntelligenceReport(input: {
     },
     {
       id: 'context-savings',
-      status: estimatedTokenSavings > 0 ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      status: contextSignalStatus,
       summary: estimatedTokenSavings > 0
-        ? `${estimatedTokenSavings} estimated token(s) saved by context compilation evidence.`
+        ? `${estimatedTokenSavings} estimated token(s) saved by context compilation evidence; compression risk ${contextQuality.compressionRisk}.`
         : 'Context compiler evidence exists but has not shown measurable token savings yet.',
       evidence: contextEvidence,
-      recommendations: estimatedTokenSavings > 0
-        ? ['Track savings deltas across releases before publishing token reduction claims.']
+      recommendations: contextQuality.evidenceLossWarnings.length > 0
+        ? ['Review omitted evidence-bearing context before claiming the task has enough context.']
+        : estimatedTokenSavings > 0
+          ? ['Track savings deltas across releases before publishing token reduction claims.']
         : ['Add larger representative tasks to benchmark context slicing and token savings.'],
     },
     {
@@ -1087,12 +1102,39 @@ function buildAiOsIntelligenceReport(input: {
     totalMemoryItems,
     selectedProviders,
     memoryQuality,
+    contextQuality,
     estimatedTokenSavings,
     skillSteps,
   }
   const status: AiOsClosedLoopStatus = summary.blocked > 0 ? 'blocked' : summary.warning > 0 ? 'warning' : 'ready'
   const nextActions = aiOsIntelligenceNextActions(status, signals, input.lang)
   return { status, summary, signals, nextActions }
+}
+
+function summarizeContextQuality(runReports: AiOsRunReport[]): AiOsContextQualitySummary {
+  const omitted = runReports.flatMap(report => report.plan.context.omitted.map(item => {
+    const section = report.plan.context.sections.find(candidate => candidate.id === item.id)
+    return {
+      ...item,
+      category: section?.category,
+      runReport: report.artifacts.runReport,
+    }
+  }))
+  const totalOmittedTokens = omitted.reduce((sum, item) => sum + item.estimatedTokens, 0)
+  const highestOmittedTokens = omitted.reduce((max, item) => Math.max(max, item.estimatedTokens), 0)
+  const evidenceLossWarnings = omitted
+    .filter(item => item.category === 'evidence' || item.id.includes('evidence'))
+    .map(item => `${item.id} omitted from ${item.runReport} (${item.estimatedTokens} tokens; ${item.reason}).`)
+  const compressionRisk: AiOsContextQualitySummary['compressionRisk'] = evidenceLossWarnings.length > 0
+    ? 'high'
+    : omitted.length > 0 ? 'medium' : 'low'
+  return {
+    omittedSections: omitted.length,
+    totalOmittedTokens,
+    evidenceLossWarnings,
+    highestOmittedTokens,
+    compressionRisk,
+  }
 }
 
 function summarizeMemoryQuality(items: MemoryProviderRecallItem[]): AiOsMemoryQualitySummary {

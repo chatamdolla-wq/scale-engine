@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun, createAiOsStatus } from '../../src/runtime/AiOsRuntime.js'
@@ -487,6 +487,49 @@ describe('AI OS runtime planner', () => {
     ]))
     expect(status.intelligence.nextActions).toEqual(expect.arrayContaining([
       expect.stringContaining('Use intelligence signals'),
+    ]))
+  }, 120_000)
+
+  it('warns when context compilation omits evidence-bearing sections', async () => {
+    const projectDir = makeDir('scale-ai-os-context-risk-project-')
+    const scaleDir = makeDir('scale-ai-os-context-risk-scale-')
+    mkdirSync(join(projectDir, 'docs', 'worklog', 'tasks'), { recursive: true })
+    writeFileSync(
+      join(projectDir, 'docs', 'worklog', 'tasks', 'oauth-evidence.md'),
+      `# OAuth Evidence\n\n${'runtime evidence line\n'.repeat(400)}`,
+      'utf-8',
+    )
+
+    await createAiOsRun({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-CONTEXT-RISK',
+      task: 'Critical release review must inspect OAuth runtime evidence',
+      level: 'CRITICAL',
+      files: ['src/auth/oauth.ts'],
+      budget: 120,
+      mode: 'dry-run',
+    })
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(status.intelligence.summary.contextQuality).toEqual(expect.objectContaining({
+      omittedSections: expect.any(Number),
+      totalOmittedTokens: expect.any(Number),
+      evidenceLossWarnings: expect.arrayContaining([
+        expect.stringContaining('runtime-evidence'),
+      ]),
+      compressionRisk: 'high',
+    }))
+    expect(status.intelligence.summary.contextQuality.omittedSections).toBeGreaterThan(0)
+    expect(status.intelligence.signals).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'context-savings',
+        status: 'warning',
+        recommendations: expect.arrayContaining([
+          expect.stringContaining('omitted evidence'),
+        ]),
+      }),
     ]))
   }, 120_000)
 

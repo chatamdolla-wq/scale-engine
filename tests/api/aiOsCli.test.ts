@@ -525,7 +525,11 @@ describe('ai-os CLI', () => {
       summary: { blocked: number }
       intelligence: {
         signals: Array<{ id: string; status: string }>
-        summary: { skillSteps: number; memoryQuality: { score: number } }
+        summary: {
+          skillSteps: number
+          memoryQuality: { score: number }
+          contextQuality: { compressionRisk: string }
+        }
       }
       nextActions: string[]
     }>(readyJson.stdout)
@@ -539,6 +543,7 @@ describe('ai-os CLI', () => {
     ])
     expect(readyReport.intelligence.summary.skillSteps).toBeGreaterThan(0)
     expect(readyReport.intelligence.summary.memoryQuality.score).toEqual(expect.any(Number))
+    expect(readyReport.intelligence.summary.contextQuality.compressionRisk).toEqual(expect.any(String))
     expect(readyReport.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
 
     const readyHuman = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
@@ -546,6 +551,7 @@ describe('ai-os CLI', () => {
     expect(readyHuman.stdout).toContain('SCALE AI OS 状态')
     expect(readyHuman.stdout).toContain('状态: ready')
     expect(readyHuman.stdout).toContain('Intelligence:')
+    expect(readyHuman.stdout).toContain('Context risk:')
     expect(readyHuman.stdout).toContain('memory-recall')
     expect(readyHuman.stdout).toContain('skill-routing')
     expect(readyHuman.stdout).toContain('[ready] verification-evidence')
