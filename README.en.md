@@ -66,7 +66,7 @@ scale ai-os dashboard --json
 ```
 
 `status` is the 0.28.0 closed-loop visibility entry point. It checks runtime directories, plan/run evidence, guarded verification, dashboard health, benchmark evidence, and the adoption report in one place.
-For the 0.29.0 intelligence track, `status` also reports memory recall, context savings, skill routing, and benchmark intelligence signals from persisted runs and benchmark evidence.
+For the 0.29.0 intelligence track, `status` also reports memory recall, memory quality, context savings, skill routing, and benchmark intelligence signals from persisted runs and benchmark evidence.
 When guarded verification evidence is missing, it also recommends concrete commands from `.scale/verification.json` or `package.json` scripts so an agent can choose the next governed `--verify` step without guessing.
 
 Before a release or milestone review, run the fixed benchmark scenarios to compare context, memory, skill, governance, and dashboard metrics:

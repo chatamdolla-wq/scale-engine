@@ -427,11 +427,21 @@ export interface AiOsIntelligenceReport {
     blocked: number
     totalMemoryItems: number
     selectedProviders: string[]
+    memoryQuality: AiOsMemoryQualitySummary
     estimatedTokenSavings: number
     skillSteps: number
   }
   signals: AiOsIntelligenceSignal[]
   nextActions: string[]
+}
+
+export interface AiOsMemoryQualitySummary {
+  score: number
+  evidenceBackedItems: number
+  missingEvidenceItems: number
+  lowConfidenceItems: number
+  averageConfidence: number
+  averageRelevance: number
 }
 
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
@@ -1000,6 +1010,7 @@ function buildAiOsIntelligenceReport(input: {
   const benchmarkSkillSteps = input.benchmark?.summary.totalSkillSteps ?? 0
   const skillSteps = runSkillSteps + benchmarkSkillSteps
   const totalMemoryItems = runMemoryItems.length + benchmarkMemoryItems
+  const memoryQuality = summarizeMemoryQuality(runMemoryItems)
 
   const memoryEvidence = [
     ...runMemoryItems.map(item => `${item.provider}:${item.id}`),
@@ -1024,7 +1035,7 @@ function buildAiOsIntelligenceReport(input: {
       id: 'memory-recall',
       status: totalMemoryItems > 0 ? 'ready' : selectedProviders.length > 0 ? 'warning' : 'blocked',
       summary: totalMemoryItems > 0
-        ? `${totalMemoryItems} memory item(s) recalled through ${selectedProviders.join(', ') || 'configured providers'}.`
+        ? `${totalMemoryItems} memory item(s) recalled through ${selectedProviders.join(', ') || 'configured providers'}; quality ${memoryQuality.score}/100.`
         : selectedProviders.length > 0
           ? `Memory providers were selected (${selectedProviders.join(', ')}) but no relevant item was recalled.`
           : 'No memory recall evidence found in AI OS runs or benchmarks.',
@@ -1075,12 +1086,56 @@ function buildAiOsIntelligenceReport(input: {
     blocked: signals.filter(signal => signal.status === 'blocked').length,
     totalMemoryItems,
     selectedProviders,
+    memoryQuality,
     estimatedTokenSavings,
     skillSteps,
   }
   const status: AiOsClosedLoopStatus = summary.blocked > 0 ? 'blocked' : summary.warning > 0 ? 'warning' : 'ready'
   const nextActions = aiOsIntelligenceNextActions(status, signals, input.lang)
   return { status, summary, signals, nextActions }
+}
+
+function summarizeMemoryQuality(items: MemoryProviderRecallItem[]): AiOsMemoryQualitySummary {
+  if (items.length === 0) {
+    return {
+      score: 0,
+      evidenceBackedItems: 0,
+      missingEvidenceItems: 0,
+      lowConfidenceItems: 0,
+      averageConfidence: 0,
+      averageRelevance: 0,
+    }
+  }
+  const evidenceBackedItems = items.filter(item => item.evidencePaths.length > 0).length
+  const missingEvidenceItems = items.length - evidenceBackedItems
+  const lowConfidenceItems = items.filter(item => item.confidence < 0.7).length
+  const averageConfidence = average(items.map(item => clampUnit(item.confidence)))
+  const averageRelevance = average(items.map(item => clampUnit(item.score)))
+  const evidenceRatio = evidenceBackedItems / items.length
+  const lowConfidenceRatio = lowConfidenceItems / items.length
+  const score = Math.max(0, Math.round((averageConfidence * 40) + (averageRelevance * 30) + (evidenceRatio * 30) - (lowConfidenceRatio * 10)))
+  return {
+    score,
+    evidenceBackedItems,
+    missingEvidenceItems,
+    lowConfidenceItems,
+    averageConfidence: roundMetric(averageConfidence),
+    averageRelevance: roundMetric(averageRelevance),
+  }
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(1, value))
+}
+
+function roundMetric(value: number): number {
+  return Number(value.toFixed(3))
 }
 
 function aiOsIntelligenceNextActions(

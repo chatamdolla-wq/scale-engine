@@ -462,6 +462,14 @@ describe('AI OS runtime planner', () => {
     expect(status.intelligence.summary.totalMemoryItems).toBeGreaterThan(0)
     expect(status.intelligence.summary.skillSteps).toBeGreaterThan(0)
     expect(status.intelligence.summary.selectedProviders).toContain('scale-local')
+    expect(status.intelligence.summary.memoryQuality).toEqual(expect.objectContaining({
+      score: expect.any(Number),
+      evidenceBackedItems: expect.any(Number),
+      averageConfidence: expect.any(Number),
+      averageRelevance: expect.any(Number),
+    }))
+    expect(status.intelligence.summary.memoryQuality.score).toBeGreaterThan(0)
+    expect(status.intelligence.summary.memoryQuality.evidenceBackedItems).toBeGreaterThan(0)
     expect(status.intelligence.signals).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'memory-recall',

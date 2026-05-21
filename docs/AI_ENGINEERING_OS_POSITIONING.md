@@ -424,7 +424,7 @@ Core work:
 
 Current first slice:
 
-- `scale ai-os status --json` now includes an `intelligence` report with `memory-recall`, `context-savings`, `skill-routing`, and `benchmark-intelligence` signals.
+- `scale ai-os status --json` now includes an `intelligence` report with `memory-recall`, `context-savings`, `skill-routing`, and `benchmark-intelligence` signals; memory recall includes a quality score based on confidence, relevance, and evidence-backed items.
 - Human `scale ai-os status --lang zh|en` output surfaces the same intelligence readiness summary so release reviewers can see whether 0.29.0 memory/context/skill gains are backed by run and benchmark evidence.
 
 Exit criteria:

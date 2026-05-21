@@ -525,7 +525,7 @@ describe('ai-os CLI', () => {
       summary: { blocked: number }
       intelligence: {
         signals: Array<{ id: string; status: string }>
-        summary: { skillSteps: number }
+        summary: { skillSteps: number; memoryQuality: { score: number } }
       }
       nextActions: string[]
     }>(readyJson.stdout)
@@ -538,6 +538,7 @@ describe('ai-os CLI', () => {
       'benchmark-intelligence',
     ])
     expect(readyReport.intelligence.summary.skillSteps).toBeGreaterThan(0)
+    expect(readyReport.intelligence.summary.memoryQuality.score).toEqual(expect.any(Number))
     expect(readyReport.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
 
     const readyHuman = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
