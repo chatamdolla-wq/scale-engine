@@ -107,6 +107,7 @@ export interface UpgradePlanStep {
     | 'restore-missing-generated-file'
     | 'review-local-change'
     | 'review-third-party-capability'
+    | 'adopt-ai-os-runtime'
     | 'migrate-ai-os-runtime'
     | 'check-ai-os-runtime'
     | 'run-preflight'
@@ -209,6 +210,7 @@ export function createUpgradeCheckReport(options: UpgradeManagerOptions = {}): U
     aiOsRuntime,
     recommendedCommands: [
       'scale upgrade plan --dir .',
+      'scale ai-os adopt --dir . --task "Adopt AI OS runtime" --json',
       'scale ai-os doctor --dir . --json',
       'scale tools outdated --dir .',
       'scale skill outdated --dir .',
@@ -294,6 +296,12 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
   }
 
   if (check.aiOsRuntime.status !== 'ready') {
+    steps.push({
+      action: 'adopt-ai-os-runtime',
+      risk: check.aiOsRuntime.status === 'blocked' ? 'medium' : 'low',
+      reason: 'Run the guided AI OS adoption path to create runtime directories, the first dry-run, benchmark, and doctor report.',
+      command: 'scale ai-os adopt --dir . --task "Adopt AI OS runtime" --json',
+    })
     if (check.aiOsRuntime.checks.some(check => check.id === 'ai-os-runtime-dirs' && check.status === 'blocked')) {
       steps.push({
         action: 'migrate-ai-os-runtime',
@@ -713,6 +721,8 @@ function localizedUpgradeStepReason(step: UpgradePlanStep, lang: UpgradePlanHtml
       return step.reason
         .replace('updates require manual-review; SCALE never auto-installs third-party capabilities.', '更新需要人工审阅；SCALE 不会自动安装第三方能力。')
         .replace('updates require blocked; SCALE never auto-installs third-party capabilities.', '更新默认阻断；SCALE 不会自动安装第三方能力。')
+    case 'adopt-ai-os-runtime':
+      return '运行 AI OS 一键接入路径，生成运行态目录、首份 dry-run、benchmark 和 doctor 报告。'
     case 'migrate-ai-os-runtime':
       return 'Create missing AI OS runtime directories before adopting the beta runtime.'
     case 'check-ai-os-runtime':

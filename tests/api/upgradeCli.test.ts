@@ -75,6 +75,7 @@ describe('upgrade CLI', () => {
     expect(checkReport.aiOsRuntime.nextActions).toEqual(expect.arrayContaining([
       expect.stringContaining('scale ai-os migrate'),
     ]))
+    expect(checkReport.recommendedCommands).toContain('scale ai-os adopt --dir . --task "Adopt AI OS runtime" --json')
     expect(checkReport.recommendedCommands).toContain('scale ai-os doctor --dir . --json')
 
     const plan = await runScale(['upgrade', 'plan', '--dir', projectDir, '--json'], scaleDir, projectDir)
@@ -83,6 +84,7 @@ describe('upgrade CLI', () => {
       steps: Array<{ action: string; command?: string }>
     }>(plan.stdout)
     expect(planReport.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'adopt-ai-os-runtime', command: 'scale ai-os adopt --dir . --task "Adopt AI OS runtime" --json' }),
       expect.objectContaining({ action: 'migrate-ai-os-runtime', command: 'scale ai-os migrate --dir . --json' }),
       expect.objectContaining({ action: 'check-ai-os-runtime', command: 'scale ai-os doctor --dir . --json' }),
     ]))
