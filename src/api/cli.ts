@@ -3480,7 +3480,7 @@ const upgradeCheck = defineCommand({
       console.log(`  AI OS Runtime: ${report.aiOsRuntime.status}`)
       console.log('  Next:')
     }
-    for (const command of report.recommendedCommands) console.log(`    ${command}`)
+    for (const command of report.recommendedCommands) console.log(`    ${formatUpgradeCommand(command, lang)}`)
   },
 })
 
@@ -3524,7 +3524,7 @@ const upgradePlan = defineCommand({
     console.log(lang === 'zh' ? '  步骤:' : '  Steps:')
     for (const step of report.steps) {
       const path = step.path ? ` ${step.path}` : ''
-      const command = step.command ? ` -> ${step.command}` : ''
+      const command = step.command ? ` -> ${formatUpgradeCommand(step.command, lang)}` : ''
       console.log(`    [${step.risk}] ${step.action}${path}: ${formatUpgradeStepReason(step.action, step.reason, lang)}${command}`)
     }
     if (htmlPath) console.log(`  HTML: ${htmlPath}`)
@@ -3617,11 +3617,32 @@ function formatUpgradeStepReason(action: string, fallback: string, lang: 'zh' | 
       return fallback
         .replace('updates require manual-review; SCALE never auto-installs third-party capabilities.', '更新需要人工审阅；SCALE 不会自动安装第三方能力。')
         .replace('updates require blocked; SCALE never auto-installs third-party capabilities.', '更新默认阻断；SCALE 不会自动安装第三方能力。')
+    case 'adopt-ai-os-runtime':
+      return '运行 AI OS 一键接入路径，生成运行态目录、首份 dry-run、benchmark 和 doctor 报告。'
+    case 'migrate-ai-os-runtime':
+      return 'AI OS 运行态目录缺失；接入 beta runtime 前先创建目录结构。'
+    case 'check-ai-os-runtime':
+      return '依赖 AI OS beta 编排前，先复核运行态就绪状态。'
     case 'run-preflight':
       return '完成已接受的升级后，运行项目级预检。'
     default:
       return fallback
   }
+}
+
+function formatUpgradeCommand(command: string, lang: 'zh' | 'en'): string {
+  if (command === 'scale ai-os adopt --dir . --task "Adopt AI OS runtime" --json') {
+    return lang === 'zh'
+      ? 'scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh'
+      : 'scale ai-os adopt --dir . --task "Adopt AI OS runtime" --lang en'
+  }
+  if (command === 'scale ai-os doctor --dir . --json') {
+    return lang === 'zh' ? 'scale ai-os doctor --dir . --lang zh' : 'scale ai-os doctor --dir . --lang en'
+  }
+  if (command === 'scale ai-os migrate --dir . --json') {
+    return 'scale ai-os migrate --dir .'
+  }
+  return command
 }
 
 function formatUpgradeApplyReason(reason: string, lang: 'zh' | 'en'): string {

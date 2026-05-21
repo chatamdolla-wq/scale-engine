@@ -79,6 +79,8 @@ scale upgrade check --dir . --lang en
 scale upgrade plan --dir . --html --lang en
 ```
 
+给人看的升级输出会使用当前语言生成下一步命令，例如中文场景会推荐 `scale ai-os adopt --task "接入 AI OS runtime" --lang zh`。只有脚本、CI 或 Agent 集成需要稳定结构时才使用 `--json`。
+
 如果仓库已有本地封装，优先使用本地命令，因为它们编码了项目默认值：
 
 ```bash

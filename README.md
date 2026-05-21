@@ -92,7 +92,7 @@ scale ai-os doctor --lang zh --json
 scale ai-os doctor --lang en
 ```
 
-标准升级入口也会带出这项检查。`scale upgrade check --json` 会包含 AI OS doctor 结果；当项目尚未接入运行态目录时，`scale upgrade plan --json` 会补充明确的 `ai-os adopt`、`ai-os migrate` 和 `ai-os doctor` 步骤。
+标准升级入口也会带出这项检查。`scale upgrade check --json` 会包含 AI OS doctor 结果；当项目尚未接入运行态目录时，`scale upgrade plan --json` 会补充明确的 `ai-os adopt`、`ai-os migrate` 和 `ai-os doctor` 步骤。面向人使用的 `scale upgrade check/plan --lang zh` 会输出中文 task 和中文下一步命令；`--json` 保留给脚本、CI 和 Agent 集成。
 
 ## 先怎么学
 

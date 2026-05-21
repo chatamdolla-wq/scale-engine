@@ -101,11 +101,32 @@ describe('upgrade CLI', () => {
     expect(zh.stdout).toContain('SCALE 升级检查')
     expect(zh.stdout).toContain('AI OS Runtime:')
     expect(zh.stdout).toContain('下一步')
+    expect(zh.stdout).toContain('scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh')
+    expect(zh.stdout).not.toContain('Adopt AI OS runtime" --json')
 
     const en = await runScale(['upgrade', 'check', '--dir', projectDir, '--lang', 'en'], scaleDir, projectDir)
     expect(en.exitCode).toBe(0)
     expect(en.stdout).toContain('SCALE Upgrade Check')
     expect(en.stdout).toContain('Next')
+    expect(en.stdout).toContain('scale ai-os adopt --dir . --task "Adopt AI OS runtime" --lang en')
+  }, 45000)
+
+  it('localizes human upgrade plan AI OS adoption commands', async () => {
+    const scaleDir = makeDir('scale-upgrade-plan-locale-cli-')
+    const projectDir = makeDir('scale-upgrade-plan-locale-project-')
+    const init = await runScale(['init', '--dir', projectDir, '--governance-pack', 'project-scaffold', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+
+    const zh = await runScale(['upgrade', 'plan', '--dir', projectDir, '--lang', 'zh'], scaleDir, projectDir)
+    expect(zh.exitCode).toBe(0)
+    expect(zh.stdout).toContain('SCALE 升级计划')
+    expect(zh.stdout).toContain('scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh')
+    expect(zh.stdout).not.toContain('Adopt AI OS runtime" --json')
+
+    const en = await runScale(['upgrade', 'plan', '--dir', projectDir, '--lang', 'en'], scaleDir, projectDir)
+    expect(en.exitCode).toBe(0)
+    expect(en.stdout).toContain('SCALE Upgrade Plan')
+    expect(en.stdout).toContain('scale ai-os adopt --dir . --task "Adopt AI OS runtime" --lang en')
   }, 45000)
 
   it('safe-applies missing generated files and can roll them back', async () => {

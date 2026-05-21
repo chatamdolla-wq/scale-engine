@@ -92,7 +92,7 @@ scale ai-os doctor --lang en --json
 scale ai-os doctor --lang zh
 ```
 
-The standard upgrade path also surfaces this readiness. `scale upgrade check --json` now includes the AI OS doctor result, and `scale upgrade plan --json` adds explicit `ai-os adopt`, `ai-os migrate`, and `ai-os doctor` steps when a project has not yet adopted the runtime state.
+The standard upgrade path also surfaces this readiness. `scale upgrade check --json` now includes the AI OS doctor result, and `scale upgrade plan --json` adds explicit `ai-os adopt`, `ai-os migrate`, and `ai-os doctor` steps when a project has not yet adopted the runtime state. Human-facing `scale upgrade check/plan --lang en` prints localized next commands; keep `--json` for scripts, CI, and agent integrations.
 
 ## Community
 
