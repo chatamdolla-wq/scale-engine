@@ -65,6 +65,8 @@ scale ai-os status --lang zh
 scale ai-os dashboard --json
 ```
 
+当 guarded verification 证据缺失时，`status` 会从 `.scale/verification.json` 或 `package.json` scripts 推导具体验证命令，帮助 agent 自主选择下一条受治理的 `--verify` 步骤。
+
 `status` 是 0.28.0 闭环可见性入口，会一次性检查 runtime 目录、plan/run 证据、guarded verification、dashboard health、benchmark 和 adoption 报告是否齐全。
 
 发版或阶段验收前，用 benchmark 固定样例对比 context、memory、skill、governance 和 dashboard 指标：

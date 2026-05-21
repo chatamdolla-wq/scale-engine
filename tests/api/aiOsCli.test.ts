@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SCALE_ENGINE_VERSION } from '../../src/version.js'
@@ -530,5 +530,47 @@ describe('ai-os CLI', () => {
     expect(readyHuman.stdout).toContain('SCALE AI OS 状态')
     expect(readyHuman.stdout).toContain('状态: ready')
     expect(readyHuman.stdout).toContain('[ready] verification-evidence')
+  }, 120_000)
+
+  it('prints concrete verification recommendations in AI OS status output', async () => {
+    const scaleDir = makeDir('scale-ai-os-status-recommend-cli-scale-')
+    const projectDir = makeDir('scale-ai-os-status-recommend-cli-project-')
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: {
+        default: {
+          commands: {
+            build: 'npm run build',
+            lint: 'npm run lint',
+            test: 'npm test',
+          },
+          services: ['scale-engine'],
+        },
+      },
+      services: [
+        { name: 'scale-engine', path: '.', type: 'node', required: true },
+      ],
+    }, null, 2), 'utf-8')
+
+    await runScale([
+      'ai-os',
+      'adopt',
+      '--task-id',
+      'TASK-AI-OS-STATUS-RECOMMEND-CLI',
+      '--task',
+      'Adopt AI OS runtime for status recommendation CLI',
+      '--files',
+      'src/runtime/AiOsRuntime.ts',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const status = await runScale(['ai-os', 'status', '--dir', projectDir, '--lang', 'en'], scaleDir, projectDir)
+
+    expect(status.exitCode).toBe(1)
+    expect(status.stdout).toContain('Verification recommendations:')
+    expect(status.stdout).toContain('npm run build')
+    expect(status.stdout).toContain('npm run lint')
+    expect(status.stdout).toContain('npm test')
   }, 120_000)
 })

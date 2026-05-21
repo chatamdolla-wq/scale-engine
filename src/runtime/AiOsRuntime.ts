@@ -29,6 +29,10 @@ import {
 } from '../skills/routing/index.js'
 import { runSafeCommand } from '../tools/SafeCommandRunner.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
+import {
+  resolveVerificationTargets,
+  type VerificationCommandName,
+} from '../workflow/VerificationProfile.js'
 import { RuntimeEvidenceLedger } from './RuntimeEvidenceLedger.js'
 
 export interface AiOsRuntimeInput {
@@ -372,6 +376,14 @@ export interface AiOsStatusCheck {
   evidence: string[]
 }
 
+export interface AiOsVerificationRecommendation {
+  command: string
+  source: 'verification-profile' | 'package-script' | 'fallback'
+  reason: string
+  profile?: string
+  service?: string
+}
+
 export interface AiOsStatusReport {
   version: string
   generatedAt: string
@@ -387,6 +399,7 @@ export interface AiOsStatusReport {
   }
   dashboard: AiOsDashboardReport
   doctor: AiOsDoctorReport
+  verificationRecommendations: AiOsVerificationRecommendation[]
   nextActions: string[]
   warnings: string[]
 }
@@ -837,6 +850,7 @@ export function createAiOsStatus(input: AiOsStatusInput = {}): AiOsStatusReport 
   const verificationEvidence = runReports
     .filter(report => report.verification.commands.length > 0)
     .flatMap(report => [report.artifacts.runReport, ...report.verification.commands.map(command => command.evidenceId)])
+  const verificationRecommendations = buildVerificationRecommendations(projectDir, scaleDir, lang)
   const benchmarkReport = resolveBenchmarkReportPath(projectDir, scaleDir)
   const adoptionReport = resolveAdoptionReportPath(projectDir, scaleDir)
   const checks: AiOsStatusCheck[] = [
@@ -919,7 +933,8 @@ export function createAiOsStatus(input: AiOsStatusInput = {}): AiOsStatusReport 
     summary,
     dashboard,
     doctor,
-    nextActions: aiOsStatusNextActions(status, checks, lang),
+    verificationRecommendations,
+    nextActions: aiOsStatusNextActions(status, checks, lang, verificationRecommendations),
     warnings: [...warnings, ...doctor.warnings],
   }
 }
@@ -1209,8 +1224,10 @@ function aiOsStatusNextActions(
   status: AiOsClosedLoopStatus,
   checks: AiOsStatusCheck[],
   lang: 'zh' | 'en',
+  verificationRecommendations: AiOsVerificationRecommendation[],
 ): string[] {
   const blocked = new Set(checks.filter(check => check.status === 'blocked').map(check => check.id))
+  const firstVerificationCommand = verificationRecommendations[0]?.command ?? '<command>'
   if (lang === 'zh') {
     if (status === 'ready') return ['AI OS 闭环已就绪，可使用 `scale ai-os run --mode guarded` 执行受治理任务。']
     if (blocked.has('runtime-dirs') || blocked.has('adoption-evidence')) {
@@ -1224,9 +1241,100 @@ function aiOsStatusNextActions(
   if (blocked.has('runtime-dirs') || blocked.has('adoption-evidence')) {
     return ['Run `scale ai-os adopt --task "Adopt AI OS runtime" --lang en` to create runtime state, first dry-run, benchmark, and doctor reports.']
   }
-  if (blocked.has('verification-evidence')) return ['Run `scale ai-os run --mode guarded --verify "<command>"` to produce governed verification evidence.']
+  if (blocked.has('verification-evidence')) return [`Run \`scale ai-os run --mode guarded --verify "${escapeCliDoubleQuoted(firstVerificationCommand)}"\` to produce governed verification evidence.`]
   if (blocked.has('benchmark-evidence')) return ['Run `scale ai-os benchmark --json` to produce closed-loop benchmark evidence.']
   return ['Inspect status checks, resolve blocked items, then rerun `scale ai-os status --lang en`.']
+}
+
+const VERIFICATION_COMMAND_ORDER: VerificationCommandName[] = ['build', 'lint', 'test', 'smoke', 'coverage']
+
+function buildVerificationRecommendations(
+  projectDir: string,
+  scaleDir: string,
+  lang: 'zh' | 'en',
+): AiOsVerificationRecommendation[] {
+  const recommendations: AiOsVerificationRecommendation[] = []
+  const seen = new Set<string>()
+  const add = (recommendation: AiOsVerificationRecommendation) => {
+    const key = `${recommendation.command}\n${recommendation.service ?? ''}`
+    if (seen.has(key)) return
+    seen.add(key)
+    recommendations.push(recommendation)
+  }
+
+  try {
+    const resolved = resolveVerificationTargets({ projectDir, scaleDir, service: 'all' })
+    for (const target of resolved.targets) {
+      for (const name of VERIFICATION_COMMAND_ORDER) {
+        const command = target.config[name]
+        if (!command) continue
+        add({
+          command,
+          source: 'verification-profile',
+          reason: verificationRecommendationReason(name, lang),
+          profile: resolved.profileName,
+          service: target.service?.name,
+        })
+      }
+    }
+  } catch {
+    // Best effort only. Status should not fail just because verification config is invalid.
+  }
+
+  if (recommendations.length > 0) return recommendations
+
+  for (const item of packageScriptVerificationCommands(projectDir)) {
+    add({
+      command: item.command,
+      source: 'package-script',
+      reason: verificationRecommendationReason(item.name, lang),
+    })
+  }
+
+  if (recommendations.length > 0) return recommendations
+
+  return [{
+    command: 'scale preflight --preflight-profile quick --json',
+    source: 'fallback',
+    reason: lang === 'zh'
+      ? '未找到验证矩阵或 package script，先运行 SCALE 快速预检生成基础验证证据。'
+      : 'No verification matrix or package script was found; run SCALE quick preflight as baseline evidence.',
+  }]
+}
+
+function packageScriptVerificationCommands(projectDir: string): Array<{ name: VerificationCommandName; command: string }> {
+  const packageJsonPath = join(projectDir, 'package.json')
+  if (!existsSync(packageJsonPath)) return []
+  try {
+    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { scripts?: Record<string, string> }
+    const scripts = parsed.scripts ?? {}
+    const commands: Array<{ name: VerificationCommandName; command: string }> = []
+    if (scripts.build) commands.push({ name: 'build', command: 'npm run build' })
+    if (scripts.lint) commands.push({ name: 'lint', command: 'npm run lint' })
+    if (scripts.test) commands.push({ name: 'test', command: 'npm test' })
+    return commands
+  } catch {
+    return []
+  }
+}
+
+function verificationRecommendationReason(name: VerificationCommandName, lang: 'zh' | 'en'): string {
+  if (lang === 'zh') {
+    if (name === 'build') return '构建验证可以证明代码仍可编译并生成发布产物。'
+    if (name === 'lint') return 'Lint 验证可以捕获工程规范和静态质量问题。'
+    if (name === 'test') return '测试验证可以证明核心行为没有回归。'
+    if (name === 'smoke') return '冒烟验证可以证明关键产品路径仍可用。'
+    return '覆盖率验证可以补充测试充分性证据。'
+  }
+  if (name === 'build') return 'Build verification proves the code still compiles and produces releasable artifacts.'
+  if (name === 'lint') return 'Lint verification catches engineering-standard and static-quality issues.'
+  if (name === 'test') return 'Test verification proves core behavior did not regress.'
+  if (name === 'smoke') return 'Smoke verification proves critical product paths still work.'
+  return 'Coverage verification adds evidence for test adequacy.'
+}
+
+function escapeCliDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
 function inspectBenchmarkReport(

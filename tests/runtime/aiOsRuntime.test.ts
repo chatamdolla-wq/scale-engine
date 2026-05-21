@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAiOsAdoption, createAiOsBenchmark, createAiOsDashboard, createAiOsDoctor, createAiOsMigration, createAiOsPlan, createAiOsRun, createAiOsStatus } from '../../src/runtime/AiOsRuntime.js'
@@ -417,5 +417,56 @@ describe('AI OS runtime planner', () => {
       expect.stringContaining('TASK-AI-OS-STATUS-GUARDED'),
     ]))
     expect(ready.nextActions).toContain('AI OS closed loop is ready for guarded project work.')
+  }, 120_000)
+
+  it('recommends concrete guarded verification commands from the verification matrix', async () => {
+    const projectDir = makeDir('scale-ai-os-status-verify-project-')
+    const scaleDir = makeDir('scale-ai-os-status-verify-scale-')
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: {
+        default: {
+          commands: {
+            build: 'npm run build',
+            lint: 'npm run lint',
+            test: 'npm test',
+          },
+          services: ['scale-engine'],
+        },
+      },
+      services: [
+        { name: 'scale-engine', path: '.', type: 'node', required: true },
+      ],
+    }, null, 2), 'utf-8')
+
+    await createAiOsAdoption({
+      projectDir,
+      scaleDir,
+      taskId: 'TASK-AI-OS-STATUS-VERIFY',
+      task: 'Adopt AI OS runtime before guarded verification recommendation',
+      level: 'M',
+      files: ['src/runtime/AiOsRuntime.ts'],
+      budget: 2400,
+      lang: 'en',
+    })
+
+    const status = createAiOsStatus({ projectDir, scaleDir, lang: 'en' })
+
+    expect(status.status).toBe('blocked')
+    expect(status.checks.find(check => check.id === 'verification-evidence')?.status).toBe('blocked')
+    expect(status.verificationRecommendations).toEqual([
+      expect.objectContaining({
+        command: 'npm run build',
+        source: 'verification-profile',
+        profile: 'default',
+        service: 'scale-engine',
+      }),
+      expect.objectContaining({ command: 'npm run lint' }),
+      expect.objectContaining({ command: 'npm test' }),
+    ])
+    expect(status.nextActions).toEqual(expect.arrayContaining([
+      'Run `scale ai-os run --mode guarded --verify "npm run build"` to produce governed verification evidence.',
+    ]))
   }, 120_000)
 })

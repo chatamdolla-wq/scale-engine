@@ -3453,6 +3453,12 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
       console.log(`  Doctor: ${report.doctor.status}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
+      if (report.verificationRecommendations.length > 0) {
+        console.log('  验证建议:')
+        for (const recommendation of report.verificationRecommendations) {
+          console.log(`    - ${recommendation.command} (${recommendation.source})`)
+        }
+      }
       for (const action of report.nextActions) console.log(`  下一步: ${action}`)
       for (const warning of report.warnings) console.log(`  警告: ${warning}`)
     } else {
@@ -3462,6 +3468,12 @@ const aiOsStatusCommand = defineCommand({
       console.log(`  Dashboard: ${report.dashboard.health.status} (${report.dashboard.health.score})`)
       console.log(`  Doctor: ${report.doctor.status}`)
       for (const check of report.checks) console.log(`  [${check.status}] ${check.id}: ${check.summary}`)
+      if (report.verificationRecommendations.length > 0) {
+        console.log('  Verification recommendations:')
+        for (const recommendation of report.verificationRecommendations) {
+          console.log(`    - ${recommendation.command} (${recommendation.source})`)
+        }
+      }
       for (const action of report.nextActions) console.log(`  next: ${action}`)
       for (const warning of report.warnings) console.log(`  warning: ${warning}`)
     }
