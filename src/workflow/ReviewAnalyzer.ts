@@ -1,5 +1,6 @@
 import type { TaskPayload } from '../artifact/types.js'
 import type { ReviewFinding } from './ReviewStore.js'
+import type { SkillRole } from '../skills/RoleSkills.js'
 
 export interface ChangedFile {
   status: string
@@ -473,3 +474,111 @@ const STOP_WORDS = new Set([
   'implement', 'implementation', 'create', 'support', 'feature',
   'description', 'requirement', 'solution', 'approach',
 ])
+
+// ============================================================================
+// Role-Based Review Analysis
+// ============================================================================
+
+export interface RoleReviewInput {
+  role: SkillRole
+  diffs: DiffInput[]
+  changedFiles: ChangedFile[]
+}
+
+export interface RoleReviewResult {
+  role: SkillRole
+  findings: ReviewFinding[]
+  checklistItems: { item: string; status: 'pass' | 'fail' | 'skip' }[]
+}
+
+const ROLE_CHECK_PATTERNS: Record<SkillRole, { check: string; pattern: RegExp; severity: ReviewFinding['severity'] }[]> = {
+  'security-reviewer': [
+    { check: 'Hardcoded credentials', pattern: /\b(password|passwd|api[_-]?key|secret|token)\b\s*[:=]\s*['"][^'"]{8,}['"]/i, severity: 'CRITICAL' },
+    { check: 'SQL injection risk', pattern: /(?:query|execute)\s*\(\s*[`'"].*\$\{/i, severity: 'CRITICAL' },
+    { check: 'XSS via innerHTML', pattern: /\.innerHTML\s*=/i, severity: 'HIGH' },
+    { check: 'eval with user input', pattern: /\beval\s*\(/i, severity: 'CRITICAL' },
+    { check: 'Weak crypto (MD5/SHA1)', pattern: /\b(?:md5|sha1)\b.*(?:hash|createHash)/i, severity: 'HIGH' },
+  ],
+  'eng-manager': [
+    { check: 'Large file changes', pattern: /.*/, severity: 'MEDIUM' }, // Handled by file count
+    { check: 'Test coverage for source changes', pattern: /\.(ts|tsx|js|jsx)$/i, severity: 'MEDIUM' },
+  ],
+  'qa-lead': [
+    { check: 'Empty catch block', pattern: /catch\s*(?:\([^)]*\))?\s*\{\s*\}/i, severity: 'HIGH' },
+    { check: 'Focused test (.only)', pattern: /\b(describe|it|test)\.only\s*\(/i, severity: 'HIGH' },
+    { check: 'Skipped test (.skip)', pattern: /\b(describe|it|test)\.skip\s*\(/i, severity: 'MEDIUM' },
+  ],
+  'release-engineer': [
+    { check: 'Version bump in package.json', pattern: /"version"\s*:\s*"/i, severity: 'MEDIUM' },
+    { check: 'Changelog update', pattern: /CHANGELOG/i, severity: 'MEDIUM' },
+  ],
+  'design-reviewer': [
+    { check: 'Accessibility attributes', pattern: /aria-|role=/i, severity: 'MEDIUM' },
+    { check: 'Inline styles', pattern: /style\s*=\s*\{/i, severity: 'LOW' },
+  ],
+  'ceo-reviewer': [],
+}
+
+export function analyzeRoleReview(input: RoleReviewInput): RoleReviewResult {
+  const findings: ReviewFinding[] = []
+  const checklistItems: { item: string; status: 'pass' | 'fail' | 'skip' }[] = []
+  const patterns = ROLE_CHECK_PATTERNS[input.role] ?? []
+
+  if (input.role === 'eng-manager') {
+    // Check if source changes have corresponding test changes
+    const sourceChanged = input.changedFiles.some(f => isSourcePath(f.path) && !isTestPath(f.path))
+    const testChanged = input.changedFiles.some(f => isTestPath(f.path))
+
+    if (sourceChanged && !testChanged) {
+      findings.push({
+        category: 'process',
+        severity: 'MEDIUM',
+        description: 'Source files changed without corresponding test updates (eng-manager perspective).',
+      })
+      checklistItems.push({ item: 'Test coverage for source changes', status: 'fail' })
+    } else if (sourceChanged) {
+      checklistItems.push({ item: 'Test coverage for source changes', status: 'pass' })
+    }
+
+    // Check for excessive file count
+    if (input.changedFiles.length > 20) {
+      findings.push({
+        category: 'process',
+        severity: 'MEDIUM',
+        description: `Large changeset (${input.changedFiles.length} files). Consider splitting into smaller PRs (eng-manager perspective).`,
+      })
+    }
+
+    return { role: input.role, findings, checklistItems }
+  }
+
+  if (input.role === 'release-engineer') {
+    const hasVersionBump = input.changedFiles.some(f => f.path.includes('package.json'))
+    const hasChangelog = input.changedFiles.some(f => f.path.includes('CHANGELOG'))
+
+    checklistItems.push({ item: 'Version bump', status: hasVersionBump ? 'pass' : 'skip' })
+    checklistItems.push({ item: 'Changelog update', status: hasChangelog ? 'pass' : 'skip' })
+
+    return { role: input.role, findings, checklistItems }
+  }
+
+  // For other roles, scan diffs for patterns
+  for (const diff of input.diffs) {
+    const added = getAddedLines(diff.text)
+    for (const { check, pattern, severity } of patterns) {
+      const match = firstMatch(added, pattern)
+      if (match) {
+        findings.push({
+          category: 'security',
+          severity,
+          description: `${check} (${input.role} perspective).`,
+          file: diff.file,
+          evidence: evidence(match, check),
+        })
+        checklistItems.push({ item: check, status: 'fail' })
+      }
+    }
+  }
+
+  return { role: input.role, findings, checklistItems }
+}

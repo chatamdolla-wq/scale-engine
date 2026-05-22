@@ -1,3 +1,25 @@
+## 0.33.0 - 2026-05-21
+
+### Role Skills
+
+- Added `RoleSkills` — 6 role-based review perspectives: eng-manager, security-reviewer, qa-lead, release-engineer, design-reviewer, ceo-reviewer.
+- Each role has a unique checklist, risk focus areas, and output format.
+- `applyRolePerspective()` generates role-specific review prompts.
+- `getRolesForPhase()` maps workflow phases to recommended reviewer roles.
+- Integrated into `WorkflowGuidance` with role-based guidance items.
+- Added `analyzeRoleReview()` to `ReviewAnalyzer` for role-specific diff analysis.
+
+### Security Audit
+
+- Added `SecurityAudit` — OWASP Top 10 + STRIDE security audit engine.
+- Pattern-based detection for: SQL injection, hardcoded credentials, XSS (innerHTML, dangerouslySetInnerHTML), weak crypto, path traversal, sensitive logging, unsafe deserialization.
+- Builds OWASP and STRIDE coverage maps from findings.
+- Risk score calculation (0-100) weighted by severity.
+- Test files exempt from hardcoded credential checks.
+- Added `summarizeSecurityAudit()` for formatted reports.
+
+---
+
 ## 0.32.0 - 2026-05-21
 
 ### Ship Pipeline
