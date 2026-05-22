@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.27.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.33.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.27.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.33.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.27.1
+# SCALE Engine v0.33.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -16,6 +16,38 @@ Repository: https://github.com/hongmaple0820/scale-engine
 Mirror: https://gitee.com/hongmaple/scale-engine
 npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
 Language: [English](README.en.md) | [Chinese](README.md)
+
+## 0.31.0 ~ 0.33.0 gstack-Inspired: Declarative Skills + Cross-Session Learning + Ship Pipeline + Role Review + Security Audit
+
+> Inspired by [gstack](https://github.com/garrytan/gstack), integrating role-based skills, cross-session learning, ship closure, diff-based test selection, and security audit into SCALE's governance architecture.
+
+**v0.31.0 — Skill Frontmatter + Session Learnings + Preamble**
+
+- **Skill Frontmatter**: YAML-based declarative skill definitions parsed from SKILL.md files with `name`, `description`, `triggers`, `allowed-tools` fields.
+- **Session Learnings**: Cross-session knowledge persistence (`.scale/learnings/{slug}.jsonl`) with failure/pattern/preference/environment categories. Auto-extracts learnings from blocked runs.
+- **Session Preamble**: Automatic environment context collection before workflow execution (git branch, active runs, learning count, verification profile).
+
+**v0.32.0 — Ship Pipeline + Diff-Based Test Selection**
+
+- **Ship Pipeline**: 8-step ship closure (sync-base → test → review-diff → bump-version → changelog → commit → push → create-pr) with `--dry-run` and `--skip` support.
+- **Diff Test Selector**: Touchfile-based test selection by git diff — only run tests affected by changed files.
+
+**v0.33.0 — Role Skills + Security Audit**
+
+- **Role Skills**: 6 role-based review perspectives (eng-manager, security-reviewer, qa-lead, release-engineer, design-reviewer, ceo-reviewer), each with unique checklists and risk focus areas.
+- **Security Audit**: OWASP Top 10 + STRIDE security audit engine with pattern-based detection for SQL injection, hardcoded credentials, XSS, weak crypto, path traversal, and more.
+
+```bash
+# Ship pipeline
+scale ship --dry-run
+scale ship --skip sync-base,changelog
+
+# Security audit
+scale security-audit --files src/auth/
+
+# Role-based review
+scale review --role security-reviewer --task-id TASK-123
+```
 
 ## 0.27.0 AI OS Runtime
 
