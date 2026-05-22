@@ -28,6 +28,7 @@ import {
   type SkillTaskLevel,
 } from '../skills/routing/index.js'
 import { routeAdaptiveWorkflow, type WorkflowProfile } from '../workflow/AdaptiveWorkflowRouter.js'
+import { collectGovernanceRoi, type GovernanceRoiSummary } from '../workflow/GovernanceRoi.js'
 import {
   proposeShadowRule,
   buildEvolutionShadowReport,
@@ -234,6 +235,7 @@ export interface AiOsRunReport {
   artifacts: {
     runReport: string
   }
+  governanceRoi?: GovernanceRoiSummary
   nextActions: string[]
 }
 
@@ -721,6 +723,7 @@ export async function createAiOsRun(input: AiOsRunInput): Promise<AiOsRunReport>
     artifacts: {
       runReport: runReportPath,
     },
+    governanceRoi: collectGovernanceRoi({ projectDir, scaleDir }),
     nextActions: buildRunNextActions(steps, mode),
   }
   writeAiOsRunReport(runReportPath, report)

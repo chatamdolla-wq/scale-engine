@@ -3,6 +3,7 @@
 
 import type { GovernanceMode, ProgressiveGovernanceReport } from '../governance/ProgressiveGovernance.js'
 import type { AiOsEvaluatorGateId, AiOsEvaluatorIntelligence, AiOsToolStrategyPlan } from '../runtime/AiOsRuntime.js'
+import { selectTemplate } from './WorkflowTemplates.js'
 
 export type WorkflowProfile = 'light' | 'standard' | 'strict' | 'critical'
 
@@ -24,6 +25,7 @@ export interface BehavioralConstraint {
 
 export interface AdaptiveWorkflowProfile {
   profile: WorkflowProfile
+  templateId: string
   strategy: 'adaptive-workflow-router-v1'
   escalationReasons: string[]
   gateOverrides: GateOverride[]
@@ -137,8 +139,11 @@ export function routeAdaptiveWorkflow(input: AdaptiveWorkflowRouterInput): Adapt
   const behavioralConstraints = buildBehavioralConstraints(profile, signals)
   const exitCriteria = buildExitCriteria(profile, evaluator, toolStrategy)
 
+  const template = selectTemplate({ profile, task: '', level: profile === 'critical' ? 'CRITICAL' : profile === 'strict' ? 'L' : 'M' })
+
   return {
     profile,
+    templateId: template.id,
     strategy: 'adaptive-workflow-router-v1',
     escalationReasons: reasons,
     gateOverrides,

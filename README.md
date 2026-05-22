@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.33.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.35.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.33.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.35.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.33.0
+# SCALE Engine v0.35.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -36,6 +36,18 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 
 - **Role Skills**：6 个角色化审查视角（eng-manager、security-reviewer、qa-lead、release-engineer、design-reviewer、ceo-reviewer），各有独立 checklist 和风险焦点。
 - **Security Audit**：OWASP Top 10 + STRIDE 安全审计引擎，模式匹配检测 SQL 注入、硬编码密钥、XSS、弱加密、路径遍历等。
+
+**v0.34.0 — Cross-Agent Execution Ledger + Workspace Policy + MCP Governance**
+
+- **Execution Ledger**：跨 agent 统一执行时间线（`.scale/ledger/events.jsonl`），支持按 agent/session/task/type 查询和汇总。
+- **Workspace Policy**：运行时 workspace 策略引擎，glob 模式匹配 + owner/allowedAgents 访问控制 + advisory/warn/block 三级执行。
+- **MCP Governance**：MCP server 生命周期治理 — 注册、健康检查、安全扫描（命令注入/不安全传输/未信任级别）、能力访问控制。
+
+**v0.35.0 — Memory Intelligence + Workflow Templates + Governance ROI**
+
+- **Memory Intelligence**：统一 memory 检索质量引擎，6 信号评分（confidence/relevance/freshness/evidence-backed/cross-provider/no-contradiction），跨 provider 冲突检测，新鲜度衰减。
+- **Workflow Templates**：可组合工作流模板系统，4 个内置模板（light-docs/standard-code/strict-feature/critical-security），按 profile + task 关键词 + 风险等级自动选择。
+- **Governance ROI**：端到端治理 ROI 度量 — token 成本 vs 质量 vs 门禁摩擦，overall score (0-100)，支持 baseline 对比。
 
 ```bash
 # Ship 闭环

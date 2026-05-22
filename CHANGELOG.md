@@ -1,3 +1,63 @@
+## 0.35.0 - 2026-05-22
+
+### Memory Intelligence
+
+- Added `MemoryIntelligence` — unified memory retrieval quality engine with cross-provider scoring, conflict detection, and freshness management.
+- Quality scoring with 6 signals: confidence, relevance, freshness, evidence-backed, cross-provider, no-contradiction.
+- Weighted overall score: confidence 25%, relevance 25%, freshness 20%, evidence-backed 15%, no-contradiction 10%, cross-provider 5%.
+- Conflict detection by title normalization — same topic with different summaries triggers conflict resolution (newest-wins or highest-confidence).
+- Freshness decay: expired items (>7 days) penalized 70%, stale items (>3.5 days) penalized 30%.
+- Provider breakdown statistics with per-provider count and average quality.
+
+### Adaptive Workflow Templates
+
+- Added `WorkflowTemplates` — composable workflow template system with profile-based selection.
+- 4 built-in templates: light-docs (3 steps), standard-code (5 steps), strict-feature (6 steps), critical-security (6 steps).
+- Template selection by profile, task keywords (security/crypto/auth → critical), risk factor count, and task level.
+- `customizeTemplate()` for overriding steps, exit criteria, and tags.
+- `formatTemplateForAgent()` produces human-readable template descriptions with required/optional markers.
+- `AdaptiveWorkflowRouter` now outputs `templateId` linking to the matched workflow template.
+
+### Governance ROI Report
+
+- Added `GovernanceRoi` — end-to-end governance ROI metrics: token cost vs quality vs gate friction.
+- Aggregates from TaskMetricsStore, ModelUsageLedger, and EvidenceStore.
+- Overall score (0-100): first-pass rate 30%, gate pass rate 20%, evidence completeness 20%, gate block rate 15%, context savings 10%, fix iteration bonus 5%.
+- `compareRoiReports()` computes deltas between baseline and current reports.
+- `summarizeGovernanceRoi()` produces formatted markdown report.
+- Integrated into `AiOsRunReport` as `governanceRoi` field.
+
+---
+
+## 0.34.0 - 2026-05-22
+
+### Cross-Agent Execution Ledger
+
+- Added `ExecutionLedger` — unified execution timeline across all agents and sessions.
+- Append-only JSONL storage at `.scale/ledger/events.jsonl`.
+- Supports query by agentId, sessionId, taskId, event type, and timestamp.
+- `summarize()` produces agent list, session list, task count, violation count, and timeline.
+- Event types: agent.started/ended, task.started/completed/blocked, tool.invoked, gate.checked, evidence.recorded, policy.violation, mcp.health-check.
+
+### Workspace Policy Runtime Enforcement
+
+- Added `WorkspacePolicyEngine` — runtime workspace policy engine with file access rules, resource locks, and agent boundaries.
+- Policies support: glob patterns, owner-only access, allowedAgents lists, enforcement levels (advisory/warn/block).
+- Conflict resolution modes: first-wins, owner-priority, block-all.
+- Policy violations tracked with timestamps and agent context.
+- Loads configuration from `.scale/workspace-policy.yaml`.
+
+### MCP Lifecycle Governance
+
+- Added `McpGovernor` — MCP server lifecycle management with health checks, security scanning, and policy enforcement.
+- Server registration with transport type, security level (trusted/review/untrusted), and capabilities.
+- Health checks with latency tracking and status reporting.
+- Security scanning detects: untrusted servers, command injection risks, insecure transport, missing capabilities.
+- Policy enforcement: blocks untrusted servers when configured, checks tool capability access.
+- Loads configuration from `.scale/mcp-servers.yaml`.
+
+---
+
 ## 0.33.0 - 2026-05-21
 
 ### Role Skills
