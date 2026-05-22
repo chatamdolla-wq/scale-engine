@@ -1,3 +1,38 @@
+## 0.36.0 - 2026-05-22
+
+### Task Dependency Graph
+
+- Added `TaskDependencyGraph` — DAG-based dependency declaration with cycle detection for parallel task coordination.
+- Kahn's algorithm with level tracking for topological sort — identifies parallel execution groups.
+- Cycle detection via DFS with back-edge identification; cycle path reconstruction for diagnostics.
+- `getBlockedTasks()` / `getReadyTasks()` for real-time execution scheduling.
+- Dependency types: `blocks` (hard), `soft-dep` (advisory), `data-flow` (informational).
+- Capacity guard (`maxTasks`), self-dependency rejection, duplicate edge deduplication.
+- JSON serialization roundtrip for state persistence.
+
+### Session Coordinator
+
+- Added `SessionCoordinator` — multi-session parallel task coordination with file overlap detection and conflict resolution.
+- File overlap risk assessment: critical files (package.json, tsconfig, .env) → high risk; 3+ sessions on same file → high risk; 2 sessions → medium.
+- Task dependency graph integration with topological ordering and cycle detection.
+- Conflict recording with resolution tracking (accept/defer/split-files/manual).
+- Enforcement levels: advisory (log only), warn (flag), block (prevent activation).
+- Coordination status with active sessions, file overlaps, blocked tasks, and actionable recommendations.
+- State persistence to `.scale/coordinator/state.json`.
+
+### Cross-Repo Orchestrator
+
+- Added `CrossRepoOrchestrator` — multi-repo (MOE) git workflow coordination for polyrepo and monorepo+submodule topologies.
+- Coordinated branch management: create/delete branches across multiple repositories simultaneously.
+- Change tracking with inter-repo dependency (`dependsOn`): register changes per repo with file lists and commit SHAs.
+- Merge planning with topological sort of repo dependencies — ensures upstream repos merge first.
+- Coordinated ship pipeline: merge branches → run tests → create tags → push across all repos in dependency order.
+- Repo state inspection: dirty/clean detection, branch existence, commit status per repository.
+- Loads topology from `.scale/workspace.json` for repo discovery.
+- State persistence to `.scale/orchestrator/state.json`.
+
+---
+
 ## 0.35.0 - 2026-05-22
 
 ### Memory Intelligence

@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.35.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.36.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.35.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.36.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.35.0
+# SCALE Engine v0.36.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -48,6 +48,12 @@ Language: [English](README.en.md) | [Chinese](README.md)
 - **Memory Intelligence**: Unified memory retrieval quality engine with 6-signal scoring (confidence/relevance/freshness/evidence-backed/cross-provider/no-contradiction), cross-provider conflict detection, and freshness decay.
 - **Workflow Templates**: Composable workflow template system with 4 built-in templates (light-docs/standard-code/strict-feature/critical-security), auto-selected by profile + task keywords + risk level.
 - **Governance ROI**: End-to-end governance ROI metrics — token cost vs quality vs gate friction, overall score (0-100), with baseline comparison support.
+
+**v0.36.0 — Task Dependency Graph + Session Coordinator + Cross-Repo Orchestrator**
+
+- **Task Dependency Graph**: DAG-based dependency declaration with topological sort (Kahn's algorithm + level tracking) and cycle detection. Supports blocks/soft-dep/data-flow dependency types. `getBlockedTasks()`/`getReadyTasks()` for real-time execution scheduling.
+- **Session Coordinator**: Multi-session parallel coordination — file overlap risk assessment (critical files → high risk, 3+ sessions → high risk), conflict recording with resolution tracking, advisory/warn/block enforcement levels.
+- **Cross-Repo Orchestrator**: Multi-repo (MOE) Git workflow orchestration — coordinated branch management, cross-repo change tracking with inter-repo dependencies, topological merge planning, coordinated ship pipeline (merge → test → tag → push).
 
 ```bash
 # Ship pipeline
