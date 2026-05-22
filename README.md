@@ -6,6 +6,12 @@
   <img src="https://img.shields.io/badge/npm-0.37.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
+<p align="center">
+  <a href="https://repostars.dev/?repos=hongmaple0820%2Fscale-engine&theme=copper">
+    <img src="https://repostars.dev/api/embed?repo=hongmaple0820%2Fscale-engine&theme=copper" alt="RepoStars" />
+  </a>
+</p>
+
 # SCALE Engine
 
 SCALE Engine 让 AI Agent 不再只靠"自觉"遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
