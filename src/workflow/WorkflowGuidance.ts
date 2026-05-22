@@ -1,6 +1,7 @@
 import type { WorkflowTaskLevel } from './WorkflowArtifactWriter.js'
+import type { SkillRole } from '../skills/RoleSkills.js'
 
-export type WorkflowGuidancePhase = 'explore' | 'plan' | 'build' | 'verify'
+export type WorkflowGuidancePhase = 'explore' | 'plan' | 'build' | 'verify' | 'review' | 'ship'
 
 export interface WorkflowGuidanceItem {
   id: string
@@ -8,6 +9,7 @@ export interface WorkflowGuidanceItem {
   required: boolean
   reason: string
   command: string
+  role?: SkillRole
 }
 
 export interface WorkflowGuidance {
@@ -211,4 +213,43 @@ function quoteArg(value: string): string {
   if (!value) return '""'
   if (/^[A-Za-z0-9_./:@=,+-]+$/.test(value)) return value
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+// ============================================================================
+// Role-Based Guidance
+// ============================================================================
+
+export function getRoleGuidanceForPhase(phase: WorkflowGuidancePhase): SkillRole[] {
+  switch (phase) {
+    case 'explore':
+      return ['eng-manager']
+    case 'plan':
+      return ['ceo-reviewer', 'eng-manager']
+    case 'build':
+      return []
+    case 'verify':
+      return ['qa-lead', 'security-reviewer']
+    case 'review':
+      return ['eng-manager', 'security-reviewer']
+    case 'ship':
+      return ['release-engineer']
+    default:
+      return []
+  }
+}
+
+export function createRoleGuidanceItem(
+  role: SkillRole,
+  phase: WorkflowGuidancePhase,
+  taskId: string,
+  description: string,
+): WorkflowGuidanceItem {
+  return {
+    id: `role-${role}`,
+    phase,
+    required: phase === 'review' || phase === 'verify',
+    reason: `${role} perspective ensures multi-angle review coverage.`,
+    command: `scale review --role ${role} --task-id ${taskId}`,
+    role,
+  }
 }

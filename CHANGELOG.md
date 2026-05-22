@@ -1,3 +1,81 @@
+## 0.33.0 - 2026-05-21
+
+### Role Skills
+
+- Added `RoleSkills` — 6 role-based review perspectives: eng-manager, security-reviewer, qa-lead, release-engineer, design-reviewer, ceo-reviewer.
+- Each role has a unique checklist, risk focus areas, and output format.
+- `applyRolePerspective()` generates role-specific review prompts.
+- `getRolesForPhase()` maps workflow phases to recommended reviewer roles.
+- Integrated into `WorkflowGuidance` with role-based guidance items.
+- Added `analyzeRoleReview()` to `ReviewAnalyzer` for role-specific diff analysis.
+
+### Security Audit
+
+- Added `SecurityAudit` — OWASP Top 10 + STRIDE security audit engine.
+- Pattern-based detection for: SQL injection, hardcoded credentials, XSS (innerHTML, dangerouslySetInnerHTML), weak crypto, path traversal, sensitive logging, unsafe deserialization.
+- Builds OWASP and STRIDE coverage maps from findings.
+- Risk score calculation (0-100) weighted by severity.
+- Test files exempt from hardcoded credential checks.
+- Added `summarizeSecurityAudit()` for formatted reports.
+
+---
+
+## 0.32.0 - 2026-05-21
+
+### Ship Pipeline
+
+- Added `ShipPipeline` — full ship closure pipeline with 8 steps: sync-base → test → review-diff → bump-version → changelog → commit → push → create-pr.
+- Supports `--dry-run` mode, `--skip` steps, and `--versionBump` (patch/minor/major).
+- Reuses existing infrastructure: `runSafeCommand()`, `resolveVerificationTargets()`, `parseChangedFiles()`, `collectSessionPreamble()`.
+
+### Diff-Based Test Selection
+
+- Added `DiffTestSelector` — selects tests based on changed files using touchfile glob declarations.
+- Supports `gate` and `periodic` tiers; global config changes trigger all tests.
+- Added `formatTestSelection()` for human-readable selection reports.
+
+---
+
+## 0.31.0 - 2026-05-21
+
+### Skill Frontmatter
+
+- Added `SkillFrontmatter` — YAML-based declarative skill definitions parsed from SKILL.md files.
+- Supports `name`, `description`, `preamble-tier`, `allowed-tools`, `triggers`, `domain`, `priority` fields.
+- Integrated into `SkillRegistry.loadFromFrontmatter()` and `SkillDiscovery`.
+
+### Session Learnings
+
+- Added `SessionLearnings` — cross-session knowledge persistence in `.scale/learnings/{project-slug}.jsonl`.
+- Categories: failure, pattern, preference, environment.
+- Supports search by tags/category, pruning by age/relevance decay, JSONL export.
+- `autoLearnFromRunReport()` extracts learnings from blocked runs and verification failures.
+
+### Session Preamble
+
+- Added `SessionPreamble` — automatic environment context collection before workflow execution.
+- Collects: git branch, git root, project slug, scale version, active run count, learning count, verification profile, governance mode.
+- Integrated into `AiOsRuntime.createAiOsPlan()`.
+
+---
+
+## 0.30.0 - 2026-05-21
+
+### AI OS intelligence signals
+
+- Added evaluator intelligence signal with risk/uncertainty scoring from governance gates, security threat models, and root-cause reviews.
+- Added tool strategy planner signal with capability matching, risk-aware tool selection, and fallback reasoning.
+- Added adaptive workflow router that maps evaluator risk and tool strategy signals to workflow profiles (`light`, `standard`, `strict`, `critical`) with escalation-only routing.
+- Added evolution shadow promotion engine that creates shadow rule proposals from governance signals and evaluator gates, validated through `shadow` → `candidate-hook` → `approved-blocking` maturity stages before enforcement.
+- Wired all four signals into `scale ai-os status`, `scale ai-os plan`, `scale ai-os run`, and `scale ai-os benchmark` with per-signal evidence and recommendations.
+- Added evolution quality summary to AI OS intelligence report and benchmark output.
+
+### Verification
+
+- Verified the release candidate with `npm run release:check`, including full Vitest suite, typecheck, lint, build, production dependency audit, and `npm pack --dry-run`.
+
+---
+
 ## 0.29.0 - 2026-05-21
 
 ### AI OS intelligence readiness

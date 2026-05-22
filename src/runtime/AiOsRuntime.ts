@@ -27,6 +27,14 @@ import {
   type SkillPlan,
   type SkillTaskLevel,
 } from '../skills/routing/index.js'
+import { routeAdaptiveWorkflow, type WorkflowProfile } from '../workflow/AdaptiveWorkflowRouter.js'
+import {
+  proposeShadowRule,
+  buildEvolutionShadowReport,
+  summarizeEvolutionShadow,
+  type EvolutionShadowReport,
+  type ShadowRuleProposal,
+} from '../workflow/EvolutionShadowPromoter.js'
 import { runSafeCommand } from '../tools/SafeCommandRunner.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 import {
@@ -34,6 +42,8 @@ import {
   type VerificationCommandName,
 } from '../workflow/VerificationProfile.js'
 import { RuntimeEvidenceLedger } from './RuntimeEvidenceLedger.js'
+import { loadRelevantLearnings, type LearningEntry } from '../evolution/SessionLearnings.js'
+import { collectSessionPreamble, type SessionPreamble } from '../workflow/SessionPreamble.js'
 
 export interface AiOsRuntimeInput {
   projectDir?: string
@@ -72,10 +82,78 @@ export interface AiOsMemoryRuntimeSummary {
 
 export interface AiOsAdaptiveWorkflow {
   strategy: 'risk-adaptive-runtime-v1'
+  profile: WorkflowProfile
+  escalationReasons: string[]
   mode: GovernanceMode
   requiredBehaviors: string[]
   gates: string[]
   exitCriteria: string[]
+}
+
+export type AiOsEvaluatorGateId =
+  | 'architecture-critique'
+  | 'root-cause-review'
+  | 'security-threat-model'
+  | 'release-readiness-review'
+  | 'uncertainty-decision-log'
+
+export interface AiOsEvaluatorGate {
+  id: AiOsEvaluatorGateId
+  required: boolean
+  reason: string
+  evidence: string[]
+}
+
+export interface AiOsEvaluatorIntelligence {
+  strategy: 'evaluator-intelligence-v1'
+  required: boolean
+  riskLevel: 'low' | 'medium' | 'high'
+  uncertainty: {
+    score: number
+    threshold: number
+    drivers: string[]
+  }
+  gates: AiOsEvaluatorGate[]
+  recommendations: string[]
+}
+
+export type AiOsToolStrategyRisk = 'low' | 'medium' | 'high'
+
+export interface AiOsToolStrategyNode {
+  id: string
+  kind: SkillPlan['executionPlan']['steps'][number]['kind']
+  required: boolean
+  cost: {
+    units: number
+    timeRisk: AiOsToolStrategyRisk
+    sideEffectRisk: AiOsToolStrategyRisk
+  }
+  retry: {
+    maxAttempts: number
+    backoff: 'none' | 'linear' | 'manual-review'
+  }
+  fallback: string
+  evidence: string[]
+}
+
+export interface AiOsToolStrategyEdge {
+  from: string
+  to: string
+  reason: string
+}
+
+export interface AiOsToolStrategyPlan {
+  strategy: 'tool-strategy-v1'
+  nodes: AiOsToolStrategyNode[]
+  edges: AiOsToolStrategyEdge[]
+  summary: {
+    totalSteps: number
+    requiredSteps: number
+    highRiskSteps: number
+    estimatedCostUnits: number
+    fallbackCoveredSteps: number
+  }
+  recommendations: string[]
 }
 
 export interface AiOsRuntimePlan {
@@ -88,11 +166,16 @@ export interface AiOsRuntimePlan {
     files: string[]
     services: string[]
   }
+  preamble: SessionPreamble
   governance: ProgressiveGovernanceReport
   adaptiveWorkflow: AiOsAdaptiveWorkflow
+  evaluator: AiOsEvaluatorIntelligence
+  toolStrategy: AiOsToolStrategyPlan
+  evolutionShadow: EvolutionShadowReport
   context: BudgetedContextPack
   memory: AiOsMemoryRuntimeSummary
   skillPlan: SkillPlan
+  sessionLearnings: LearningEntry[]
   roi: GovernanceRoiReport
   recommendations: string[]
 }
@@ -218,6 +301,7 @@ export interface AiOsBenchmarkScenarioResult {
   task: string
   level: SkillTaskLevel
   governanceMode: GovernanceMode
+  workflowProfile: WorkflowProfile
   metrics: {
     estimatedTokens: number
     budget: number
@@ -226,6 +310,10 @@ export interface AiOsBenchmarkScenarioResult {
     selectedProviders: string[]
     skillSteps: number
     requiredSkillSteps: number
+    evaluatorGates: number
+    toolStrategySteps: number
+    toolStrategyCostUnits: number
+    evolutionProposals: number
     gates: number
     roiModules: number
   }
@@ -243,7 +331,12 @@ export interface AiOsBenchmarkReport {
     totalMemoryItems: number
     totalSkillSteps: number
     requiredSkillSteps: number
+    totalEvaluatorGates: number
+    totalToolStrategySteps: number
+    totalToolStrategyCostUnits: number
+    totalEvolutionProposals: number
     governanceModes: GovernanceMode[]
+    workflowProfiles: WorkflowProfile[]
     averageTokenUtilization: number
   }
   dashboard: AiOsDashboardReport
@@ -409,6 +502,10 @@ export type AiOsIntelligenceSignalId =
   | 'memory-recall'
   | 'context-savings'
   | 'skill-routing'
+  | 'evaluator-intelligence'
+  | 'tool-strategy'
+  | 'adaptive-workflow'
+  | 'evolution-shadow'
   | 'benchmark-intelligence'
 
 export interface AiOsIntelligenceSignal {
@@ -429,6 +526,9 @@ export interface AiOsIntelligenceReport {
     selectedProviders: string[]
     memoryQuality: AiOsMemoryQualitySummary
     contextQuality: AiOsContextQualitySummary
+    evaluatorQuality: AiOsEvaluatorQualitySummary
+    toolStrategyQuality: AiOsToolStrategyQualitySummary
+    evolutionQuality: AiOsEvolutionQualitySummary
     estimatedTokenSavings: number
     skillSteps: number
   }
@@ -453,6 +553,29 @@ export interface AiOsContextQualitySummary {
   compressionRisk: 'low' | 'medium' | 'high'
 }
 
+export interface AiOsEvaluatorQualitySummary {
+  requiredGates: number
+  highRiskPlans: number
+  averageUncertainty: number
+  gateIds: AiOsEvaluatorGateId[]
+}
+
+export interface AiOsToolStrategyQualitySummary {
+  totalSteps: number
+  requiredSteps: number
+  highRiskSteps: number
+  estimatedCostUnits: number
+  fallbackCoverage: number
+}
+
+export interface AiOsEvolutionQualitySummary {
+  proposals: number
+  shadowRules: number
+  candidateHooks: number
+  approvedBlocking: number
+  pendingValidation: number
+}
+
 export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRuntimePlan> {
   const projectDir = resolve(input.projectDir ?? process.cwd())
   const scaleDir = input.scaleDir ?? '.scale'
@@ -461,6 +584,9 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
   const services = input.services ?? []
   const taskId = input.taskId
   const budget = input.budget ?? 8_000
+
+  const preamble = collectSessionPreamble({ projectDir, scaleDir })
+  const sessionLearnings = loadRelevantLearnings({ projectDir, scaleDir, task: input.task, limit: 5 })
 
   const governance = evaluateProgressiveGovernance({
     task: input.task,
@@ -507,7 +633,15 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
     services,
     policy: skillPolicy,
   })
-  const adaptiveWorkflow = createAdaptiveWorkflow(governance, skillPlan)
+  const evaluator = createEvaluatorIntelligence({
+    task: input.task,
+    files,
+    governance,
+    skillPlan,
+  })
+  const toolStrategy = createToolStrategyPlan(skillPlan)
+  const adaptiveWorkflow = createAdaptiveWorkflow(governance, skillPlan, evaluator, toolStrategy)
+  const evolutionShadow = createEvolutionShadowProposals(governance, evaluator)
   const roi = createGovernanceRoiReport({
     taskId,
     contextBudget,
@@ -527,8 +661,12 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
       files,
       services,
     },
+    preamble,
     governance,
     adaptiveWorkflow,
+    evaluator,
+    toolStrategy,
+    evolutionShadow,
     context,
     memory: {
       providerOrder: memoryRecall.providerOrder,
@@ -539,8 +677,9 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
       contextPack: memoryPack,
     },
     skillPlan,
+    sessionLearnings,
     roi,
-    recommendations: recommendations({ governance, context, memoryRecall, skillPlan }),
+    recommendations: recommendations({ governance, context, memoryRecall, skillPlan, evaluator, toolStrategy }),
   }
 }
 
@@ -644,6 +783,7 @@ export async function createAiOsBenchmark(input: AiOsBenchmarkInput = {}): Promi
       task: scenario.task,
       level: scenario.level,
       governanceMode: plan.governance.effectiveMode,
+      workflowProfile: plan.adaptiveWorkflow.profile,
       metrics: {
         estimatedTokens: plan.context.totalEstimatedTokens,
         budget: plan.context.task.budget,
@@ -652,6 +792,10 @@ export async function createAiOsBenchmark(input: AiOsBenchmarkInput = {}): Promi
         selectedProviders: plan.memory.selectedProviders,
         skillSteps: plan.skillPlan.executionPlan.steps.length,
         requiredSkillSteps: plan.skillPlan.executionPlan.steps.filter(step => step.required).length,
+        evaluatorGates: plan.evaluator.gates.length,
+        toolStrategySteps: plan.toolStrategy.summary.totalSteps,
+        toolStrategyCostUnits: plan.toolStrategy.summary.estimatedCostUnits,
+        evolutionProposals: plan.evolutionShadow.summary.totalProposals,
         gates: plan.adaptiveWorkflow.gates.length,
         roiModules: plan.roi.modules.length,
       },
@@ -1021,6 +1165,9 @@ function buildAiOsIntelligenceReport(input: {
   const totalMemoryItems = runMemoryItems.length + benchmarkMemoryItems
   const memoryQuality = summarizeMemoryQuality(runMemoryItems)
   const contextQuality = summarizeContextQuality(input.runReports)
+  const evaluatorQuality = summarizeEvaluatorQuality(input.runReports, input.benchmark)
+  const toolStrategyQuality = summarizeToolStrategyQuality(input.runReports, input.benchmark)
+  const evolutionQuality = summarizeEvolutionQuality(input.runReports, input.benchmark)
   const contextSignalStatus: AiOsClosedLoopStatus = contextQuality.compressionRisk === 'high'
     ? 'warning'
     : estimatedTokenSavings > 0 ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked'
@@ -1037,10 +1184,26 @@ function buildAiOsIntelligenceReport(input: {
     ...input.runReports.flatMap(report => report.plan.skillPlan.executionPlan.steps.map(step => `${report.artifacts.runReport}:${step.id}`)),
     ...(input.benchmark ? [`${input.benchmarkReport}:steps=${input.benchmark.summary.totalSkillSteps}`] : []),
   ]
+  const evaluatorEvidence = [
+    ...input.runReports.flatMap(report => resolveRunEvaluator(report).gates.map(gate => `${report.artifacts.runReport}:${gate.id}`)),
+    ...(input.benchmark ? [`${input.benchmarkReport}:evaluator-gates=${input.benchmark.summary.totalEvaluatorGates}`] : []),
+  ]
+  const toolStrategyEvidence = [
+    ...input.runReports.flatMap(report => resolveRunToolStrategy(report).nodes.map(node => `${report.artifacts.runReport}:${node.id}`)),
+    ...(input.benchmark ? [`${input.benchmarkReport}:tool-strategy=${input.benchmark.summary.totalToolStrategySteps}`] : []),
+  ]
+  const evolutionEvidence = [
+    ...input.runReports.flatMap(report =>
+      (report.plan.evolutionShadow?.proposals ?? []).map(p => `${report.artifacts.runReport}:${p.id}:${p.maturity.stage}`),
+    ),
+    ...(input.benchmark ? [`${input.benchmarkReport}:evolution-proposals=${input.benchmark.summary.totalEvolutionProposals}`] : []),
+  ]
   const benchmarkEvidence = input.benchmark ? [
     `${input.benchmarkReport}:scenarios=${input.benchmark.summary.scenarios}`,
     `${input.benchmarkReport}:memory=${input.benchmark.summary.totalMemoryItems}`,
     `${input.benchmarkReport}:skills=${input.benchmark.summary.totalSkillSteps}`,
+    `${input.benchmarkReport}:evaluator-gates=${input.benchmark.summary.totalEvaluatorGates}`,
+    `${input.benchmarkReport}:tool-strategy=${input.benchmark.summary.totalToolStrategySteps}`,
   ] : [input.benchmarkReport]
 
   const signals: AiOsIntelligenceSignal[] = [
@@ -1082,6 +1245,57 @@ function buildAiOsIntelligenceReport(input: {
         : ['Create a task with files or services that should trigger required skill routing.'],
     },
     {
+      id: 'evaluator-intelligence',
+      status: evaluatorQuality.requiredGates > 0
+        ? evaluatorQuality.averageUncertainty >= 0.7 ? 'warning' : 'ready'
+        : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: evaluatorQuality.requiredGates > 0
+        ? `${evaluatorQuality.requiredGates} evaluator gate(s) required; average uncertainty ${evaluatorQuality.averageUncertainty}.`
+        : 'No evaluator gate evidence found for architecture, root-cause, security, or release reasoning.',
+      evidence: evaluatorEvidence,
+      recommendations: evaluatorQuality.requiredGates > 0
+        ? ['Use evaluator gates to force critique, uncertainty logging, and review evidence before promoting reasoning-heavy work.']
+        : ['Run a reasoning-heavy AI OS task so evaluator intelligence can prove critique coverage.'],
+    },
+    {
+      id: 'tool-strategy',
+      status: toolStrategyQuality.totalSteps > 0
+        ? toolStrategyQuality.fallbackCoverage < 1 ? 'warning' : 'ready'
+        : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: toolStrategyQuality.totalSteps > 0
+        ? `${toolStrategyQuality.totalSteps} tool strategy step(s); ${toolStrategyQuality.highRiskSteps} high-risk; fallback coverage ${toolStrategyQuality.fallbackCoverage}.`
+        : 'No tool strategy graph found for skills, artifacts, CLI, MCP, or verification steps.',
+      evidence: toolStrategyEvidence,
+      recommendations: toolStrategyQuality.totalSteps > 0
+        ? ['Use tool strategy evidence to review cost, retry, fallback, and side-effect risk before execution.']
+        : ['Create a task that triggers skill routing so the AI OS can build a tool strategy graph.'],
+    },
+    {
+      id: 'adaptive-workflow',
+      status: input.runReports.some(r => r.plan.adaptiveWorkflow.profile) ? 'ready' : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: summarizeAdaptiveWorkflowSignal(input.runReports, input.benchmark),
+      evidence: [
+        ...input.runReports.map(r => `${r.artifacts.runReport}:profile=${r.plan.adaptiveWorkflow.profile}`),
+        ...(input.benchmark ? [`${input.benchmarkReport}:profiles=${input.benchmark.summary.workflowProfiles.join(',')}`] : []),
+      ],
+      recommendations: input.runReports.some(r => r.plan.adaptiveWorkflow.profile)
+        ? ['Use workflow profile distribution to verify that risk signals correctly escalate governance.']
+        : ['Run an AI OS task with mixed risk levels to prove adaptive workflow routing.'],
+    },
+    {
+      id: 'evolution-shadow',
+      status: evolutionQuality.proposals > 0
+        ? evolutionQuality.pendingValidation > 0 ? 'warning' : 'ready'
+        : input.runReports.length > 0 || input.benchmark ? 'warning' : 'blocked',
+      summary: evolutionQuality.proposals > 0
+        ? `${evolutionQuality.proposals} shadow proposal(s); ${evolutionQuality.shadowRules} shadow, ${evolutionQuality.candidateHooks} candidate-hook, ${evolutionQuality.approvedBlocking} approved-blocking.`
+        : 'No evolution shadow proposals found. Run tasks with high-risk governance signals or evaluator gates to generate shadow rule candidates.',
+      evidence: evolutionEvidence,
+      recommendations: evolutionQuality.proposals > 0
+        ? ['Review shadow rule proposals and validate before promotion to candidate-hook or approved-blocking.']
+        : ['Run a high-risk AI OS task so evolution shadow promotion can propose rules from governance and evaluator signals.'],
+    },
+    {
       id: 'benchmark-intelligence',
       status: input.benchmark && input.benchmarkStatus === 'fresh'
         ? 'ready'
@@ -1103,6 +1317,9 @@ function buildAiOsIntelligenceReport(input: {
     selectedProviders,
     memoryQuality,
     contextQuality,
+    evaluatorQuality,
+    toolStrategyQuality,
+    evolutionQuality,
     estimatedTokenSavings,
     skillSteps,
   }
@@ -1135,6 +1352,104 @@ function summarizeContextQuality(runReports: AiOsRunReport[]): AiOsContextQualit
     highestOmittedTokens,
     compressionRisk,
   }
+}
+
+function summarizeEvaluatorQuality(
+  runReports: AiOsRunReport[],
+  benchmark?: AiOsBenchmarkReport,
+): AiOsEvaluatorQualitySummary {
+  const runEvaluators = runReports.map(resolveRunEvaluator)
+  const runGates = runEvaluators.flatMap(evaluator => evaluator.gates)
+  const benchmarkGateCount = benchmark?.summary.totalEvaluatorGates ?? 0
+  const uncertaintyScores = runEvaluators.map(evaluator => evaluator.uncertainty.score)
+  const gateIds = new Set<AiOsEvaluatorGateId>(runGates.map(gate => gate.id))
+  if (benchmarkGateCount > 0) gateIds.add('uncertainty-decision-log')
+  return {
+    requiredGates: runGates.filter(gate => gate.required).length + benchmarkGateCount,
+    highRiskPlans: runEvaluators.filter(evaluator => evaluator.riskLevel === 'high').length,
+    averageUncertainty: roundMetric(average(uncertaintyScores)),
+    gateIds: [...gateIds].sort(),
+  }
+}
+
+function resolveRunEvaluator(report: AiOsRunReport): AiOsEvaluatorIntelligence {
+  const plan = report.plan as AiOsRuntimePlan & { evaluator?: AiOsEvaluatorIntelligence }
+  return plan.evaluator ?? createEvaluatorIntelligence({
+    task: report.plan.task.task,
+    files: report.plan.task.files,
+    governance: report.plan.governance,
+    skillPlan: report.plan.skillPlan,
+  })
+}
+
+function summarizeToolStrategyQuality(
+  runReports: AiOsRunReport[],
+  benchmark?: AiOsBenchmarkReport,
+): AiOsToolStrategyQualitySummary {
+  const runStrategies = runReports.map(resolveRunToolStrategy)
+  const runSummary = runStrategies.reduce((summary, strategy) => ({
+    totalSteps: summary.totalSteps + strategy.summary.totalSteps,
+    requiredSteps: summary.requiredSteps + strategy.summary.requiredSteps,
+    highRiskSteps: summary.highRiskSteps + strategy.summary.highRiskSteps,
+    estimatedCostUnits: summary.estimatedCostUnits + strategy.summary.estimatedCostUnits,
+    fallbackCoveredSteps: summary.fallbackCoveredSteps + strategy.summary.fallbackCoveredSteps,
+  }), {
+    totalSteps: 0,
+    requiredSteps: 0,
+    highRiskSteps: 0,
+    estimatedCostUnits: 0,
+    fallbackCoveredSteps: 0,
+  })
+  const benchmarkSteps = benchmark?.summary.totalToolStrategySteps ?? 0
+  const benchmarkCost = benchmark?.summary.totalToolStrategyCostUnits ?? 0
+  const totalSteps = runSummary.totalSteps + benchmarkSteps
+  const fallbackCoveredSteps = runSummary.fallbackCoveredSteps + benchmarkSteps
+  return {
+    totalSteps,
+    requiredSteps: runSummary.requiredSteps,
+    highRiskSteps: runSummary.highRiskSteps,
+    estimatedCostUnits: runSummary.estimatedCostUnits + benchmarkCost,
+    fallbackCoverage: totalSteps > 0 ? roundMetric(fallbackCoveredSteps / totalSteps) : 0,
+  }
+}
+
+function resolveRunToolStrategy(report: AiOsRunReport): AiOsToolStrategyPlan {
+  const plan = report.plan as AiOsRuntimePlan & { toolStrategy?: AiOsToolStrategyPlan }
+  return plan.toolStrategy ?? createToolStrategyPlan(report.plan.skillPlan)
+}
+
+function summarizeEvolutionQuality(
+  runReports: AiOsRunReport[],
+  benchmark?: AiOsBenchmarkReport,
+): AiOsEvolutionQualitySummary {
+  const runProposals = runReports.flatMap(r => r.plan.evolutionShadow?.proposals ?? [])
+  const benchmarkProposals = benchmark?.summary.totalEvolutionProposals ?? 0
+  const allProposals = runProposals
+  const stageCount = (stage: string) => allProposals.filter(p => p.maturity.stage === stage).length
+  return {
+    proposals: allProposals.length + benchmarkProposals,
+    shadowRules: stageCount('shadow'),
+    candidateHooks: stageCount('candidate-hook'),
+    approvedBlocking: stageCount('approved-blocking'),
+    pendingValidation: allProposals.filter(p => p.maturity.stage === 'shadow' && p.maturity.shadowHits < 10).length,
+  }
+}
+
+function resolveRunEvolutionShadow(report: AiOsRunReport): EvolutionShadowReport {
+  const plan = report.plan as AiOsRuntimePlan & { evolutionShadow?: EvolutionShadowReport }
+  return plan.evolutionShadow ?? buildEvolutionShadowReport([])
+}
+
+function summarizeAdaptiveWorkflowSignal(runReports: AiOsRunReport[], benchmark?: AiOsBenchmarkReport): string {
+  const profiles = runReports.map(r => r.plan.adaptiveWorkflow.profile)
+  const benchmarkProfiles = benchmark?.summary.workflowProfiles ?? []
+  const allProfiles = [...profiles, ...benchmarkProfiles]
+  if (allProfiles.length === 0) return 'No adaptive workflow profile evidence found.'
+  const distribution = new Map<string, number>()
+  for (const p of allProfiles) distribution.set(p, (distribution.get(p) ?? 0) + 1)
+  const parts = [...distribution.entries()].map(([p, n]) => `${p}=${n}`).join(', ')
+  const escalated = runReports.filter(r => r.plan.adaptiveWorkflow.escalationReasons.length > 0).length
+  return `${allProfiles.length} run(s) with profile distribution: ${parts}. ${escalated} run(s) had escalation reasons.`
 }
 
 function summarizeMemoryQuality(items: MemoryProviderRecallItem[]): AiOsMemoryQualitySummary {
@@ -1233,15 +1548,19 @@ function buildRunSteps(plan: AiOsRuntimePlan): AiOsRunStep[] {
     dependsOn: ['runtime-plan'],
   })
 
+  const profile = plan.adaptiveWorkflow.profile
   for (const gate of plan.adaptiveWorkflow.gates) {
     if (steps.has(gate)) continue
+    const gateRequired = profile !== 'light'
     upsert({
       id: gate,
       kind: gate === 'runtime-evidence' ? 'evidence' : 'gate',
       title: `Satisfy ${gate} gate`,
       status: 'planned',
-      required: true,
-      summary: `Required by ${plan.adaptiveWorkflow.strategy} in ${plan.adaptiveWorkflow.mode} mode.`,
+      required: gateRequired,
+      summary: gateRequired
+        ? `Required by ${plan.adaptiveWorkflow.strategy} in ${profile} profile (${plan.adaptiveWorkflow.mode} mode).`
+        : `Advisory in ${profile} profile; not blocking completion.`,
       evidence: [`gate.${gate}`],
       dependsOn: ['runtime-plan'],
     })
@@ -1815,7 +2134,12 @@ function summarizeBenchmark(results: AiOsBenchmarkScenarioResult[]): AiOsBenchma
     totalMemoryItems: results.reduce((sum, result) => sum + result.metrics.memoryItems, 0),
     totalSkillSteps: results.reduce((sum, result) => sum + result.metrics.skillSteps, 0),
     requiredSkillSteps: results.reduce((sum, result) => sum + result.metrics.requiredSkillSteps, 0),
+    totalEvaluatorGates: results.reduce((sum, result) => sum + result.metrics.evaluatorGates, 0),
+    totalToolStrategySteps: results.reduce((sum, result) => sum + result.metrics.toolStrategySteps, 0),
+    totalToolStrategyCostUnits: results.reduce((sum, result) => sum + result.metrics.toolStrategyCostUnits, 0),
+    totalEvolutionProposals: results.reduce((sum, result) => sum + result.metrics.evolutionProposals, 0),
     governanceModes: [...new Set(results.map(result => result.governanceMode))],
+    workflowProfiles: [...new Set(results.map(result => result.workflowProfile))],
     averageTokenUtilization: totalBudget > 0 ? Number((totalEstimatedTokens / totalBudget).toFixed(4)) : 0,
   }
 }
@@ -1823,6 +2147,8 @@ function summarizeBenchmark(results: AiOsBenchmarkScenarioResult[]): AiOsBenchma
 function benchmarkRecommendations(summary: AiOsBenchmarkReport['summary']): string[] {
   const recommendations = ['Use benchmark deltas in release notes only after comparing the same scenario set across versions.']
   if (summary.totalSkillSteps === 0) recommendations.push('Skill routing did not produce steps; inspect skill policy detection.')
+  if (summary.totalEvaluatorGates === 0) recommendations.push('Evaluator intelligence did not require any critique gate; add reasoning-heavy benchmark scenarios before claiming evaluator coverage.')
+  if (summary.totalToolStrategySteps === 0) recommendations.push('Tool strategy did not build a cost/retry/fallback graph; inspect skill execution plan coverage.')
   if (summary.averageTokenUtilization > 0.9) recommendations.push('Context utilization is high; lower budgets or improve relevance filtering before scaling.')
   if (!summary.governanceModes.includes('critical') && !summary.governanceModes.includes('expanded')) {
     recommendations.push('Add at least one high-risk benchmark scenario before claiming adaptive governance coverage.')
@@ -1830,26 +2156,309 @@ function benchmarkRecommendations(summary: AiOsBenchmarkReport['summary']): stri
   return recommendations
 }
 
-function createAdaptiveWorkflow(governance: ProgressiveGovernanceReport, skillPlan: SkillPlan): AiOsAdaptiveWorkflow {
+function createAdaptiveWorkflow(
+  governance: ProgressiveGovernanceReport,
+  skillPlan: SkillPlan,
+  evaluator: AiOsEvaluatorIntelligence,
+  toolStrategy: AiOsToolStrategyPlan,
+): AiOsAdaptiveWorkflow {
+  const routerResult = routeAdaptiveWorkflow({ governance, evaluator, toolStrategy })
   const gates = new Set<string>()
   gates.add('context-compiler')
   gates.add('memory-provider-recall')
   if (skillPlan.required || skillPlan.executionPlan.steps.length > 0) gates.add('skill-evidence')
   gates.add('runtime-evidence')
-  if (governance.effectiveMode === 'expanded' || governance.effectiveMode === 'critical') gates.add('impact-analysis')
-  if (governance.effectiveMode === 'critical') gates.add('security-review')
+  if (routerResult.profile === 'strict' || routerResult.profile === 'critical') gates.add('impact-analysis')
+  if (routerResult.profile === 'critical') gates.add('security-review')
+  for (const gate of evaluator.gates) gates.add(gate.id)
+  for (const override of routerResult.gateOverrides) gates.add(override.gateId)
+  const requiredBehaviors = new Set(governance.requiredBehaviors)
+  for (const constraint of routerResult.behavioralConstraints) {
+    if (constraint.required) requiredBehaviors.add(constraint.description)
+  }
   return {
     strategy: 'risk-adaptive-runtime-v1',
+    profile: routerResult.profile,
+    escalationReasons: routerResult.escalationReasons,
     mode: governance.effectiveMode,
-    requiredBehaviors: governance.requiredBehaviors,
+    requiredBehaviors: Array.from(requiredBehaviors),
     gates: Array.from(gates),
-    exitCriteria: [
-      'Context compiler explains included and omitted sections.',
-      'Memory recall records provider, score, and evidence paths.',
-      'Skill plan lists required proof and fallback policy.',
-      'Governance ROI states benefit and overhead before completion.',
-    ],
+    exitCriteria: routerResult.exitCriteria,
   }
+}
+
+function createEvaluatorIntelligence(input: {
+  task: string
+  files: string[]
+  governance: ProgressiveGovernanceReport
+  skillPlan: SkillPlan
+}): AiOsEvaluatorIntelligence {
+  const haystack = `${input.task} ${input.files.join(' ')} ${input.governance.signals.map(signal => signal.id).join(' ')}`.toLowerCase()
+  const gates: AiOsEvaluatorGate[] = []
+  const addGate = (gate: AiOsEvaluatorGate) => {
+    if (gates.some(existing => existing.id === gate.id)) return
+    gates.push(gate)
+  }
+
+  if (/architecture|architectural|design|strategy|boundary|refactor|runtime|platform|framework|架构|方案|设计|边界|平台/.test(haystack)) {
+    addGate({
+      id: 'architecture-critique',
+      required: input.governance.effectiveMode !== 'minimal',
+      reason: 'Architecture, runtime, platform, or design decisions need an explicit critique before implementation claims.',
+      evidence: matchingEvidence(input.files, /architecture|runtime|framework|docs|readme|src/i),
+    })
+  }
+
+  if (/root cause|diagnose|debug|failure|incident|postmortem|regression|blocked|根因|排查|故障|事故|回归/.test(haystack)) {
+    addGate({
+      id: 'root-cause-review',
+      required: true,
+      reason: 'Failure diagnosis or root-cause work needs an alternate hypothesis check before closing.',
+      evidence: matchingEvidence(input.files, /test|runtime|debug|log|src|docs/i),
+    })
+  }
+
+  if (input.governance.signals.some(signal => signal.id === 'critical-risk-domain' || signal.id === 'critical-file-path')) {
+    addGate({
+      id: 'security-threat-model',
+      required: true,
+      reason: 'Critical auth, data, production, or destructive risk requires threat-model review evidence.',
+      evidence: input.governance.signals.flatMap(signal => signal.evidence).slice(0, 12),
+    })
+  }
+
+  if (/release|publish|deploy|migration|rollback|version|changelog|npm|ci|发版|发布|部署|迁移|回滚/.test(haystack)) {
+    addGate({
+      id: 'release-readiness-review',
+      required: true,
+      reason: 'Release, deployment, migration, or rollback work needs readiness and rollback evidence.',
+      evidence: matchingEvidence(input.files, /package|changelog|release|deploy|migration|workflow|github/i),
+    })
+  }
+
+  const drivers = evaluatorUncertaintyDrivers(input, gates)
+  const uncertaintyScore = evaluatorUncertaintyScore(input, gates, drivers)
+  if (gates.length > 0 || uncertaintyScore >= 0.45) {
+    addGate({
+      id: 'uncertainty-decision-log',
+      required: uncertaintyScore >= 0.45 || input.governance.effectiveMode === 'critical',
+      reason: 'The agent must record uncertainty, rejected alternatives, and evidence gaps before completion.',
+      evidence: drivers,
+    })
+  }
+
+  const riskLevel: AiOsEvaluatorIntelligence['riskLevel'] = uncertaintyScore >= 0.7
+    ? 'high'
+    : uncertaintyScore >= 0.4 || gates.some(gate => gate.required) ? 'medium' : 'low'
+
+  return {
+    strategy: 'evaluator-intelligence-v1',
+    required: gates.some(gate => gate.required),
+    riskLevel,
+    uncertainty: {
+      score: uncertaintyScore,
+      threshold: 0.45,
+      drivers,
+    },
+    gates,
+    recommendations: evaluatorRecommendations(gates, riskLevel),
+  }
+}
+
+function createToolStrategyPlan(skillPlan: SkillPlan): AiOsToolStrategyPlan {
+  const nodes = skillPlan.executionPlan.steps.map(step => {
+    const risks = toolStepRisks(step.id, step.kind)
+    return {
+      id: `${step.kind}:${step.id}`,
+      kind: step.kind,
+      required: step.required,
+      cost: {
+        units: toolStepCostUnits(step.id, step.kind, step.required, risks),
+        timeRisk: risks.timeRisk,
+        sideEffectRisk: risks.sideEffectRisk,
+      },
+      retry: toolStepRetry(step.id, step.kind, risks),
+      fallback: step.fallback,
+      evidence: [step.evidenceRequired],
+    }
+  })
+  const edges = buildToolStrategyEdges(nodes)
+  const summary = {
+    totalSteps: nodes.length,
+    requiredSteps: nodes.filter(node => node.required).length,
+    highRiskSteps: nodes.filter(node => node.cost.timeRisk === 'high' || node.cost.sideEffectRisk === 'high').length,
+    estimatedCostUnits: nodes.reduce((sum, node) => sum + node.cost.units, 0),
+    fallbackCoveredSteps: nodes.filter(node => node.fallback.trim().length > 0).length,
+  }
+  return {
+    strategy: 'tool-strategy-v1',
+    nodes,
+    edges,
+    summary,
+    recommendations: toolStrategyRecommendations(summary),
+  }
+}
+
+function createEvolutionShadowProposals(
+  governance: ProgressiveGovernanceReport,
+  evaluator: AiOsEvaluatorIntelligence,
+): EvolutionShadowReport {
+  const proposals: ShadowRuleProposal[] = []
+
+  // Propose shadow rules from governance risk signals (escalated modes)
+  for (const signal of governance.signals) {
+    if (signal.mode === 'expanded' || signal.mode === 'critical') {
+      proposals.push(proposeShadowRule({
+        title: `Governance signal: ${signal.id}`,
+        description: `Shadow rule from governance signal "${signal.id}" (mode=${signal.mode}). ${signal.reason}`,
+        source: 'failure-learning',
+        sourceEvidenceIds: signal.evidence.length > 0 ? signal.evidence : [signal.id],
+        pattern: signal.id,
+        enforcement: signal.mode === 'critical' ? 'hook' : 'prompt',
+        rollback: `Remove shadow rule for governance signal "${signal.id}" if false positive rate exceeds threshold.`,
+      }))
+    }
+  }
+
+  // Propose shadow rules from high-risk evaluator gates
+  for (const gate of evaluator.gates) {
+    if (gate.required && (gate.id === 'security-threat-model' || gate.id === 'root-cause-review')) {
+      proposals.push(proposeShadowRule({
+        title: `Evaluator gate: ${gate.id}`,
+        description: `Shadow rule from required evaluator gate "${gate.id}". ${gate.reason}`,
+        source: 'lesson-extraction',
+        sourceEvidenceIds: [gate.id],
+        pattern: gate.id,
+        enforcement: 'prompt',
+        rollback: `Remove shadow rule for evaluator gate "${gate.id}" if it does not reduce defect recurrence.`,
+      }))
+    }
+  }
+
+  return buildEvolutionShadowReport(proposals)
+}
+
+function toolStepRisks(
+  id: string,
+  kind: SkillPlan['executionPlan']['steps'][number]['kind'],
+): Pick<AiOsToolStrategyNode['cost'], 'timeRisk' | 'sideEffectRisk'> {
+  const normalized = id.toLowerCase()
+  if (/desktop|cua|deploy|publish|release|migration|rollback|delete|drop|external|cli/.test(normalized)) {
+    return { timeRisk: 'high', sideEffectRisk: 'high' }
+  }
+  if (/browser|e2e|playwright|screenshot|visual|security|threat|audit/.test(normalized)) {
+    return { timeRisk: 'medium', sideEffectRisk: kind === 'verification' ? 'medium' : 'low' }
+  }
+  if (kind === 'artifact') return { timeRisk: 'low', sideEffectRisk: 'low' }
+  if (kind === 'verification') return { timeRisk: 'medium', sideEffectRisk: 'medium' }
+  return { timeRisk: 'medium', sideEffectRisk: 'low' }
+}
+
+function toolStepCostUnits(
+  id: string,
+  kind: SkillPlan['executionPlan']['steps'][number]['kind'],
+  required: boolean,
+  risks: Pick<AiOsToolStrategyNode['cost'], 'timeRisk' | 'sideEffectRisk'>,
+): number {
+  let units = kind === 'artifact' ? 1 : kind === 'verification' ? 2 : 3
+  if (required) units += 1
+  if (risks.timeRisk === 'medium') units += 1
+  if (risks.timeRisk === 'high') units += 2
+  if (risks.sideEffectRisk === 'high') units += 2
+  if (/browser|e2e|desktop|external|cli|security|audit/i.test(id)) units += 1
+  return units
+}
+
+function toolStepRetry(
+  id: string,
+  kind: SkillPlan['executionPlan']['steps'][number]['kind'],
+  risks: Pick<AiOsToolStrategyNode['cost'], 'timeRisk' | 'sideEffectRisk'>,
+): AiOsToolStrategyNode['retry'] {
+  if (risks.sideEffectRisk === 'high') return { maxAttempts: 1, backoff: 'manual-review' }
+  if (kind === 'verification') return { maxAttempts: /browser|e2e|playwright|network/i.test(id) ? 2 : 1, backoff: 'linear' }
+  if (kind === 'skill') return { maxAttempts: 1, backoff: 'manual-review' }
+  return { maxAttempts: 1, backoff: 'none' }
+}
+
+function buildToolStrategyEdges(nodes: AiOsToolStrategyNode[]): AiOsToolStrategyEdge[] {
+  const edges: AiOsToolStrategyEdge[] = []
+  const skillNodes = nodes.filter(node => node.kind === 'skill')
+  const artifactNodes = nodes.filter(node => node.kind === 'artifact')
+  const verificationNodes = nodes.filter(node => node.kind === 'verification')
+  for (const artifact of artifactNodes) {
+    for (const skill of skillNodes.filter(node => node.required || artifact.required)) {
+      edges.push({ from: skill.id, to: artifact.id, reason: 'Skill execution must leave artifact evidence when both are required or review-relevant.' })
+    }
+  }
+  for (const verification of verificationNodes) {
+    for (const artifact of artifactNodes.filter(node => node.required)) {
+      edges.push({ from: artifact.id, to: verification.id, reason: 'Required artifacts should exist before verification evidence is accepted.' })
+    }
+  }
+  return edges
+}
+
+function toolStrategyRecommendations(summary: AiOsToolStrategyPlan['summary']): string[] {
+  if (summary.totalSteps === 0) return ['No tool strategy required; standard verification is enough for this task.']
+  const recommendations = ['Execute required tool strategy nodes before claiming task completion.']
+  if (summary.highRiskSteps > 0) recommendations.push('High-risk tool steps require manual review or explicit safe-mode evidence before retry.')
+  if (summary.fallbackCoveredSteps < summary.totalSteps) recommendations.push('Fill fallback policy gaps before autonomous execution.')
+  return recommendations
+}
+
+function matchingEvidence(files: string[], pattern: RegExp): string[] {
+  return files.filter(file => pattern.test(file)).slice(0, 12)
+}
+
+function evaluatorUncertaintyDrivers(
+  input: {
+    task: string
+    files: string[]
+    governance: ProgressiveGovernanceReport
+    skillPlan: SkillPlan
+  },
+  gates: AiOsEvaluatorGate[],
+): string[] {
+  const drivers = new Set<string>()
+  if (input.governance.effectiveMode === 'critical') drivers.add('critical-governance-mode')
+  if (input.governance.effectiveMode === 'expanded') drivers.add('expanded-governance-mode')
+  if (input.files.length >= 6) drivers.add('wide-file-scope')
+  if (input.skillPlan.executionPlan.steps.some(step => step.required)) drivers.add('required-skill-evidence')
+  for (const gate of gates) drivers.add(gate.id)
+  if (/unknown|uncertain|maybe|assume|guess|可能|不确定|假设/.test(input.task.toLowerCase())) drivers.add('explicit-uncertainty-language')
+  return [...drivers]
+}
+
+function evaluatorUncertaintyScore(
+  input: {
+    files: string[]
+    governance: ProgressiveGovernanceReport
+    skillPlan: SkillPlan
+  },
+  gates: AiOsEvaluatorGate[],
+  drivers: string[],
+): number {
+  let score = 0.15
+  if (input.governance.effectiveMode === 'standard') score += 0.1
+  if (input.governance.effectiveMode === 'expanded') score += 0.25
+  if (input.governance.effectiveMode === 'critical') score += 0.4
+  score += Math.min(0.2, input.files.length * 0.025)
+  score += Math.min(0.2, gates.filter(gate => gate.required).length * 0.08)
+  if (input.skillPlan.executionPlan.steps.some(step => step.required)) score += 0.08
+  if (drivers.includes('explicit-uncertainty-language')) score += 0.12
+  return roundMetric(clampUnit(score))
+}
+
+function evaluatorRecommendations(
+  gates: AiOsEvaluatorGate[],
+  riskLevel: AiOsEvaluatorIntelligence['riskLevel'],
+): string[] {
+  if (gates.length === 0) return ['No evaluator gate required; keep lightweight verification evidence for low-risk work.']
+  const recommendations = ['Record evaluator evidence before promoting reasoning-heavy implementation or release claims.']
+  if (riskLevel === 'high') recommendations.push('Require reviewer sign-off for uncertainty, rejected alternatives, and rollback or mitigation path.')
+  if (gates.some(gate => gate.id === 'root-cause-review')) recommendations.push('List competing root-cause hypotheses and why each was accepted or rejected.')
+  if (gates.some(gate => gate.id === 'security-threat-model')) recommendations.push('Attach threat model or security-review evidence before guarded completion.')
+  return recommendations
 }
 
 function recommendations(options: {
@@ -1857,6 +2466,8 @@ function recommendations(options: {
   context: BudgetedContextPack
   memoryRecall: Awaited<ReturnType<typeof recallMemoryProviders>>
   skillPlan: SkillPlan
+  evaluator: AiOsEvaluatorIntelligence
+  toolStrategy: AiOsToolStrategyPlan
 }): string[] {
   const output: string[] = []
   if (options.context.compiler?.estimatedTokenSavings) {
@@ -1870,6 +2481,12 @@ function recommendations(options: {
   }
   if (options.governance.effectiveMode === 'critical') {
     output.push('Critical workflow mode requires security review and rollback or disable strategy.')
+  }
+  if (options.evaluator.required) {
+    output.push(`Evaluator intelligence requires ${options.evaluator.gates.length} critique gate(s); record uncertainty and review evidence before promotion.`)
+  }
+  if (options.toolStrategy.summary.totalSteps > 0) {
+    output.push(`Tool strategy planner created ${options.toolStrategy.summary.totalSteps} cost/retry/fallback node(s); execute required nodes with evidence.`)
   }
   return output
 }
