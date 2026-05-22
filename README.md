@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.36.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.37.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.36.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.37.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.36.0
+# SCALE Engine v0.37.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -54,6 +54,13 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 - **Task Dependency Graph**：DAG 依赖声明 + 拓扑排序（Kahn 算法 + 层级追踪）+ 环检测，支持 blocks/soft-dep/data-flow 三种依赖类型，`getBlockedTasks()`/`getReadyTasks()` 实时调度。
 - **Session Coordinator**：多会话并行协调 — 文件重叠风险评估（关键文件→高风险，3+ 会话→高风险），冲突记录与解决追踪，advisory/warn/block 三级执行策略。
 - **Cross-Repo Orchestrator**：多仓库（MOE）Git 工作流编排 — 协调分支管理、跨仓库变更追踪、拓扑排序合并计划、协调 ship 流水线（merge→test→tag→push）。
+
+**v0.37.0 — Commit Discipline**
+
+- **Commit Discipline**：提交纪律引擎，防止 Agent 攒代码不提交。监控 git 状态（staged/unstaged/untracked），双阈值告警（warn 10 文件/30 分钟，block 25 文件/60 分钟）。
+- `suggestGroups()` 按模块路径自动分组未提交文件，生成 conventional commit 建议。
+- `enforceBeforeTaskSwitch()` 任务切换前强制检查，有未提交代码则 warn/block。
+- `recordCommit()` 追踪会话提交节奏（提交数、平均文件数）。
 
 ```bash
 # Ship 闭环

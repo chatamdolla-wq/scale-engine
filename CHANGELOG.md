@@ -1,3 +1,19 @@
+## 0.37.0 - 2026-05-22
+
+### Commit Discipline
+
+- Added `CommitDiscipline` — commit discipline engine that prevents agents from accumulating uncommitted changes.
+- Monitors git state: staged, unstaged, and untracked file counts; minutes since last commit.
+- Dual-threshold enforcement: warn (default 10 files / 30 min) and block (25 files / 60 min).
+- `suggestGroups()` groups uncommitted files by module path (workflow, memory, tests, docs, deps, etc.) with conventional commit message suggestions.
+- `enforceBeforeTaskSwitch()` blocks or warns when switching tasks with uncommitted work.
+- `recordCommit()` tracks commit cadence per session (commits count, avg files per commit).
+- Task switch violation detection: warns when leaving a task without committing.
+- Configurable thresholds and enforcement behavior via `CommitDisciplineConfig`.
+- Graceful degradation for non-git directories.
+
+---
+
 ## 0.36.0 - 2026-05-22
 
 ### Task Dependency Graph
