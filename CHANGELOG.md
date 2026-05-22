@@ -1,3 +1,32 @@
+## 0.34.0 - 2026-05-22
+
+### Cross-Agent Execution Ledger
+
+- Added `ExecutionLedger` — unified execution timeline across all agents and sessions.
+- Append-only JSONL storage at `.scale/ledger/events.jsonl`.
+- Supports query by agentId, sessionId, taskId, event type, and timestamp.
+- `summarize()` produces agent list, session list, task count, violation count, and timeline.
+- Event types: agent.started/ended, task.started/completed/blocked, tool.invoked, gate.checked, evidence.recorded, policy.violation, mcp.health-check.
+
+### Workspace Policy Runtime Enforcement
+
+- Added `WorkspacePolicyEngine` — runtime workspace policy engine with file access rules, resource locks, and agent boundaries.
+- Policies support: glob patterns, owner-only access, allowedAgents lists, enforcement levels (advisory/warn/block).
+- Conflict resolution modes: first-wins, owner-priority, block-all.
+- Policy violations tracked with timestamps and agent context.
+- Loads configuration from `.scale/workspace-policy.yaml`.
+
+### MCP Lifecycle Governance
+
+- Added `McpGovernor` — MCP server lifecycle management with health checks, security scanning, and policy enforcement.
+- Server registration with transport type, security level (trusted/review/untrusted), and capabilities.
+- Health checks with latency tracking and status reporting.
+- Security scanning detects: untrusted servers, command injection risks, insecure transport, missing capabilities.
+- Policy enforcement: blocks untrusted servers when configured, checks tool capability access.
+- Loads configuration from `.scale/mcp-servers.yaml`.
+
+---
+
 ## 0.33.0 - 2026-05-21
 
 ### Role Skills
