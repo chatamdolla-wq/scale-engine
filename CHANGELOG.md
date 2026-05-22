@@ -1,3 +1,34 @@
+## 0.35.0 - 2026-05-22
+
+### Memory Intelligence
+
+- Added `MemoryIntelligence` — unified memory retrieval quality engine with cross-provider scoring, conflict detection, and freshness management.
+- Quality scoring with 6 signals: confidence, relevance, freshness, evidence-backed, cross-provider, no-contradiction.
+- Weighted overall score: confidence 25%, relevance 25%, freshness 20%, evidence-backed 15%, no-contradiction 10%, cross-provider 5%.
+- Conflict detection by title normalization — same topic with different summaries triggers conflict resolution (newest-wins or highest-confidence).
+- Freshness decay: expired items (>7 days) penalized 70%, stale items (>3.5 days) penalized 30%.
+- Provider breakdown statistics with per-provider count and average quality.
+
+### Adaptive Workflow Templates
+
+- Added `WorkflowTemplates` — composable workflow template system with profile-based selection.
+- 4 built-in templates: light-docs (3 steps), standard-code (5 steps), strict-feature (6 steps), critical-security (6 steps).
+- Template selection by profile, task keywords (security/crypto/auth → critical), risk factor count, and task level.
+- `customizeTemplate()` for overriding steps, exit criteria, and tags.
+- `formatTemplateForAgent()` produces human-readable template descriptions with required/optional markers.
+- `AdaptiveWorkflowRouter` now outputs `templateId` linking to the matched workflow template.
+
+### Governance ROI Report
+
+- Added `GovernanceRoi` — end-to-end governance ROI metrics: token cost vs quality vs gate friction.
+- Aggregates from TaskMetricsStore, ModelUsageLedger, and EvidenceStore.
+- Overall score (0-100): first-pass rate 30%, gate pass rate 20%, evidence completeness 20%, gate block rate 15%, context savings 10%, fix iteration bonus 5%.
+- `compareRoiReports()` computes deltas between baseline and current reports.
+- `summarizeGovernanceRoi()` produces formatted markdown report.
+- Integrated into `AiOsRunReport` as `governanceRoi` field.
+
+---
+
 ## 0.34.0 - 2026-05-22
 
 ### Cross-Agent Execution Ledger

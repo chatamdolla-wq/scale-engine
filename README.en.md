@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.34.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.35.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.34.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.35.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.34.0
+# SCALE Engine v0.35.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -42,6 +42,12 @@ Language: [English](README.en.md) | [Chinese](README.md)
 - **Execution Ledger**: Unified cross-agent execution timeline (`.scale/ledger/events.jsonl`), queryable by agent/session/task/type with summary aggregation.
 - **Workspace Policy**: Runtime workspace policy engine with glob pattern matching, owner/allowedAgents access control, and advisory/warn/block enforcement levels.
 - **MCP Governance**: MCP server lifecycle management — registration, health checks, security scanning (command injection, insecure transport, untrusted levels), and capability access control.
+
+**v0.35.0 — Memory Intelligence + Workflow Templates + Governance ROI**
+
+- **Memory Intelligence**: Unified memory retrieval quality engine with 6-signal scoring (confidence/relevance/freshness/evidence-backed/cross-provider/no-contradiction), cross-provider conflict detection, and freshness decay.
+- **Workflow Templates**: Composable workflow template system with 4 built-in templates (light-docs/standard-code/strict-feature/critical-security), auto-selected by profile + task keywords + risk level.
+- **Governance ROI**: End-to-end governance ROI metrics — token cost vs quality vs gate friction, overall score (0-100), with baseline comparison support.
 
 ```bash
 # Ship pipeline
