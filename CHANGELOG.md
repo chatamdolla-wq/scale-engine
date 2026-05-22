@@ -1,3 +1,42 @@
+## 0.32.0 - 2026-05-21
+
+### Ship Pipeline
+
+- Added `ShipPipeline` — full ship closure pipeline with 8 steps: sync-base → test → review-diff → bump-version → changelog → commit → push → create-pr.
+- Supports `--dry-run` mode, `--skip` steps, and `--versionBump` (patch/minor/major).
+- Reuses existing infrastructure: `runSafeCommand()`, `resolveVerificationTargets()`, `parseChangedFiles()`, `collectSessionPreamble()`.
+
+### Diff-Based Test Selection
+
+- Added `DiffTestSelector` — selects tests based on changed files using touchfile glob declarations.
+- Supports `gate` and `periodic` tiers; global config changes trigger all tests.
+- Added `formatTestSelection()` for human-readable selection reports.
+
+---
+
+## 0.31.0 - 2026-05-21
+
+### Skill Frontmatter
+
+- Added `SkillFrontmatter` — YAML-based declarative skill definitions parsed from SKILL.md files.
+- Supports `name`, `description`, `preamble-tier`, `allowed-tools`, `triggers`, `domain`, `priority` fields.
+- Integrated into `SkillRegistry.loadFromFrontmatter()` and `SkillDiscovery`.
+
+### Session Learnings
+
+- Added `SessionLearnings` — cross-session knowledge persistence in `.scale/learnings/{project-slug}.jsonl`.
+- Categories: failure, pattern, preference, environment.
+- Supports search by tags/category, pruning by age/relevance decay, JSONL export.
+- `autoLearnFromRunReport()` extracts learnings from blocked runs and verification failures.
+
+### Session Preamble
+
+- Added `SessionPreamble` — automatic environment context collection before workflow execution.
+- Collects: git branch, git root, project slug, scale version, active run count, learning count, verification profile, governance mode.
+- Integrated into `AiOsRuntime.createAiOsPlan()`.
+
+---
+
 ## 0.30.0 - 2026-05-21
 
 ### AI OS intelligence signals

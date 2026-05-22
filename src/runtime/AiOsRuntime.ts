@@ -42,6 +42,8 @@ import {
   type VerificationCommandName,
 } from '../workflow/VerificationProfile.js'
 import { RuntimeEvidenceLedger } from './RuntimeEvidenceLedger.js'
+import { loadRelevantLearnings, type LearningEntry } from '../evolution/SessionLearnings.js'
+import { collectSessionPreamble, type SessionPreamble } from '../workflow/SessionPreamble.js'
 
 export interface AiOsRuntimeInput {
   projectDir?: string
@@ -164,6 +166,7 @@ export interface AiOsRuntimePlan {
     files: string[]
     services: string[]
   }
+  preamble: SessionPreamble
   governance: ProgressiveGovernanceReport
   adaptiveWorkflow: AiOsAdaptiveWorkflow
   evaluator: AiOsEvaluatorIntelligence
@@ -172,6 +175,7 @@ export interface AiOsRuntimePlan {
   context: BudgetedContextPack
   memory: AiOsMemoryRuntimeSummary
   skillPlan: SkillPlan
+  sessionLearnings: LearningEntry[]
   roi: GovernanceRoiReport
   recommendations: string[]
 }
@@ -581,6 +585,9 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
   const taskId = input.taskId
   const budget = input.budget ?? 8_000
 
+  const preamble = collectSessionPreamble({ projectDir, scaleDir })
+  const sessionLearnings = loadRelevantLearnings({ projectDir, scaleDir, task: input.task, limit: 5 })
+
   const governance = evaluateProgressiveGovernance({
     task: input.task,
     changedFiles: files,
@@ -654,6 +661,7 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
       files,
       services,
     },
+    preamble,
     governance,
     adaptiveWorkflow,
     evaluator,
@@ -669,6 +677,7 @@ export async function createAiOsPlan(input: AiOsRuntimeInput): Promise<AiOsRunti
       contextPack: memoryPack,
     },
     skillPlan,
+    sessionLearnings,
     roi,
     recommendations: recommendations({ governance, context, memoryRecall, skillPlan, evaluator, toolStrategy }),
   }

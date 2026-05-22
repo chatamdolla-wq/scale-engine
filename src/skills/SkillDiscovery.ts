@@ -445,10 +445,24 @@ export class SkillDiscovery implements ISkillDiscovery {
   private extractSkillDescription(skillPath: string): string {
     try {
       const content = readFileSync(skillPath, 'utf-8')
+      // Try frontmatter first
+      const { parseSkillFrontmatter } = require('./SkillFrontmatter.js')
+      const parsed = parseSkillFrontmatter(content)
+      if (parsed.frontmatter?.description) return parsed.frontmatter.description
+      // Fallback to Purpose: regex
       const purposeMatch = content.match(/Purpose:\s*(.+)/)
       return purposeMatch ? purposeMatch[1].trim() : ''
     } catch {
       return ''
     }
+  }
+
+  /**
+   * Scan a directory for SKILL.md files with frontmatter and register them.
+   * Returns the number of new skills registered.
+   */
+  async scanAndRegisterFrontmatter(dir: string): Promise<number> {
+    if (!this.registry) return 0
+    return this.registry.loadFromFrontmatter(dir)
   }
 }
