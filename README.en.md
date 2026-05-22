@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.27.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.33.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.27.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.33.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.27.1
+# SCALE Engine v0.33.0
 
 SCALE Engine makes AI coding agents follow engineering rules through executable workflow gates, evidence files, and review constraints instead of relying on prompt discipline alone. It helps humans see what the agent explored, planned, verified, skipped, and why a task is or is not ready to ship.
 
@@ -16,6 +16,38 @@ Repository: https://github.com/hongmaple0820/scale-engine
 Mirror: https://gitee.com/hongmaple/scale-engine
 npm: https://www.npmjs.com/package/@hongmaple0820/scale-engine
 Language: [English](README.en.md) | [Chinese](README.md)
+
+## 0.31.0 ~ 0.33.0 gstack-Inspired: Declarative Skills + Cross-Session Learning + Ship Pipeline + Role Review + Security Audit
+
+> Inspired by [gstack](https://github.com/garrytan/gstack), integrating role-based skills, cross-session learning, ship closure, diff-based test selection, and security audit into SCALE's governance architecture.
+
+**v0.31.0 — Skill Frontmatter + Session Learnings + Preamble**
+
+- **Skill Frontmatter**: YAML-based declarative skill definitions parsed from SKILL.md files with `name`, `description`, `triggers`, `allowed-tools` fields.
+- **Session Learnings**: Cross-session knowledge persistence (`.scale/learnings/{slug}.jsonl`) with failure/pattern/preference/environment categories. Auto-extracts learnings from blocked runs.
+- **Session Preamble**: Automatic environment context collection before workflow execution (git branch, active runs, learning count, verification profile).
+
+**v0.32.0 — Ship Pipeline + Diff-Based Test Selection**
+
+- **Ship Pipeline**: 8-step ship closure (sync-base → test → review-diff → bump-version → changelog → commit → push → create-pr) with `--dry-run` and `--skip` support.
+- **Diff Test Selector**: Touchfile-based test selection by git diff — only run tests affected by changed files.
+
+**v0.33.0 — Role Skills + Security Audit**
+
+- **Role Skills**: 6 role-based review perspectives (eng-manager, security-reviewer, qa-lead, release-engineer, design-reviewer, ceo-reviewer), each with unique checklists and risk focus areas.
+- **Security Audit**: OWASP Top 10 + STRIDE security audit engine with pattern-based detection for SQL injection, hardcoded credentials, XSS, weak crypto, path traversal, and more.
+
+```bash
+# Ship pipeline
+scale ship --dry-run
+scale ship --skip sync-base,changelog
+
+# Security audit
+scale security-audit --files src/auth/
+
+# Role-based review
+scale review --role security-reviewer --task-id TASK-123
+```
 
 ## 0.27.0 AI OS Runtime
 
@@ -34,6 +66,8 @@ scale ai-os plan \
 This is not a claim that SCALE replaces human judgment. It is the first testable, explainable, and measurable runtime planning layer for the AI Engineering OS direction.
 
 The near-term target is `0.28.0` as a usable closed-loop enhancement: connect `ai-os plan`, `ai-os run`, verification recommendations, failure learning, dashboard, benchmark, migration, and adoption into one verifiable loop. The long-range target is an AI Engineering OS beta in 8-12 weeks, a stable governance runtime in 3-6 months, and a cross-agent engineering operating layer in 6-12 months. See the full roadmap in [AI Engineering OS Strategic Positioning](docs/AI_ENGINEERING_OS_POSITIONING.md).
+
+The first 0.30.0 governance-maturity slice adds Evaluator Intelligence and Tool Strategy Planner to the AI OS runtime. `scale ai-os plan` now detects reasoning-heavy architecture, root-cause, security, and release work, then adds critique, threat-model, release-readiness, and uncertainty decision-log gates to the adaptive workflow. It also turns skill/artifact/verification steps into a cost, retry, fallback, side-effect, and evidence graph. `scale ai-os status` surfaces evaluator gate count, uncertainty, tool-strategy cost, and fallback coverage so reviewers can see whether reasoning and tool risks were governed instead of hidden in prose.
 
 The current 0.27.0 beta runtime now includes the controlled run entry point: `scale ai-os run --dry-run` reuses the unified plan, produces execution steps, evidence requirements, next actions, and writes the run report to `.scale/ai-os/runs/`. When real verification is required, use guarded mode with explicit `--verify` commands. Commands run through the safe runner by default and are recorded as runtime evidence; failed verification returns a `blocked` JSON report and a non-zero CLI exit code.
 

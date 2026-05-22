@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.27.1-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.33.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/workflows-10-green?style=flat-square" alt="workflows" />
   <img src="https://img.shields.io/badge/detectors-19-red?style=flat-square" alt="detectors" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.27.1-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.33.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
-# SCALE Engine v0.27.1
+# SCALE Engine v0.33.0
 
 SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探索、规划、实现、验证、评审、发版这些要求变成可执行的命令、门禁和证据文件，让人类可以看见 Agent 做了什么、跳过了什么、为什么能交付或不能交付。
 
@@ -17,7 +17,41 @@ SCALE Engine 让 AI Agent 不再只靠“自觉”遵守工程规范。它把探
 npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 语言：[中文](README.md) | [English](README.en.md)
 
+## 0.31.0 ~ 0.33.0 gstack 借鉴：Skill 声明化 + 跨会话学习 + Ship 闭环 + 角色审查 + 安全审计
+
+> 受 [gstack](https://github.com/garrytan/gstack) 启发，将角色化 skill、跨 session 自学习、ship 闭环、diff-based test selection 和安全审计融入 SCALE 治理架构。
+
+**v0.31.0 — Skill Frontmatter + Session Learnings + Preamble**
+
+- **Skill Frontmatter**：YAML 声明式 skill 定义，从 SKILL.md 解析 `name`、`description`、`triggers`、`allowed-tools` 等字段。
+- **Session Learnings**：跨会话知识持久化（`.scale/learnings/{slug}.jsonl`），支持 failure/pattern/preference/environment 分类，自动从 blocked run 提取经验。
+- **Session Preamble**：执行前自动收集环境上下文（git branch、活跃 run 数、learning 数、verification profile）。
+
+**v0.32.0 — Ship Pipeline + Diff-Based Test Selection**
+
+- **Ship Pipeline**：8 步 ship 闭环（sync-base → test → review-diff → bump-version → changelog → commit → push → create-pr），支持 `--dry-run` 和 `--skip`。
+- **Diff Test Selector**：基于 touchfile 声明的 diff 测试选择，只跑受变更影响的测试。
+
+**v0.33.0 — Role Skills + Security Audit**
+
+- **Role Skills**：6 个角色化审查视角（eng-manager、security-reviewer、qa-lead、release-engineer、design-reviewer、ceo-reviewer），各有独立 checklist 和风险焦点。
+- **Security Audit**：OWASP Top 10 + STRIDE 安全审计引擎，模式匹配检测 SQL 注入、硬编码密钥、XSS、弱加密、路径遍历等。
+
+```bash
+# Ship 闭环
+scale ship --dry-run
+scale ship --skip sync-base,changelog
+
+# 安全审计
+scale security-audit --files src/auth/
+
+# 角色审查
+scale review --role security-reviewer --task-id TASK-123
+```
+
 ## 0.27.0 AI OS Runtime
+
+> 0.30.0 治理成熟度预览：AI OS Runtime 已加入 Evaluator Intelligence 和 Tool Strategy Planner。`scale ai-os plan` 会识别架构、根因、安全、发版等推理风险任务，并把 architecture critique、root-cause review、security threat model、release readiness 和 uncertainty decision log 加入 adaptive workflow；同时把 skill、artifact、verification 步骤编译成 cost、retry、fallback、side-effect 和 evidence graph。`scale ai-os status` 会展示 evaluator gate、uncertainty、tool strategy cost 和 fallback coverage，让评审者看到推理风险和工具风险是否被门禁治理，而不是只藏在文字说明里。
 
 0.27.0 把战略方向落成了一个可执行入口：`scale ai-os plan`。它会在一次命令里同时生成风险治理模式、Context Compiler 预算结果、Memory Provider 召回结果、Skill Routing 执行计划和 Governance ROI，让 Agent 在开始任务前就知道应该加载什么上下文、调用什么能力、补什么证据、哪些风险会升级门禁。
 
@@ -216,9 +250,15 @@ scale artifact doctor --artifact-dir .planning/tasks/2026-05-18-oauth-hardening
 - Governance Packs：`standard`、`project-scaffold`、`moe-workspace`、`resource-governance`、`go-service-matrix`、`node-library`、`frontend-app`。
 - Resource Governance：治理文档、图片、视频、报告、测试脚本、临时脚本、HTML artifact 和本地配置。
 - Skill and Tool Orchestration：把 UI/UX、联网研究、浏览器 E2E、Chrome DevTools MCP、桌面自动化、外部 Agent CLI 纳入流程。
-- Runtime Evidence：记录会话、命令、工具、浏览器、skill 和最终交付证据，阻断“没有证据却声称完成”。
+- Runtime Evidence：记录会话、命令、工具、浏览器、skill 和最终交付证据，阻断”没有证据却声称完成”。
 - Engineering Standards：扫描日志噪音、敏感信息、注入风险、ORM/数据库、框架边界、测试严谨性和部署风险。
 - HTML Artifacts：Markdown 仍是可维护源文件，HTML 用于评审、对比、状态报告和发版交接。
+- **Skill Frontmatter**：YAML 声明式 skill 定义，支持 triggers、allowed-tools、domain、priority 字段。
+- **Session Learnings**：跨会话知识持久化，自动从失败 run 提取经验，支持搜索、过期清理。
+- **Ship Pipeline**：8 步 ship 闭环，支持 dry-run、skip steps、version bump。
+- **Diff Test Selection**：基于 touchfile 的 diff 测试选择，只跑受影响的测试。
+- **Role Skills**：6 个角色化审查视角（eng-manager、security-reviewer、qa-lead、release-engineer、design-reviewer、ceo-reviewer）。
+- **Security Audit**：OWASP Top 10 + STRIDE 安全审计引擎，模式匹配检测注入、密钥泄露、XSS 等风险。
 
 ## 安装
 

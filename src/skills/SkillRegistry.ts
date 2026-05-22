@@ -45,6 +45,17 @@ export interface SkillDefinition {
   installed: boolean
   installedAt?: number
   source?: string
+  frontmatter?: SkillFrontmatterMeta
+}
+
+export interface SkillFrontmatterMeta {
+  name: string
+  'preamble-tier'?: number
+  description: string
+  'allowed-tools'?: string[]
+  triggers?: string[]
+  domain?: SkillDomain
+  priority?: number
 }
 
 export interface SkillRecommendation {
@@ -207,4 +218,17 @@ export class SkillRegistry implements ISkillRegistry {
 
   registerBatch(skills: SkillDefinition[]): void { for (const skill of skills) this.register(skill) }
   clear(): void { this.skills.clear(); this.eventBus.emit('skills.cleared', { clearedAt: Date.now() }) }
+
+  async loadFromFrontmatter(dir: string): Promise<number> {
+    const { scanFrontmatterSkills } = await import('./SkillFrontmatter.js')
+    const scanned = scanFrontmatterSkills(dir)
+    let count = 0
+    for (const { definition } of scanned) {
+      if (!this.skills.has(definition.id)) {
+        this.register(definition)
+        count++
+      }
+    }
+    return count
+  }
 }
