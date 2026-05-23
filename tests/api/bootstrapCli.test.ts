@@ -48,6 +48,7 @@ describe('bootstrap CLI', () => {
       apply: boolean
       packIds: string[]
       summary: { total: number; ready: number; manualReview: number }
+      runtimeChecks: Array<{ id: string; status: string; requiredFor: string[] }>
       postChecks: Array<unknown>
       postCheckSummary: { total: number; passed: number; warned: number; failed: number }
       items: Array<{ id: string; status: string; installCommand?: string }>
@@ -57,16 +58,22 @@ describe('bootstrap CLI', () => {
     }
     expect(report.apply).toBe(false)
     expect(report.packIds).toEqual(['ui'])
-    expect(report.summary.total).toBe(3)
-    expect(report.summary.ready).toBe(3)
+    expect(report.summary.total).toBe(2)
+    expect(report.summary.ready).toBe(2)
     expect(report.summary.manualReview).toBe(0)
+    expect(report.runtimeChecks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'node', status: 'ok' }),
+      expect.objectContaining({ id: 'npx', status: 'ok' }),
+    ]))
+    expect(report.runtimeChecks.find(check => check.id === 'npx')?.requiredFor).toEqual(['awesome-design-md', 'ui-ux-pro-max'])
     expect(report.postChecks).toEqual([])
     expect(report.postCheckSummary).toMatchObject({ total: 0, passed: 0, warned: 0, failed: 0 })
-    expect(report.items.map(item => item.id)).toEqual(['awesome-design-md', 'ui-ux-pro-max', 'frontend-design'])
+    expect(report.items.map(item => item.id)).toEqual(['awesome-design-md', 'ui-ux-pro-max'])
     expect(report.items.every(item => item.status === 'ready')).toBe(true)
-    expect(report.items.every(item => item.installCommand?.includes('npx skills add'))).toBe(true)
+    expect(report.items.find(item => item.id === 'awesome-design-md')?.installCommand).toContain('npx degit VoltAgent/awesome-design-md')
+    expect(report.items.find(item => item.id === 'ui-ux-pro-max')?.installCommand).toBe('npx uipro-cli init --ai codex')
     expect(report.postCheckCommands).toEqual(expect.arrayContaining([
-      'scale tool doctor --tools awesome-design-md,ui-ux-pro-max,frontend-design --json',
+      'scale tool doctor --tools awesome-design-md,ui-ux-pro-max --json',
       'scale skill doctor --json',
       'scale doctor',
     ]))
@@ -75,7 +82,84 @@ describe('bootstrap CLI', () => {
     ]))
     expect(report.recommendations).toEqual(expect.arrayContaining([
       'Re-run with --apply to install all ready dependencies in one pass.',
+      'Use awesome-design-md as the source of DESIGN.md, brand direction, and visual-language selection.',
     ]))
+  }, 30_000)
+
+  it('renders bootstrap output in Chinese by default and English when requested', async () => {
+    const scaleDir = makeDir('scale-bootstrap-cli-scale-')
+    const projectDir = makeDir('scale-bootstrap-cli-project-')
+    const homeDir = makeDir('scale-bootstrap-cli-home-')
+
+    const zh = await runScale(['bootstrap', 'deps', '--dir', projectDir, '--pack', 'ui'], scaleDir, projectDir, homeDir)
+    const en = await runScale(['bootstrap', 'deps', '--dir', projectDir, '--pack', 'ui', '--lang', 'en'], scaleDir, projectDir, homeDir)
+
+    expect(zh.exitCode).toBe(0)
+    expect(zh.stdout).toContain('SCALE 依赖安装计划')
+    expect(zh.stdout).toContain('执行安装: 否')
+    expect(zh.stdout).toContain('运行时依赖:')
+    expect(en.exitCode).toBe(0)
+    expect(en.stdout).toContain('SCALE Dependency Bootstrap')
+    expect(en.stdout).toContain('Apply: false')
+    expect(en.stdout).toContain('Runtime dependencies:')
+  }, 30_000)
+
+  it('provides setup as a user-facing wrapper with default Chinese language', async () => {
+    const scaleDir = makeDir('scale-bootstrap-cli-scale-')
+    const projectDir = makeDir('scale-bootstrap-cli-project-')
+    const homeDir = makeDir('scale-bootstrap-cli-home-')
+
+    const result = await runScale(['setup', '--dir', projectDir, '--pack', 'ui', '--json'], scaleDir, projectDir, homeDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = JSON.parse(result.stdout) as {
+      lang: string
+      applied: boolean
+      final: { packIds: string[]; runtimeChecks: Array<{ id: string }>; items: Array<{ id: string }> }
+    }
+    expect(report.lang).toBe('zh')
+    expect(report.applied).toBe(false)
+    expect(report.final.packIds).toEqual(['ui'])
+    expect(report.final.runtimeChecks.map(check => check.id)).toEqual(expect.arrayContaining(['node', 'npx']))
+    expect(report.final.items.map(item => item.id)).toEqual(['awesome-design-md', 'ui-ux-pro-max'])
+  }, 30_000)
+
+  it('switches memory provider through setup without hand-editing config', async () => {
+    const scaleDir = makeDir('scale-bootstrap-cli-scale-')
+    const projectDir = makeDir('scale-bootstrap-cli-project-')
+    const homeDir = makeDir('scale-bootstrap-cli-home-')
+
+    const result = await runScale([
+      'setup',
+      '--dir',
+      projectDir,
+      '--pack',
+      'memory',
+      '--memory-provider',
+      'scale-local',
+      '--json',
+    ], scaleDir, projectDir, homeDir)
+
+    expect(result.exitCode).toBe(0)
+    const report = JSON.parse(result.stdout) as {
+      ok: boolean
+      memoryProviderSwitch: {
+        provider: string
+        mode: string
+        previousOrder: string[]
+        nextOrder: string[]
+      }
+      final: { packIds: string[]; runtimeChecks: Array<{ id: string }> }
+    }
+    expect(report.ok).toBe(true)
+    expect(report.memoryProviderSwitch).toMatchObject({
+      provider: 'scale-local',
+      mode: 'local-only',
+    })
+    expect(report.memoryProviderSwitch.previousOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
+    expect(report.memoryProviderSwitch.nextOrder[0]).toBe('scale-local')
+    expect(report.final.packIds).toEqual(['memory'])
+    expect(report.final.runtimeChecks.map(check => check.id)).toContain('bun')
   }, 30_000)
 
   it('reports workflow capability planning and bootstrap hint during init', async () => {
@@ -124,13 +208,12 @@ describe('bootstrap CLI', () => {
       'graphify',
       'awesome-design-md',
       'ui-ux-pro-max',
-      'frontend-design',
     ]))
     expect(report.postCheckCommands).toEqual(expect.arrayContaining([
       'scale tool doctor --tools rtk --json',
       'scale memory provider status --json',
       'scale tool doctor --tools codegraph,graphify --json',
-      'scale tool doctor --tools awesome-design-md,ui-ux-pro-max,frontend-design --json',
+      'scale tool doctor --tools awesome-design-md,ui-ux-pro-max --json',
     ]))
   }, 30_000)
 

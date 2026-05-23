@@ -491,10 +491,20 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
     }
   }
   if (provider.kind === 'gbrain' && commandExists('gbrain')) {
-    return {
-      ...providerStatusBase(provider, routing),
-      available: true,
-      reason: 'gbrain CLI is available for default graph-backed recall',
+    const health = gbrainCliHealth()
+    if (health.available) {
+      return {
+        ...providerStatusBase(provider, routing),
+        available: true,
+        reason: health.reason,
+      }
+    }
+    if (!provider.endpoint) {
+      return {
+        ...providerStatusBase(provider, routing),
+        available: false,
+        reason: health.reason,
+      }
     }
   }
   if (!provider.endpoint) {
@@ -510,6 +520,26 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
     ...providerStatusBase(provider, routing),
     available: true,
     reason: `${provider.id} endpoint configured; recall is read-only unless policy enables writes`,
+  }
+}
+
+function gbrainCliHealth(): { available: boolean; reason: string } {
+  try {
+    runExternalCommandSync('gbrain', ['doctor', '--json'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 10_000,
+    })
+    return { available: true, reason: 'gbrain doctor passed; graph-backed recall is available' }
+  } catch (error) {
+    const err = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer }
+    const output = `${String(err.stdout ?? '')}\n${String(err.stderr ?? err.message ?? '')}`
+    return {
+      available: false,
+      reason: /no brain configured/i.test(output)
+        ? 'gbrain CLI is installed but no brain is configured; run `gbrain init --pglite` before autonomous recall'
+        : `gbrain CLI is installed but doctor failed: ${firstLine(output)}`,
+    }
   }
 }
 
@@ -594,6 +624,10 @@ function parseGbrainTextResults(stdout: string): Array<Record<string, unknown>> 
   }
   if (current) records.push(current)
   return records
+}
+
+function firstLine(value: string): string {
+  return value.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? 'unknown error'
 }
 
 function commandExists(command: string): boolean {

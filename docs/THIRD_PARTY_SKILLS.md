@@ -17,7 +17,12 @@ This document records external skill projects that SCALE may learn from, recomme
 | --- | --- | --- | --- | --- |
 | Planning with Files | MIT | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | Adapt concepts for file-backed plans, findings, progress logs, active-plan routing, and plan attestation. | Not vendored. |
 | agentmemory | Apache-2.0 | [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Optional external memory provider via REST or MCP for teams that need cross-agent persistent memory beyond local SCALE Memory Brain. | Not vendored. |
-| GBrain | MIT | [garrytan/gbrain](https://github.com/garrytan/gbrain) | Optional graph memory provider for brain repos, hybrid search, entity relationships, MCP, and background maintenance. | Not vendored. |
+| GBrain | MIT | [garrytan/gbrain](https://github.com/garrytan/gbrain) | Default memory provider route for graph-backed cross-session recall. SCALE verifies `gbrain doctor --json`; CLI existence alone is not enough. | Not vendored. |
+| awesome-design-md | MIT | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | DESIGN.md catalog for brand, visual language, typography, and design-system direction. SCALE syncs it as an external catalog, not as copied source. | Not vendored by default. |
+| ui-ux-pro-max | Upstream project license | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | UX, UI state, accessibility, responsive, and acceptance-review skill. SCALE uses the official `uipro-cli` path. | Not vendored by default. |
+| RTK | Upstream project license | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Governed CLI proxy for shell-output compression and token savings. SCALE checks `rtk gain` and hook initialization. | External CLI only. |
+| Graphify | Upstream project license | [safishamsi/graphify](https://github.com/safishamsi/graphify) | Knowledge graph artifact provider. SCALE expects `graphify-out/graph.json` and Codex hook/skill freshness before relying on it. | Generated artifacts are project-local. |
+| CodeGraph | Upstream project license | [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | Code structure provider for symbol/context exploration. SCALE expects a project `.codegraph/` index. | External CLI/index only. |
 
 Other referenced skills, MCP servers, CLIs, discovery candidates, and adapter targets are listed in [External Reference Inventory](EXTERNAL_REFERENCES.md). Unknown licenses stay `review-required`; do not treat a repository link as redistribution permission.
 
@@ -55,3 +60,47 @@ External memory providers must not be enabled silently. Before use, record:
 - whether provider writes are disabled, candidate-only, or explicitly enabled
 
 External planning skills must not replace SCALE task evidence. They can improve the plan artifact shape, but final delivery still requires verification output, changed-file evidence, and explicit unverified-risk notes.
+
+## User-Facing Setup
+
+Use the governed installer instead of asking users to discover every upstream command manually:
+
+```bash
+scale setup --pack full
+scale setup --pack full --yes
+scale setup --pack full --json
+```
+
+Default language is Chinese. Use `--lang en` or `SCALE_LANG=en` for English output.
+
+`setup` and `bootstrap deps` now expose report-level `runtimeChecks` before any install command runs. Missing `python`, `bun`, `cargo`, `uv/pipx`, or `node/npm/npx` is shown with a targeted install hint, so users can fix the environment before `--yes`/`--apply`.
+
+Memory provider routing can be configured during setup:
+
+```bash
+scale setup --pack memory --memory-provider scale-local --json
+scale setup --pack memory --memory-provider gbrain --memory-mode external-first --json
+```
+
+Repository maintainers should run the setup smoke before release or after changing installer behavior:
+
+```bash
+npm run smoke:setup
+make setup-smoke
+```
+
+The smoke is intentionally non-destructive: it validates bilingual output, `runtimeChecks`, memory-provider routing writes in a temp `.scale`, and CodeGraph/Graphify status discovery without running third-party installers.
+
+For OS-specific failures, run:
+
+```bash
+scale doctor env --json
+```
+
+This reports platform, shell discovery, PATH shape, core tools, package managers, and optional third-party runtimes in one machine-readable payload.
+
+`frontend-design` is no longer part of the default UI install path. The default UI stack is:
+
+- `awesome-design-md` for brand, visual language, and `DESIGN.md`.
+- `ui-ux-pro-max` for UX flow, UI state, accessibility, and responsive acceptance.
+- `frontend-design` only when explicitly requested with `--include frontend-design`.

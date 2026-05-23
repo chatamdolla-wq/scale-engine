@@ -1,4 +1,6 @@
 import * as childProcess from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { extname } from 'node:path'
 
 type CommandRuntime = {
   execFileSync: typeof childProcess.execFileSync
@@ -43,15 +45,15 @@ export function runExternalCommandSync(
   options: childProcess.ExecFileSyncOptions = {},
   runtime: CommandRuntime = DEFAULT_RUNTIME,
 ): string | Buffer {
-  const resolved = resolveExternalCommandPath(command, runtime) ?? command
+  const resolved = resolveWindowsCommandShim(resolveExternalCommandPath(command, runtime) ?? command)
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolved)) {
-    const result = runtime.spawnSync(resolved, args, {
+    const result = runtime.spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', 'call', resolved, ...args], {
       cwd: options.cwd,
       env: options.env as NodeJS.ProcessEnv | undefined,
       encoding: options.encoding as BufferEncoding | undefined,
       input: options.input as string | Buffer | undefined,
       maxBuffer: options.maxBuffer,
-      shell: true,
+      shell: false,
       stdio: options.stdio as childProcess.StdioOptions | undefined,
       timeout: options.timeout,
       windowsHide: options.windowsHide,
@@ -73,5 +75,15 @@ export function runExternalCommandSync(
     }
     return result.stdout ?? ''
   }
-  return runtime.execFileSync(command, args, options)
+  return runtime.execFileSync(resolved, args, options)
+}
+
+function resolveWindowsCommandShim(executable: string): string {
+  if (process.platform !== 'win32') return executable
+  if (!/[\\/]/.test(executable) || extname(executable)) return executable
+  for (const extension of ['.cmd', '.exe', '.bat', '.com']) {
+    const candidate = `${executable}${extension}`
+    if (existsSync(candidate)) return candidate
+  }
+  return executable
 }

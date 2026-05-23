@@ -17,6 +17,7 @@ describe('version', () => {
     expect(script).toContain('npm run typecheck')
     expect(script).toContain('npm run lint')
     expect(script).toContain('npm test')
+    expect(script).toContain('npm run smoke:setup')
     expect(script).toContain('npm run build')
     expect(script).toContain('npm audit --omit=dev')
     expect(script).toContain('npm pack --dry-run')

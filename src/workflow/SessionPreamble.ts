@@ -8,6 +8,8 @@ import { randomUUID } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 
+const SILENT_GIT_STDIO: ['ignore', 'pipe', 'ignore'] = ['ignore', 'pipe', 'ignore']
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -44,7 +46,9 @@ export function collectSessionPreamble(opts?: PreambleOptions): SessionPreamble 
   // Git branch
   let gitBranch = 'unknown'
   try {
-    gitBranch = execSync('git branch --show-current', { cwd: projectDir, encoding: 'utf-8', timeout: 5000 }).trim()
+    gitBranch = execSync('git branch --show-current', {
+      cwd: projectDir, encoding: 'utf-8', timeout: 5000, stdio: SILENT_GIT_STDIO,
+    }).trim()
   } catch {
     warnings.push('Not in a git repository or git not available')
   }
@@ -52,7 +56,9 @@ export function collectSessionPreamble(opts?: PreambleOptions): SessionPreamble 
   // Git root
   let gitRoot = projectDir
   try {
-    gitRoot = execSync('git rev-parse --show-toplevel', { cwd: projectDir, encoding: 'utf-8', timeout: 5000 }).trim()
+    gitRoot = execSync('git rev-parse --show-toplevel', {
+      cwd: projectDir, encoding: 'utf-8', timeout: 5000, stdio: SILENT_GIT_STDIO,
+    }).trim()
   } catch {
     // Use projectDir as fallback
   }

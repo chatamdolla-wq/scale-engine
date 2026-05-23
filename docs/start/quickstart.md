@@ -1,12 +1,15 @@
 # 3 分钟快速开始
 
-目标：在一个空目录中安装 SCALE 治理工作流，并看到可验证的项目产物。
+目标：在一个项目里安装 SCALE 工作流，完成依赖检查，并看到可验证的治理产物。
 
 ## 前置条件
 
-- Node.js 20 或更高版本。
-- 已安装 npm。
-- Windows PowerShell、Git Bash、macOS/Linux shell 都可以执行。
+- Node.js 20+
+- npm
+- Git
+- Windows PowerShell、Git Bash、macOS/Linux shell 均可
+
+Python、Bun、Rust/Cargo、uv/pipx 不是启动 SCALE 的硬要求。只有启用 Graphify、GBrain、RTK 等第三方能力时，安装器才会提示缺少哪些运行时以及可执行的修复命令。
 
 ## 1. 安装 CLI
 
@@ -15,13 +18,13 @@ npm install -g @hongmaple0820/scale-engine
 scale --version
 ```
 
-如果你在开发 `scale-engine` 本仓库，也可以用本地构建后的命令：
+本仓库开发时也可以直接运行源码入口：
 
 ```bash
-node E:/project/scale-engine/dist/api/cli.js --help
+node --import tsx E:/project/scale-engine/src/api/cli.ts --help
 ```
 
-## 2. 初始化一个空项目
+## 2. 初始化项目
 
 ```bash
 mkdir scale-demo
@@ -29,56 +32,79 @@ cd scale-demo
 scale init --governance-pack standard
 ```
 
-这一步会生成：
-
-```text
-.scale/
-docs/
-scripts/
-AGENTS.md 或对应 Agent 入口文档
-```
-
-重点看这些文件：
-
-| 文件 | 用途 |
-| --- | --- |
-| `.scale/verification.json` | 本地验证 profile 和服务矩阵 |
-| `.scale/skills.json` | Agent 应该如何选择 skills，以及哪些需要证据 |
-| `.scale/tools.json` | CLI、MCP、浏览器、桌面自动化等工具使用策略 |
-| `.scale/resource-policy.json` | 文档、报告、截图、脚本、临时产物的生命周期规则 |
-| `.scale/engineering-standards.json` | 日志、安全、ORM、框架、测试、部署等工程规范 |
-| `docs/workflow/templates/` | M/L 任务使用的标准 artifact 模板 |
-
-## 3. 跑第一轮本地检查
+初始化会生成 `.scale/`、`docs/`、`scripts/` 以及对应 Agent 入口文件。已有项目升级不要盲目重跑 `init`，优先使用：
 
 ```bash
-scale bootstrap deps --pack external-cli --json
+scale upgrade check --dir . --lang zh
+scale upgrade plan --dir . --html --lang zh
+```
+
+## 3. 交互式安装第三方能力
+
+默认输出语言是中文。需要英文时加 `--lang en`，也可以设置 `SCALE_LANG=en`。
+
+推荐先只查看计划：
+
+```bash
+scale setup --pack full
+```
+
+确认后安装：
+
+```bash
+scale setup --pack full --yes
+```
+
+机器可读输出：
+
+```bash
+scale setup --pack full --json
+```
+
+`setup` 和 `bootstrap deps` 都会输出 `runtimeChecks`。如果机器缺少 `python`、`bun`、`cargo`、`uv/pipx`、`node/npm/npx`，会先显示缺失项和修复建议，再决定是否执行 `--yes` 或 `--apply`，避免安装中途卡住。
+
+记忆供应商可以在安装入口直接切换，不需要手改 `.scale/memory-providers.json`：
+
+```bash
+scale setup --pack memory --memory-provider scale-local --json
+scale setup --pack memory --memory-provider gbrain --memory-mode external-first --json
+```
+
+第三方能力的职责边界：
+
+| 能力 | 默认定位 | 关键验证 |
+| --- | --- | --- |
+| `awesome-design-md` | 品牌、视觉语言、`DESIGN.md` 来源 | 是否同步上游 DESIGN.md catalog |
+| `ui-ux-pro-max` | UX、状态、可访问性、响应式验收 | 是否通过官方 `uipro-cli` 安装 |
+| `frontend-design` | 可选实现灵感，不再是 UI 默认必装项 | 需要时显式 `--include frontend-design` |
+| `rtk` | CLI proxy/token 节省能力 | `rtk gain` 和 `rtk init -g --codex` |
+| `gbrain` | 默认记忆供应商 | `gbrain doctor --json`，未初始化会提示 `gbrain init --pglite` |
+| `graphify` | 知识图谱产物供应商 | `graphify install --platform codex` 和 `graphify-out/graph.json` |
+| `codegraph` | 代码结构索引供应商 | `codegraph init -i` 和 `.codegraph/` |
+
+低层命令仍可直接使用：
+
+```bash
+scale bootstrap deps --profile advanced --governance-pack frontend-app --lang zh
+scale bootstrap deps --profile advanced --governance-pack frontend-app --apply --lang zh
+```
+
+## 4. 验证闭环
+
+```bash
 scale doctor
 scale preflight --preflight-profile quick
 scale status
 scale assets scan --dir .
 scale standards scan --dir .
 scale runtime doctor --level S
+scale memory provider status --json
+scale codegraph status --json
 ```
 
-预期效果：
+未运行验证，不要声称通过。`setup --json` 和 `bootstrap deps --json` 只代表依赖计划可解析，不等于第三方服务已经可用。
 
-- `preflight` 能说明当前治理文件是否完整。
-- `bootstrap deps` 会告诉你第三方 skills、RTK、记忆/知识图谱依赖哪些已经装好，哪些只是治理规则已经生成。
-- `status` 会告诉 Agent 下一步应该做什么。
-- `assets scan` 会把文档、模板、脚本、报告等资源分类。
-- `standards scan` 会扫描日志噪音、敏感信息、危险输入、测试和架构风险。
-- `runtime doctor` 会检查本地运行时证据目录和最终交付证据状态。
-
-建议再跑一次 `scale doctor`。现在它会按当前 profile 输出 `bootstrap` 建议，并把 `gbrain / codegraph / graphify` 的状态一起列出来。
-
-如果你确认要补环境依赖，再显式执行安装：
-
-```bash
-scale bootstrap deps --profile advanced --governance-pack frontend-app --apply
-```
-
-## 4. 建立第一个任务上下文
+## 5. 建立任务上下文
 
 ```bash
 scale context init --name "Scale Demo"
@@ -88,14 +114,7 @@ scale diagnose plan --task-id 2026-05-18-oauth-hardening --symptom "callback 在
 scale tdd slice --task-id 2026-05-18-oauth-hardening --behavior "拒绝过期 OAuth state" --public-interface "GET /oauth/callback" --failing-test "expired state returns 401" --test-file tests/oauth.test.ts --impl-files src/oauth.ts
 ```
 
-这些命令的目的不是替代人类判断，而是把 Agent 必须做的思考显式记录下来：
-
-- `context grill`：逼 Agent 先澄清上下文、成功标准和风险。
-- `diagnose plan`：遇到问题先诊断，不允许盲修。
-- `tdd slice`：把行为、公共接口、失败测试和实现文件绑定成一个可检查切片。
-- `runtime start`：建立会话 ledger，后续命令、工具和验证证据可以绑定到同一个任务。
-
-完成真实验证后记录运行时证据：
+任务完成后记录验证证据并沉淀候选经验：
 
 ```bash
 scale runtime record --title "quick preflight" --kind command --status passed --command "scale preflight --preflight-profile quick" --exit-code 0 --summary "quick preflight passed"
@@ -104,51 +123,43 @@ scale memory pack --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-o
 scale memory settle --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18-oauth-hardening --task "继续加固 OAuth callback" --level M
 ```
 
-`memory pack` 用来恢复上下文，`memory settle` 用来在任务结束后生成学习候选。候选位于 `.scale/memory/learning-candidates/`，默认本地保留，确认稳定后再人工提升到知识库、规范或模块文档。
+`memory settle` 默认只生成学习候选，不会自动把一次会话判断提升成长线规则。存在失败证据时，候选会要求先解决失败，避免把未闭环问题沉淀成经验。
 
-## 5. 生成 HTML 交付视图
+## 6. MOE/多仓工作区
 
-```bash
-scale artifact render --task-id 2026-05-18-oauth-hardening --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
-scale artifact doctor --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
-scale artifact open --task-id 2026-05-18-oauth-hardening --artifact-dir docs/worklog/tasks/2026-05-18-oauth-hardening
-```
-
-规则：
-
-- Markdown 是长期维护源文件。
-- HTML 是给评审、对比、状态汇报、交付和发版使用的可视化产物。
-- `artifact doctor` 会检查 HTML 是否可追溯、是否引用远程资源、是否可能包含敏感信息。
-
-## 6. 下一步
-
-如果你只是试用，到这里已经能看到 SCALE 的价值：它把 Agent 的工作过程变成了可以审计的证据链。
-
-如果你要接入真实项目，按项目类型选择 governance pack：
+多仓项目使用：
 
 ```bash
-scale init --governance-pack node-library
-scale init --governance-pack frontend-app
-scale init --governance-pack go-service-matrix
 scale init --governance-pack moe-workspace
-scale init --governance-pack resource-governance
 ```
 
-已有项目升级工作流时不要盲目重跑 `scale init`。先走受保护的升级链路：
+MOE 默认把子工程配置为兄弟仓库或绝对路径，不建议把独立 Git 子工程放在主工程根目录下。`.scale/workspace.json` 中的典型写法：
+
+```json
+{
+  "topology": "moe",
+  "repositories": [
+    { "name": "root", "path": ".", "role": "root", "required": true },
+    { "name": "api", "path": "../api", "role": "external", "required": true, "remote": "origin" }
+  ]
+}
+```
+
+这样可以避免子工程 Git 状态、分支、提交和主工程互相污染。
+
+## 7. 安装烟测
+
+仓库开发和发版前可以一键验证安装入口：
 
 ```bash
-scale upgrade check --dir . --lang zh
-scale upgrade plan --dir . --html --lang zh
-scale upgrade apply --dir . --confirm --lang zh
+npm run smoke:setup
+make setup-smoke
 ```
 
-如果升级计划提示 AI OS runtime 尚未接入，用一键接入命令生成运行态目录、首份 dry-run、benchmark 和 doctor 报告：
+这个烟测只验证安装计划、双语输出、运行时依赖诊断、记忆供应商切换和 CodeGraph/Graphify 状态路径，不会执行真实第三方安装。
+
+遇到跨系统命令兼容、PATH 或运行时依赖问题时，先导出环境诊断：
 
 ```bash
-scale ai-os adopt --dir . --task "接入 AI OS runtime" --lang zh
+scale doctor env --json
 ```
-
-需要英文输出时把 `--lang zh` 换成 `--lang en`。干净的 SCALE 受管文件可以自动刷新；已有本地改动的文件会进入人工审阅，不会被自动覆盖。
-
-继续阅读 [官方 Demo Walkthrough](agent-governance-demo.md)，看一个真实任务如何从需求到验证证据。
-

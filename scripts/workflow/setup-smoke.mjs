@@ -1,0 +1,299 @@
+#!/usr/bin/env node
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, extname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const repoRoot = resolve(scriptDir, '..', '..')
+const options = parseArgs(process.argv.slice(2))
+const smokeRoot = options.tempDir
+  ? resolve(options.tempDir)
+  : mkSmokeRoot()
+const projectDir = join(smokeRoot, 'project')
+const scaleDir = join(smokeRoot, '.scale')
+const scaleInvocation = parseCommandLine(options.scaleCommand ?? 'node --import tsx src/api/cli.ts')
+const scaleCommand = formatCommand(scaleInvocation.file, scaleInvocation.args)
+const results = []
+
+mkdirSync(projectDir, { recursive: true })
+mkdirSync(scaleDir, { recursive: true })
+
+try {
+  runSetupSmoke()
+  writeSummary('passed')
+} catch (error) {
+  writeSummary('failed', error)
+  process.exitCode = 1
+} finally {
+  if (!options.keepTemp && !options.tempDir) rmSync(smokeRoot, { recursive: true, force: true })
+}
+
+function runSetupSmoke() {
+  const baseEnv = {
+    ...process.env,
+    SCALE_DIR: scaleDir,
+    SCALE_PROJECT_DIR: projectDir,
+    SCALE_LOG_LEVEL: '',
+  }
+
+  const zh = runCommand('bootstrap-ui-zh', ['bootstrap', 'deps', '--dir', projectDir, '--pack', 'ui', '--lang', 'zh'], baseEnv)
+  assertIncludes(zh.stdout, 'SCALE 依赖安装计划', 'Chinese bootstrap output should use Chinese title')
+  assertIncludes(zh.stdout, '运行时依赖:', 'Chinese bootstrap output should show runtime dependencies')
+  assertIncludes(zh.stdout, 'awesome-design-md', 'Chinese bootstrap output should include awesome-design-md')
+  assertIncludes(zh.stdout, 'ui-ux-pro-max', 'Chinese bootstrap output should include ui-ux-pro-max')
+
+  const en = runCommand('bootstrap-ui-en', ['bootstrap', 'deps', '--dir', projectDir, '--pack', 'ui', '--lang', 'en'], baseEnv)
+  assertIncludes(en.stdout, 'SCALE Dependency Bootstrap', 'English bootstrap output should use English title')
+  assertIncludes(en.stdout, 'Runtime dependencies:', 'English bootstrap output should show runtime dependencies')
+
+  const deps = runJson('bootstrap-external-memory-knowledge-json', [
+    'bootstrap',
+    'deps',
+    '--dir',
+    projectDir,
+    '--pack',
+    'external-cli,memory,knowledge',
+    '--json',
+  ], baseEnv)
+  assertArrayContains(deps.runtimeChecks?.map(check => check.id), ['node', 'npm', 'cargo', 'bun', 'python', 'python-installer'], 'bootstrap deps should report all runtime dependency checks')
+  assertArrayContains(deps.items?.map(item => item.id), ['rtk', 'gbrain', 'graphify', 'codegraph'], 'bootstrap deps should include governed third-party capabilities')
+  assert(deps.apply === false, 'bootstrap smoke must not run installers')
+
+  const envDoctor = runJson('doctor-env-json', ['doctor', 'env', '--json'], baseEnv)
+  assert(envDoctor.ok === true, 'environment doctor should pass when required core commands are available')
+  assertArrayContains(envDoctor.checks?.map(check => check.id), ['git', 'npm', 'npx', 'rtk', 'gbrain', 'graphify', 'codegraph'], 'environment doctor should report core and third-party commands')
+
+  const localMemory = runJson('setup-memory-scale-local-json', [
+    'setup',
+    '--dir',
+    projectDir,
+    '--pack',
+    'memory',
+    '--memory-provider',
+    'scale-local',
+    '--json',
+  ], baseEnv)
+  assert(localMemory.memoryProviderSwitch?.provider === 'scale-local', 'setup should switch to scale-local provider')
+  assert(localMemory.memoryProviderSwitch?.mode === 'local-only', 'scale-local provider should force local-only mode')
+  assert(localMemory.memoryProviderSwitch?.nextOrder?.[0] === 'scale-local', 'scale-local should become the first provider')
+  assert(existsSync(localMemory.memoryProviderSwitch?.path ?? ''), 'setup should write memory provider config')
+  assert(localMemory.final?.runtimeChecks?.some(check => check.id === 'bun'), 'memory setup should still expose Bun runtime check for gbrain')
+
+  const gbrainMemory = runJson('setup-memory-gbrain-json', [
+    'setup',
+    '--dir',
+    projectDir,
+    '--pack',
+    'memory',
+    '--memory-provider',
+    'gbrain',
+    '--memory-mode',
+    'external-first',
+    '--json',
+  ], baseEnv)
+  assert(gbrainMemory.memoryProviderSwitch?.provider === 'gbrain', 'setup should switch to gbrain provider')
+  assert(gbrainMemory.memoryProviderSwitch?.mode === 'external-first', 'gbrain provider should support external-first mode')
+  assert(gbrainMemory.memoryProviderSwitch?.nextOrder?.[0] === 'gbrain', 'gbrain should become the first provider')
+
+  const codegraph = runJson('codegraph-status-json', ['codegraph', 'status', '--dir', repoRoot, '--json'], baseEnv)
+  assertArrayContains(codegraph.providers?.map(provider => provider.id), ['codegraph', 'graphify'], 'codegraph status should expose CodeGraph and Graphify providers')
+  assert(typeof codegraph.projectIndexExists === 'boolean', 'codegraph status should report project index state')
+}
+
+function runJson(name, args, env) {
+  const result = runCommand(name, args, env)
+  try {
+    return JSON.parse(result.stdout)
+  } catch (error) {
+    throw new Error(`${name} did not return valid JSON: ${error.message}\n${result.stdout}`)
+  }
+}
+
+function runCommand(name, args, env) {
+  const commandArgs = [...scaleInvocation.args, ...args]
+  const commandLine = formatCommand(scaleInvocation.file, commandArgs)
+  if (options.verbose) process.stdout.write(`[RUN] ${commandLine}\n`)
+  const startedAt = new Date().toISOString()
+  const result = spawnStructured(scaleInvocation.file, commandArgs, {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf8',
+    timeout: options.timeoutMs,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  const stdout = String(result.stdout ?? '')
+  const stderr = String(result.stderr ?? '')
+  const exitCode = typeof result.status === 'number' ? result.status : 1
+  const entry = {
+    name,
+    command: commandLine,
+    exitCode,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    stdoutTail: tail(stdout),
+    stderrTail: tail(stderr + (result.error ? `\n${result.error.message}` : '')),
+  }
+  results.push(entry)
+  if (exitCode !== 0) {
+    throw new Error(`${name} failed with exit code ${exitCode}\n${entry.stderrTail || entry.stdoutTail}`)
+  }
+  return { stdout, stderr, exitCode }
+}
+
+function spawnStructured(command, args, options) {
+  const resolved = resolveWindowsCommandShim(resolveCommandPath(command) ?? command)
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolved)) {
+    const comspec = process.env.ComSpec || 'cmd.exe'
+    return spawnSync(comspec, ['/d', '/c', 'call', resolved, ...args], {
+      ...options,
+      shell: false,
+      windowsHide: true,
+    })
+  }
+  return spawnSync(resolved, args, {
+    ...options,
+    shell: false,
+    windowsHide: true,
+  })
+}
+
+function resolveWindowsCommandShim(command) {
+  if (process.platform !== 'win32') return command
+  if (!/[\\/]/.test(command) || extname(command)) return command
+  for (const extension of ['.cmd', '.exe', '.bat', '.com']) {
+    const candidate = `${command}${extension}`
+    if (existsSync(candidate)) return candidate
+  }
+  return command
+}
+
+function resolveCommandPath(command) {
+  if (/[\\/]/.test(command)) return command
+  const lookup = process.platform === 'win32' ? 'where.exe' : 'which'
+  const result = spawnSync(lookup, [command], {
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  })
+  if (result.status !== 0) return null
+  return String(result.stdout ?? '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .find(Boolean) ?? null
+}
+
+function parseArgs(args) {
+  const parsed = {
+    keepTemp: false,
+    verbose: false,
+    timeoutMs: 120_000,
+    scaleCommand: undefined,
+    tempDir: undefined,
+  }
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    if (arg === '--keep-temp') parsed.keepTemp = true
+    else if (arg === '--verbose') parsed.verbose = true
+    else if (arg === '--scale-command') parsed.scaleCommand = args[++index]
+    else if (arg === '--temp-dir') parsed.tempDir = args[++index]
+    else if (arg === '--timeout-ms') parsed.timeoutMs = Number.parseInt(args[++index] ?? '', 10)
+    else if (arg === '--help' || arg === '-h') {
+      process.stdout.write(`Usage: node scripts/workflow/setup-smoke.mjs [--scale-command "scale"] [--keep-temp] [--verbose]\n`)
+      process.exit(0)
+    } else {
+      throw new Error(`Unknown argument: ${arg}`)
+    }
+  }
+  if (!Number.isFinite(parsed.timeoutMs) || parsed.timeoutMs <= 0) parsed.timeoutMs = 120_000
+  return parsed
+}
+
+function mkSmokeRoot() {
+  return join(tmpdir(), `scale-setup-smoke-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+}
+
+function parseCommandLine(command) {
+  const tokens = []
+  let current = ''
+  let quote = null
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index]
+    if (quote) {
+      if (char === quote) {
+        quote = null
+      } else if (quote === '"' && char === '\\' && index + 1 < command.length) {
+        index += 1
+        current += command[index]
+      } else {
+        current += char
+      }
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        tokens.push(current)
+        current = ''
+      }
+      continue
+    }
+    if (char === '\\' && index + 1 < command.length) {
+      index += 1
+      current += command[index]
+      continue
+    }
+    current += char
+  }
+  if (quote) throw new Error(`Unterminated quote in scale command: ${command}`)
+  if (current) tokens.push(current)
+  if (tokens.length === 0) throw new Error('Scale command is empty')
+  return { file: tokens[0], args: tokens.slice(1) }
+}
+
+function formatCommand(command, args) {
+  return [command, ...args].map(quoteArg).join(' ')
+}
+
+function quoteArg(value) {
+  const raw = String(value)
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(raw)) return raw
+  return `"${raw.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message)
+}
+
+function assertIncludes(value, expected, message) {
+  if (!String(value).includes(expected)) throw new Error(`${message}; missing ${expected}`)
+}
+
+function assertArrayContains(actual, expected, message) {
+  const values = new Set(Array.isArray(actual) ? actual : [])
+  const missing = expected.filter(value => !values.has(value))
+  if (missing.length > 0) throw new Error(`${message}; missing: ${missing.join(', ')}`)
+}
+
+function writeSummary(status, error) {
+  const report = {
+    version: 1,
+    status,
+    scaleCommand,
+    repoRoot,
+    projectDir,
+    scaleDir,
+    results,
+    error: error ? String(error.stack ?? error.message ?? error) : undefined,
+  }
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
+}
+
+function tail(value, max = 4000) {
+  return value.length > max ? value.slice(-max) : value
+}

@@ -158,7 +158,7 @@ const CODEGRAPH_INSTALL_HINT = 'npx @colbymchenry/codegraph or npm i -g @colbymc
 const CODEGRAPH_PROJECT_INIT_HINT = 'codegraph init -i'
 const CODEGRAPH_SERVE_COMMAND = 'codegraph serve --mcp'
 const GRAPHIFY_SOURCE = 'https://github.com/safishamsi/graphify'
-const GRAPHIFY_INSTALL_HINT = 'pip install graphifyy && graphify install'
+const GRAPHIFY_INSTALL_HINT = 'uv tool install graphifyy && graphify install --platform codex'
 
 const DEFAULT_CODEGRAPH_PROVIDER: CodeIntelligenceProviderConfig = {
   id: 'codegraph',

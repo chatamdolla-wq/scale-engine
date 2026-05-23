@@ -260,6 +260,38 @@ describe('CrossRepoOrchestrator', () => {
       const apiState = status.repoStates.find(r => r.name === 'api')
       expect(apiState?.clean).toBe(false)
     })
+
+    it('resolves MOE sibling repositories outside the root checkout', () => {
+      const parent = makeTempDir()
+      const rootDir = join(parent, 'root')
+      const apiDir = join(parent, 'api')
+      try {
+        mkdirSync(rootDir, { recursive: true })
+        mkdirSync(apiDir, { recursive: true })
+        initGitRepo(rootDir)
+        initGitRepo(apiDir)
+        mkdirSync(join(rootDir, '.scale'), { recursive: true })
+        writeFileSync(join(rootDir, '.scale', 'workspace.json'), JSON.stringify({
+          version: 1,
+          topology: 'moe',
+          repositories: [
+            { name: 'root', path: '.', role: 'root', required: true },
+            { name: 'api', path: '../api', role: 'external', required: true },
+          ],
+        }, null, 2))
+
+        const orch = new CrossRepoOrchestrator({ projectDir: rootDir, scaleDir: join(rootDir, '.scale') })
+        const status = orch.getCrossRepoStatus()
+
+        expect(status.repoStates.find(r => r.name === 'api')).toMatchObject({
+          path: '../api',
+          branch: 'master',
+          clean: true,
+        })
+      } finally {
+        rmSync(parent, { recursive: true, force: true })
+      }
+    })
   })
 })
 

@@ -129,7 +129,8 @@ scale ai-os plan --task "Fix OAuth callback Redis state" --files src/auth/oauth.
 
 Provider rules:
 
-- `gbrain` is the default external-first provider. The preferred remote production path is the official thin-client flow: run `gbrain serve --http` on the host, then configure the local CLI with `gbrain init --mcp-only` so SCALE can keep calling `gbrain query` through the thin client instead of inventing a separate ad-hoc REST contract.
+- `gbrain` is the default external-first provider. SCALE now treats CLI existence as insufficient: `scale memory provider status --json` requires `gbrain doctor --json` to pass before marking it available. If the CLI exists but no brain is configured, the status remains unavailable and points to `gbrain init --pglite`.
+- The preferred remote production path is the official thin-client flow: run `gbrain serve --http` on the host, then configure the local CLI with `gbrain init --mcp-only` so SCALE can keep calling `gbrain query` through the thin client instead of inventing a separate ad-hoc REST contract.
 - `agentmemory` remains optional and can be added as a second provider when teams want cross-agent shared memory.
 - `memory provider use <id>` is the fast path for switching the default route without hand-editing `.scale/memory-providers.json`.
 - External providers are read-only by default. Writes require an explicit provider policy change.
@@ -138,3 +139,14 @@ Provider rules:
 - `ai-os plan` includes both the provider recall summary and the Memory Fabric context pack, so agents can route memory before planning without pretending external memory is always available.
 
 This keeps agents flexible: they can ask the router for memory before planning, verification, review, or release, while SCALE still records which provider was used and why fallback was required.
+
+Setup shortcut:
+
+```bash
+scale setup --pack memory
+scale setup --pack memory --memory-provider scale-local --json
+scale setup --pack memory --memory-provider gbrain --memory-mode external-first --json
+scale memory provider status --json
+```
+
+`setup --memory-provider` is the preferred UX for provider switching during onboarding. It writes the same routing file as `scale memory provider use`, returns `memoryProviderSwitch` in JSON, and keeps external writes disabled unless `--allow-external-write` is explicitly passed.

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { execa } from 'execa'
+import { execa, execaSync } from 'execa'
 import { inspectCodeIntelligence, writeCodeIntelligenceConfig } from '../codegraph/CodeIntelligence.js'
 import { externalCommandExists } from '../core/ExternalCommand.js'
 import { inspectMemoryProviders, useMemoryProvider, writeMemoryProvidersConfig } from '../memory/MemoryProviders.js'
@@ -10,7 +10,14 @@ import { inspectToolCapabilities } from '../tools/ToolCapabilityRegistry.js'
 
 export type DependencyBootstrapPackId = 'ui' | 'memory' | 'knowledge' | 'external-cli' | 'full'
 export type DependencyBootstrapItemKind = 'skill' | 'cli'
-export type DependencyBootstrapStatus = 'installed' | 'ready' | 'manual-review' | 'installed-now' | 'failed'
+export type DependencyBootstrapStatus = 'installed' | 'ready' | 'manual-review' | 'installed-now' | 'failed' | 'needs-init' | 'version-drift'
+
+export interface DependencyBootstrapHealth {
+  status: 'ok' | 'warn' | 'failed'
+  bootstrapStatus?: Extract<DependencyBootstrapStatus, 'needs-init' | 'version-drift' | 'manual-review'>
+  reason: string
+  nextCommands?: string[]
+}
 
 export interface DependencyBootstrapItemReport {
   id: string
@@ -25,6 +32,7 @@ export interface DependencyBootstrapItemReport {
   detectedBy: string
   prerequisites: Array<{ command: string; present: boolean }>
   manualReason?: string
+  health?: DependencyBootstrapHealth
   output?: string
   error?: string
 }
@@ -37,12 +45,15 @@ export interface DependencyBootstrapReport {
   packIds: DependencyBootstrapPackId[]
   includeIds: string[]
   apply: boolean
+  runtimeChecks: DependencyBootstrapRuntimeCheck[]
   items: DependencyBootstrapItemReport[]
   summary: {
     total: number
     installed: number
     ready: number
     manualReview: number
+    needsInit: number
+    versionDrift: number
     installedNow: number
     failed: number
   }
@@ -57,6 +68,18 @@ export interface DependencyBootstrapReport {
   postCheckCommands: string[]
   rollbackHints: string[]
   recommendations: string[]
+}
+
+export interface DependencyBootstrapRuntimeCheck {
+  id: string
+  label: string
+  commands: string[]
+  status: 'ok' | 'warn' | 'missing'
+  requiredFor: string[]
+  detectedCommand?: string
+  version?: string
+  reason: string
+  installHint?: string
 }
 
 export interface DependencyBootstrapOptions {
@@ -102,23 +125,31 @@ type DependencyBootstrapDefinition = {
   source: string
   detectCommand?: string
   detectSkillId?: string
+  detectPaths?: (ctx: BootstrapInstallContext) => string[]
   prerequisites: string[]
   manualReason: string
   installCommand: (ctx: BootstrapInstallContext) => string | null
+  healthCheck?: (ctx: BootstrapInstallContext) => DependencyBootstrapHealth
 }
 
 const UI_SKILL_INSTALLS = {
-  'awesome-design-md': 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
-  'ui-ux-pro-max': 'npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max',
+  'awesome-design-md': (ctx: BootstrapInstallContext) => {
+    const installDir = quotePath(join(ctx.homeDir, '.scale', 'vendor', 'awesome-design-md'))
+    return `npx degit VoltAgent/awesome-design-md ${installDir}`
+  },
+  'ui-ux-pro-max': 'npx uipro-cli init --ai codex',
   'frontend-design': 'npx skills add anthropics/skills --skill frontend-design',
 } as const
 
 const RTK_INSTALL = 'cargo install --git https://github.com/rtk-ai/rtk'
 const CODEGRAPH_INSTALL = 'npm install -g @colbymchenry/codegraph'
-const GRAPHIFY_PIP_INSTALL = 'pip install graphifyy && graphify install'
-const GRAPHIFY_PIP3_INSTALL = 'pip3 install graphifyy && graphify install'
-const GRAPHIFY_PYTHON_INSTALL = 'python -m pip install graphifyy && graphify install'
-const GRAPHIFY_PYTHON3_INSTALL = 'python3 -m pip install graphifyy && graphify install'
+const GRAPHIFY_UV_INSTALL = 'uv tool install graphifyy && graphify install --platform codex'
+const GRAPHIFY_PIPX_INSTALL = 'pipx install graphifyy && graphify install --platform codex'
+const GRAPHIFY_PIP_INSTALL = 'pip install graphifyy && graphify install --platform codex'
+const GRAPHIFY_PIP3_INSTALL = 'pip3 install graphifyy && graphify install --platform codex'
+const GRAPHIFY_PYTHON_INSTALL = 'python -m pip install graphifyy && graphify install --platform codex'
+const GRAPHIFY_PYTHON3_INSTALL = 'python3 -m pip install graphifyy && graphify install --platform codex'
+const GBRAIN_INSTALL = 'bun install -g github:garrytan/gbrain && gbrain init --pglite'
 const GBRAIN_SOURCE = 'https://github.com/garrytan/gbrain'
 
 const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
@@ -129,9 +160,10 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     packs: ['ui'],
     source: 'https://github.com/VoltAgent/awesome-design-md',
     detectSkillId: 'awesome-design-md',
+    detectPaths: ctx => [join(ctx.homeDir, '.scale', 'vendor', 'awesome-design-md', 'README.md')],
     prerequisites: ['npx'],
-    manualReason: 'Requires npm/npx and the local skills installer to be available before UI brand skills can be added.',
-    installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['awesome-design-md'] : null,
+    manualReason: 'Requires npm/npx to sync the upstream DESIGN.md catalog that drives brand and visual-language decisions.',
+    installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['awesome-design-md'](ctx) : null,
   },
   {
     id: 'ui-ux-pro-max',
@@ -141,18 +173,18 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
     detectSkillId: 'ui-ux-pro-max',
     prerequisites: ['npx'],
-    manualReason: 'Requires npm/npx and the local skills installer to be available before UI review skills can be added.',
+    manualReason: 'Requires npm/npx so the official uipro-cli installer can configure the UX, state, accessibility, and responsive-review skill.',
     installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['ui-ux-pro-max'] : null,
   },
   {
     id: 'frontend-design',
     name: 'Frontend Design',
     kind: 'skill',
-    packs: ['ui'],
+    packs: [],
     source: 'https://github.com/anthropics/skills/tree/main/skills/frontend-design',
     detectSkillId: 'frontend-design',
     prerequisites: ['npx'],
-    manualReason: 'Requires npm/npx and the local skills installer to be available before the implementation companion skill can be added.',
+    manualReason: 'Optional implementation companion only; awesome-design-md and ui-ux-pro-max are the default UI stack.',
     installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['frontend-design'] : null,
   },
   {
@@ -165,6 +197,7 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['cargo'],
     manualReason: 'RTK currently installs from the official Rust toolchain path and needs Cargo on PATH.',
     installCommand: ctx => ctx.commandExists('cargo') ? RTK_INSTALL : null,
+    healthCheck: checkRtkHealth,
   },
   {
     id: 'gbrain',
@@ -173,9 +206,10 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     packs: ['memory'],
     source: GBRAIN_SOURCE,
     detectCommand: 'gbrain',
-    prerequisites: ['git', 'bun'],
-    manualReason: 'The official standalone GBrain install currently needs git + bun and links the CLI from a local clone.',
+    prerequisites: ['bun'],
+    manualReason: 'The official standalone GBrain install needs Bun and then a configured brain (`gbrain init --pglite`) before cross-session recall is usable.',
     installCommand: ctx => buildGbrainInstallCommand(ctx),
+    healthCheck: checkGbrainHealth,
   },
   {
     id: 'graphify',
@@ -184,9 +218,10 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     packs: ['knowledge'],
     source: 'https://github.com/safishamsi/graphify',
     detectCommand: 'graphify',
-    prerequisites: ['pip|pip3|python|python3'],
-    manualReason: 'Graphify requires Python 3.10+ and a working pip/python path before the CLI can be installed.',
+    prerequisites: ['uv|pipx|pip|pip3|python|python3'],
+    manualReason: 'Graphify requires Python 3.10+ and a supported installer; uv tool install is preferred to avoid polluting project virtualenvs.',
     installCommand: ctx => buildGraphifyInstallCommand(ctx),
+    healthCheck: checkGraphifyHealth,
   },
   {
     id: 'codegraph',
@@ -198,6 +233,7 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['npm'],
     manualReason: 'CodeGraph installs through npm and needs Node.js/npm available on PATH.',
     installCommand: ctx => ctx.commandExists('npm') ? CODEGRAPH_INSTALL : null,
+    healthCheck: checkCodeGraphHealth,
   },
 ]
 
@@ -214,6 +250,7 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
     commandExists: externalCommandExists,
   }
   const reports = definitions.map(definition => inspectDefinition(definition, context))
+  const runtimeChecks = buildRuntimeChecks(reports)
 
   if (options.apply) {
     for (const item of reports.filter(entry => entry.status === 'ready')) {
@@ -225,7 +262,10 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
       const rechecked = definition ? inspectDefinition(definition, context) : item
       item.installed = rechecked.installed
       item.detectedBy = rechecked.detectedBy
-      item.status = result.ok && rechecked.installed ? 'installed-now' : 'failed'
+      item.health = rechecked.health
+      item.status = result.ok && rechecked.installed
+        ? rechecked.status === 'installed' ? 'installed-now' : rechecked.status
+        : 'failed'
       if (!result.ok && !item.error) item.error = `Installation command failed: ${item.installCommand}`
       if (!result.ok) item.installSupported = true
     }
@@ -235,7 +275,7 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
   const postChecks = options.apply
     ? runDependencyBootstrapPostChecks({ projectDir, scaleDir, packIds, items: reports, homeDir })
     : []
-  return buildReport(projectDir, scaleDir, packIds, includeIds, Boolean(options.apply), reports, postActions, postChecks)
+  return buildReport(projectDir, scaleDir, packIds, includeIds, Boolean(options.apply), runtimeChecks, reports, postActions, postChecks)
 }
 
 function buildReport(
@@ -244,6 +284,7 @@ function buildReport(
   packIds: DependencyBootstrapPackId[],
   includeIds: string[],
   apply: boolean,
+  runtimeChecks: DependencyBootstrapRuntimeCheck[],
   items: DependencyBootstrapItemReport[],
   postActions: string[],
   postChecks: DependencyBootstrapPostCheckResult[],
@@ -253,6 +294,8 @@ function buildReport(
     installed: items.filter(item => item.status === 'installed').length,
     ready: items.filter(item => item.status === 'ready').length,
     manualReview: items.filter(item => item.status === 'manual-review').length,
+    needsInit: items.filter(item => item.status === 'needs-init').length,
+    versionDrift: items.filter(item => item.status === 'version-drift').length,
     installedNow: items.filter(item => item.status === 'installed-now').length,
     failed: items.filter(item => item.status === 'failed').length,
   }
@@ -267,8 +310,15 @@ function buildReport(
   const postCheckCommands = buildPostCheckCommands(packIds, items)
   const rollbackHints = buildRollbackHints(items)
 
-  if (!apply && !complete) recommendations.push('Re-run with --apply to install all ready dependencies in one pass.')
+  if (!apply && summary.ready > 0) recommendations.push('Re-run with --apply to install all ready dependencies in one pass.')
+  if (runtimeChecks.some(check => check.status === 'missing')) recommendations.push('Install missing runtime dependencies before running --apply.')
+  if (runtimeChecks.some(check => check.status === 'warn')) recommendations.push('Review runtime warnings; some tools may install but fail initialization or post-checks.')
   if (summary.manualReview > 0) recommendations.push('Review manual-review items for missing package managers, PATH setup, or platform-specific configuration.')
+  if (summary.needsInit > 0) recommendations.push('Run the listed initialization commands before treating installed CLIs as ready for autonomous use.')
+  if (summary.versionDrift > 0) recommendations.push('Resolve version-drift items before relying on their generated skills, hooks, or artifacts.')
+  if (items.some(item => item.id === 'frontend-design')) recommendations.push('frontend-design is optional; keep it as an explicit companion only when implementation ideation is needed.')
+  if (items.some(item => item.id === 'awesome-design-md')) recommendations.push('Use awesome-design-md as the source of DESIGN.md, brand direction, and visual-language selection.')
+  if (items.some(item => item.id === 'ui-ux-pro-max')) recommendations.push('Use ui-ux-pro-max for UX flow, UI state, accessibility, and responsive acceptance checks.')
   if (items.some(item => item.id === 'gbrain')) recommendations.push('After GBrain is installed, validate remote or thin-client health with `scale memory provider status --json`.')
   if (items.some(item => item.id === 'graphify' || item.id === 'codegraph')) recommendations.push('After knowledge tools are installed, run `scale codegraph status --json` and initialize the project index or graph artifacts as needed.')
   if (postCheckSummary.failed > 0) recommendations.push('Resolve failed post-checks before treating the dependency bootstrap as production-ready.')
@@ -282,6 +332,7 @@ function buildReport(
     packIds,
     includeIds,
     apply,
+    runtimeChecks,
     items,
     summary,
     postActions,
@@ -290,6 +341,261 @@ function buildReport(
     postCheckCommands,
     rollbackHints,
     recommendations,
+  }
+}
+
+function buildRuntimeChecks(items: DependencyBootstrapItemReport[]): DependencyBootstrapRuntimeCheck[] {
+  const ids = new Set(items.map(item => item.id))
+  const requirements = new Map<string, Set<string>>()
+  const requireRuntime = (runtimeId: string, requiredFor: string[]) => {
+    const existing = requirements.get(runtimeId) ?? new Set<string>()
+    for (const value of requiredFor) existing.add(value)
+    requirements.set(runtimeId, existing)
+  }
+
+  const uiIds = ['awesome-design-md', 'ui-ux-pro-max', 'frontend-design'].filter(id => ids.has(id))
+  if (uiIds.length > 0) {
+    requireRuntime('node', uiIds)
+    requireRuntime('npx', uiIds)
+  }
+  if (ids.has('rtk')) requireRuntime('cargo', ['rtk'])
+  if (ids.has('gbrain')) requireRuntime('bun', ['gbrain'])
+  if (ids.has('graphify')) {
+    requireRuntime('python', ['graphify'])
+    requireRuntime('python-installer', ['graphify'])
+  }
+  if (ids.has('codegraph')) {
+    requireRuntime('node', ['codegraph'])
+    requireRuntime('npm', ['codegraph'])
+  }
+
+  const checks: DependencyBootstrapRuntimeCheck[] = []
+  const requiredFor = (runtimeId: string) => [...(requirements.get(runtimeId) ?? [])]
+  if (requirements.has('node')) checks.push(nodeRuntimeCheck(requiredFor('node')))
+  if (requirements.has('npx')) checks.push(commandRuntimeCheck({
+    id: 'npx',
+    label: 'npx',
+    candidates: [{ command: 'npx', args: ['--version'], display: 'npx' }],
+    requiredFor: requiredFor('npx'),
+    installHint: 'Install Node.js 20+; npm/npx are bundled with the official Node.js installer.',
+  }))
+  if (requirements.has('npm')) checks.push(commandRuntimeCheck({
+    id: 'npm',
+    label: 'npm',
+    candidates: [{ command: 'npm', args: ['--version'], display: 'npm' }],
+    requiredFor: requiredFor('npm'),
+    installHint: 'Install Node.js 20+; npm is bundled with the official Node.js installer.',
+  }))
+  if (requirements.has('cargo')) checks.push(commandRuntimeCheck({
+    id: 'cargo',
+    label: 'Rust/Cargo',
+    candidates: [{ command: 'cargo', args: ['--version'], display: 'cargo' }],
+    requiredFor: requiredFor('cargo'),
+    installHint: 'Install Rust with rustup, then re-open the shell so cargo is on PATH.',
+  }))
+  if (requirements.has('bun')) checks.push(commandRuntimeCheck({
+    id: 'bun',
+    label: 'Bun',
+    candidates: [{ command: 'bun', args: ['--version'], display: 'bun' }],
+    requiredFor: requiredFor('bun'),
+    installHint: 'Install Bun from https://bun.sh and re-open the shell so bun is on PATH.',
+  }))
+  if (requirements.has('python')) checks.push(pythonRuntimeCheck(requiredFor('python')))
+  if (requirements.has('python-installer')) checks.push(pythonInstallerRuntimeCheck(requiredFor('python-installer')))
+  return checks
+}
+
+type RuntimeToolCandidate = {
+  command: string
+  args: string[]
+  display: string
+}
+
+type RuntimeToolDetection = {
+  display: string
+  output: string
+}
+
+function commandRuntimeCheck(input: {
+  id: string
+  label: string
+  candidates: RuntimeToolCandidate[]
+  requiredFor: string[]
+  installHint: string
+}): DependencyBootstrapRuntimeCheck {
+  const detected = firstAvailableRuntimeTool(input.candidates)
+  if (!detected) {
+    return {
+      id: input.id,
+      label: input.label,
+      commands: input.candidates.map(candidate => candidate.display),
+      status: 'missing',
+      requiredFor: input.requiredFor,
+      reason: `${input.label} was not detected on PATH.`,
+      installHint: input.installHint,
+    }
+  }
+  return {
+    id: input.id,
+    label: input.label,
+    commands: input.candidates.map(candidate => candidate.display),
+    status: 'ok',
+    requiredFor: input.requiredFor,
+    detectedCommand: detected.display,
+    version: firstLine(detected.output),
+    reason: `${input.label} is available via ${detected.display}.`,
+    installHint: input.installHint,
+  }
+}
+
+function nodeRuntimeCheck(requiredFor: string[]): DependencyBootstrapRuntimeCheck {
+  const detected = firstAvailableRuntimeTool([{ command: 'node', args: ['--version'], display: 'node' }])
+  const commands = ['node']
+  const installHint = 'Install Node.js 20+ from https://nodejs.org.'
+  if (!detected) {
+    return {
+      id: 'node',
+      label: 'Node.js',
+      commands,
+      status: 'missing',
+      requiredFor,
+      reason: 'Node.js was not detected on PATH.',
+      installHint,
+    }
+  }
+  const version = firstLine(detected.output)
+  const parsed = parseSemver(version)
+  if (parsed && parsed.major < 20) {
+    return {
+      id: 'node',
+      label: 'Node.js',
+      commands,
+      status: 'warn',
+      requiredFor,
+      detectedCommand: detected.display,
+      version,
+      reason: `Node.js ${version} is installed, but SCALE setup expects Node.js 20+ for current third-party installers.`,
+      installHint,
+    }
+  }
+  return {
+    id: 'node',
+    label: 'Node.js',
+    commands,
+    status: 'ok',
+    requiredFor,
+    detectedCommand: detected.display,
+    version,
+    reason: `Node.js ${version} is available.`,
+    installHint,
+  }
+}
+
+function pythonRuntimeCheck(requiredFor: string[]): DependencyBootstrapRuntimeCheck {
+  const candidates: RuntimeToolCandidate[] = [
+    { command: 'python', args: ['--version'], display: 'python' },
+    { command: 'python3', args: ['--version'], display: 'python3' },
+    { command: 'py', args: ['--version'], display: 'py' },
+  ]
+  const detected = firstAvailableRuntimeTool(candidates)
+  const installHint = 'Install Python 3.10+ and prefer uv or pipx for graphifyy installation.'
+  if (!detected) {
+    return {
+      id: 'python',
+      label: 'Python',
+      commands: candidates.map(candidate => candidate.display),
+      status: 'missing',
+      requiredFor,
+      reason: 'Python 3.10+ was not detected on PATH.',
+      installHint,
+    }
+  }
+  const version = firstLine(detected.output)
+  const parsed = parseSemver(version)
+  if (!parsed || parsed.major < 3 || (parsed.major === 3 && parsed.minor < 10)) {
+    return {
+      id: 'python',
+      label: 'Python',
+      commands: candidates.map(candidate => candidate.display),
+      status: 'warn',
+      requiredFor,
+      detectedCommand: detected.display,
+      version,
+      reason: `${version} is detected, but Graphify requires Python 3.10+.`,
+      installHint,
+    }
+  }
+  return {
+    id: 'python',
+    label: 'Python',
+    commands: candidates.map(candidate => candidate.display),
+    status: 'ok',
+    requiredFor,
+    detectedCommand: detected.display,
+    version,
+    reason: `${version} is available for Graphify.`,
+    installHint,
+  }
+}
+
+function pythonInstallerRuntimeCheck(requiredFor: string[]): DependencyBootstrapRuntimeCheck {
+  const candidates: RuntimeToolCandidate[] = [
+    { command: 'uv', args: ['--version'], display: 'uv' },
+    { command: 'pipx', args: ['--version'], display: 'pipx' },
+    { command: 'pip', args: ['--version'], display: 'pip' },
+    { command: 'pip3', args: ['--version'], display: 'pip3' },
+    { command: 'python', args: ['-m', 'pip', '--version'], display: 'python -m pip' },
+    { command: 'python3', args: ['-m', 'pip', '--version'], display: 'python3 -m pip' },
+  ]
+  const detected = firstAvailableRuntimeTool(candidates)
+  const installHint = 'Install uv or pipx first; pip is supported only as a fallback for graphifyy.'
+  if (!detected) {
+    return {
+      id: 'python-installer',
+      label: 'Python installer',
+      commands: candidates.map(candidate => candidate.display),
+      status: 'missing',
+      requiredFor,
+      reason: 'No supported Python installer was detected for graphifyy.',
+      installHint,
+    }
+  }
+  const version = firstLine(detected.output)
+  const preferred = detected.display === 'uv' || detected.display === 'pipx'
+  return {
+    id: 'python-installer',
+    label: 'Python installer',
+    commands: candidates.map(candidate => candidate.display),
+    status: preferred ? 'ok' : 'warn',
+    requiredFor,
+    detectedCommand: detected.display,
+    version,
+    reason: preferred
+      ? `${detected.display} is available for isolated graphifyy installation.`
+      : `${detected.display} is available, but uv or pipx is preferred to avoid polluting project environments.`,
+    installHint,
+  }
+}
+
+function firstAvailableRuntimeTool(candidates: RuntimeToolCandidate[]): RuntimeToolDetection | undefined {
+  for (const candidate of candidates) {
+    const result = runHealthCommand(candidate.command, candidate.args)
+    if (!result.ok) continue
+    return {
+      display: candidate.display,
+      output: `${result.stdout}\n${result.stderr}`.trim(),
+    }
+  }
+  return undefined
+}
+
+function parseSemver(value: string): { major: number; minor: number; patch: number } | null {
+  const match = value.match(/(\d+)\.(\d+)(?:\.(\d+))?/)
+  if (!match) return null
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+    patch: Number.parseInt(match[3] ?? '0', 10),
   }
 }
 
@@ -388,6 +694,7 @@ function inspectDefinition(definition: DependencyBootstrapDefinition, context: B
     command: requirement,
     present: requirementSatisfied(requirement, context.commandExists),
   }))
+  const health = installed && definition.healthCheck ? definition.healthCheck(context) : undefined
   const installCommand = installed ? undefined : definition.installCommand(context) ?? undefined
   const installSupported = Boolean(installCommand)
   return {
@@ -397,16 +704,22 @@ function inspectDefinition(definition: DependencyBootstrapDefinition, context: B
     packs: definition.packs,
     source: definition.source,
     installed,
-    status: installed ? 'installed' : installSupported ? 'ready' : 'manual-review',
+    status: installed
+      ? health?.bootstrapStatus ?? 'installed'
+      : installSupported ? 'ready' : 'manual-review',
     installCommand,
     installSupported,
     detectedBy,
     prerequisites,
     manualReason: installed ? undefined : definition.manualReason,
+    health,
   }
 }
 
 function detectDefinition(definition: DependencyBootstrapDefinition, projectDir: string, homeDir: string): string {
+  const context: BootstrapInstallContext = { projectDir, homeDir, commandExists: externalCommandExists }
+  const detectedPath = definition.detectPaths?.(context).find(candidate => existsSync(candidate))
+  if (detectedPath) return detectedPath
   if (definition.detectSkillId) {
     const path = skillCandidatePaths(projectDir, homeDir, definition.detectSkillId).find(candidate => existsSync(candidate))
     return path ?? 'missing'
@@ -431,6 +744,8 @@ function requirementSatisfied(requirement: string, commandExists: (command: stri
 }
 
 function buildGraphifyInstallCommand(context: BootstrapInstallContext): string | null {
+  if (context.commandExists('uv')) return GRAPHIFY_UV_INSTALL
+  if (context.commandExists('pipx')) return GRAPHIFY_PIPX_INSTALL
   if (context.commandExists('pip')) return GRAPHIFY_PIP_INSTALL
   if (context.commandExists('pip3')) return GRAPHIFY_PIP3_INSTALL
   if (context.commandExists('python')) return GRAPHIFY_PYTHON_INSTALL
@@ -439,13 +754,118 @@ function buildGraphifyInstallCommand(context: BootstrapInstallContext): string |
 }
 
 function buildGbrainInstallCommand(context: BootstrapInstallContext): string | null {
-  if (!context.commandExists('git') || !context.commandExists('bun')) return null
-  const vendorRoot = join(context.homeDir, '.scale', 'vendor')
-  const installDir = join(vendorRoot, 'gbrain')
-  mkdirSync(vendorRoot, { recursive: true })
-  const changeDir = process.platform === 'win32' ? `cd /d "${installDir}"` : `cd "${installDir}"`
-  if (existsSync(installDir)) return `${changeDir} && git pull --ff-only && bun install && bun link`
-  return `git clone ${GBRAIN_SOURCE}.git "${installDir}" && ${changeDir} && bun install && bun link`
+  if (!context.commandExists('bun')) return null
+  return GBRAIN_INSTALL
+}
+
+function checkRtkHealth(): DependencyBootstrapHealth {
+  const gain = runHealthCommand('rtk', ['gain'])
+  if (!gain.ok) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: 'rtk CLI is installed but `rtk gain` did not run successfully; token-savings evidence is not available yet.',
+      nextCommands: ['rtk init -g --codex', 'rtk gain'],
+    }
+  }
+  const output = `${gain.stdout}\n${gain.stderr}`
+  if (/no hook installed/i.test(output)) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: 'rtk CLI is installed, but the shell hook is not installed so command-output compression is not automatic yet.',
+      nextCommands: ['rtk init -g --codex', 'rtk gain'],
+    }
+  }
+  return { status: 'ok', reason: 'rtk CLI and gain evidence are available.' }
+}
+
+function checkGbrainHealth(): DependencyBootstrapHealth {
+  const doctor = runHealthCommand('gbrain', ['doctor', '--json'], 10_000)
+  if (doctor.ok) return { status: 'ok', reason: 'gbrain doctor passed; provider can be used for default memory routing.' }
+  const output = `${doctor.stdout}\n${doctor.stderr}`
+  return {
+    status: 'warn',
+    bootstrapStatus: 'needs-init',
+    reason: /no brain configured/i.test(output)
+      ? 'gbrain CLI is installed but no brain is configured yet; cross-session recall will fail until initialized.'
+      : `gbrain CLI is installed but doctor failed: ${firstLine(output)}`,
+    nextCommands: ['gbrain init --pglite', 'gbrain doctor --json', 'scale memory provider status --json'],
+  }
+}
+
+function checkGraphifyHealth(): DependencyBootstrapHealth {
+  const version = runHealthCommand('graphify', ['--version'])
+  const hook = runHealthCommand('graphify', ['hook', 'status'], 10_000)
+  const output = `${version.stdout}\n${version.stderr}\n${hook.stdout}\n${hook.stderr}`
+  if (/skill.*version|package.*version|drift|outdated/i.test(output)) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'version-drift',
+      reason: 'graphify CLI is installed but its generated skill/hook assets appear out of sync with the package.',
+      nextCommands: ['graphify install --platform codex', 'graphify hook status', 'scale codegraph status --json'],
+    }
+  }
+  if (!hook.ok || /not installed|missing/i.test(output)) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: 'graphify CLI is installed but Codex hooks are not fully configured.',
+      nextCommands: ['graphify install --platform codex', 'graphify hook status'],
+    }
+  }
+  return { status: 'ok', reason: 'graphify CLI and hook status are available.' }
+}
+
+function checkCodeGraphHealth(context: BootstrapInstallContext): DependencyBootstrapHealth {
+  const indexPath = join(context.projectDir, '.codegraph')
+  if (!existsSync(indexPath)) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: 'codegraph CLI is installed but this project has no .codegraph index yet.',
+      nextCommands: ['codegraph init -i', 'scale codegraph status --json'],
+    }
+  }
+  const status = runHealthCommand('codegraph', ['status', context.projectDir], 10_000)
+  if (!status.ok) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: `codegraph index exists but status check failed: ${firstLine(`${status.stdout}\n${status.stderr}`)}`,
+      nextCommands: ['codegraph init -i', 'codegraph status .'],
+    }
+  }
+  return { status: 'ok', reason: 'codegraph CLI and project index are available.' }
+}
+
+function runHealthCommand(command: string, args: string[], timeout = 5_000): { ok: boolean; stdout: string; stderr: string } {
+  try {
+    const result = execaSync(command, args, {
+      reject: false,
+      timeout,
+    })
+    return {
+      ok: (result.exitCode ?? 1) === 0,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+    }
+  } catch (error) {
+    const err = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer }
+    return {
+      ok: false,
+      stdout: String(err.stdout ?? ''),
+      stderr: String(err.stderr ?? err.message ?? ''),
+    }
+  }
+}
+
+function firstLine(value: string): string {
+  return value.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? 'unknown error'
+}
+
+function quotePath(path: string): string {
+  return `"${path.replace(/"/g, '\\"')}"`
 }
 
 async function runInstallCommand(shellCommand: string): Promise<{ ok: boolean; output?: string; error?: string }> {
@@ -503,7 +923,10 @@ function buildPostCheckCommands(packIds: DependencyBootstrapPackId[], items: Dep
   const ids = new Set(items.map(item => item.id))
 
   if (selectedPacks.has('ui')) {
-    commands.add('scale tool doctor --tools awesome-design-md,ui-ux-pro-max,frontend-design --json')
+    const uiToolIds = items
+      .filter(item => item.kind === 'skill' && item.packs.includes('ui'))
+      .map(item => item.id)
+    if (uiToolIds.length > 0) commands.add(`scale tool doctor --tools ${uiToolIds.join(',')} --json`)
     commands.add('scale skill doctor --json')
   }
   if (selectedPacks.has('memory') || ids.has('gbrain')) {

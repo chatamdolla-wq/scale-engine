@@ -36,9 +36,9 @@ describe('ExternalCommand', () => {
 
     expect(output).toBe('gbrain 0.37.11.0')
     expect(spawnSync).toHaveBeenCalledWith(
-      'C:\\Users\\li\\.local\\bin\\gbrain.cmd',
-      ['--version'],
-      expect.objectContaining({ shell: true, encoding: 'utf8' }),
+      expect.any(String),
+      ['/d', '/c', 'call', 'C:\\Users\\li\\.local\\bin\\gbrain.cmd', '--version'],
+      expect.objectContaining({ shell: false, encoding: 'utf8' }),
     )
   })
 })

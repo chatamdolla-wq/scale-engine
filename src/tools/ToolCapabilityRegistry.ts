@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { runExternalCommandSync } from '../core/ExternalCommand.js'
 import { wrapCliCommandWithRtk } from './RtkRuntime.js'
 
 export type ToolCapabilityCategory = 'skill' | 'cli' | 'mcp' | 'browser' | 'desktop'
@@ -19,6 +20,7 @@ export interface ToolCatalogEntry {
   envFlag?: string
   source?: string
   installHint?: string
+  extraPaths?: (context: { projectDir: string; homeDir: string }) => string[]
 }
 
 export interface ToolCapabilityEntry extends ToolCatalogEntry {
@@ -69,7 +71,8 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     skillId: 'awesome-design-md',
     requiredFor: ['ui'],
     source: 'https://github.com/VoltAgent/awesome-design-md',
-    installHint: 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
+    installHint: 'scale setup --pack ui --include awesome-design-md',
+    extraPaths: ({ homeDir }) => [join(homeDir, '.scale', 'vendor', 'awesome-design-md', 'README.md')],
   },
   {
     id: 'ui-ux-pro-max',
@@ -78,7 +81,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     skillId: 'ui-ux-pro-max',
     requiredFor: ['ui'],
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
-    installHint: 'npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max',
+    installHint: 'npx uipro-cli init --ai codex',
   },
   {
     id: 'frontend-design',
@@ -99,7 +102,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: ['externalCli'],
     recommendedFor: ['review'],
     source: 'https://github.com/rtk-ai/rtk',
-    installHint: 'cargo install --git https://github.com/rtk-ai/rtk',
+    installHint: 'cargo install --git https://github.com/rtk-ai/rtk && rtk init -g --codex',
   },
   {
     id: 'gbrain',
@@ -253,7 +256,10 @@ function inspectToolCapability(tool: ToolCatalogEntry, deps: InspectToolCapabili
 }
 
 function inspectSkillTool(tool: ToolCatalogEntry, deps: InspectToolCapabilityDeps): ToolCapabilityEntry {
-  const checkedPaths = skillCandidatePaths(tool.skillId ?? tool.id, deps.projectDir, deps.homeDir)
+  const checkedPaths = [
+    ...skillCandidatePaths(tool.skillId ?? tool.id, deps.projectDir, deps.homeDir),
+    ...(tool.extraPaths?.({ projectDir: deps.projectDir, homeDir: deps.homeDir }) ?? []),
+  ]
   const detectedPath = checkedPaths.find(path => existsSync(path))
   return {
     ...tool,
@@ -323,8 +329,8 @@ function defaultCommandExists(command: string): boolean {
 function defaultRunVersion(command: string, args: string[]): { ok: boolean; stdout?: string; stderr?: string } {
   try {
     const invocation = wrapCliCommandWithRtk(command, args, defaultCommandExists)
-    const stdout = execFileSync(invocation.command, invocation.args, { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-    return { ok: true, stdout }
+    const stdout = runExternalCommandSync(invocation.command, invocation.args, { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
+    return { ok: true, stdout: String(stdout) }
   } catch (error) {
     return {
       ok: false,

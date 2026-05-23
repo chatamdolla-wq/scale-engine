@@ -46,8 +46,12 @@ import { createSkillPlan, evaluateSkillGate, loadSkillRoutingPolicy, skillPlanMa
 import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
 import { Doctor } from './doctor.js'
+import { inspectEnvironment, renderEnvironmentDoctor } from '../env/EnvironmentDoctor.js'
 import { quickStart, detectPlatform, governanceNextSteps } from './quickstart.js'
 import { bootstrapDependencies } from '../bootstrap/DependencyBootstrap.js'
+import { renderDependencyBootstrapReport } from '../bootstrap/DependencyBootstrapRenderer.js'
+import { runSetupWizard } from '../setup/SetupWizard.js'
+import { normalizeLanguage, resolveCliLanguage } from '../i18n/Language.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
 import {
@@ -2997,10 +3001,12 @@ const bootstrapDepsCommand = defineCommand({
     'governance-pack': { type: 'string', description: 'Optional governance pack hint, for example frontend-app -> ui' },
     include: { type: 'string', description: 'Additional dependency ids to include explicitly' },
     apply: { type: 'boolean', default: false, description: 'Run install commands for ready dependencies' },
+    lang: { type: 'string', description: 'Output language zh/en. Defaults to zh, then SCALE_LANG, then .scale/config.yaml locale.' },
     json: { type: 'boolean', default: false, description: 'Output bootstrap plan as JSON' },
   },
   async run({ args }) {
     const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const lang = resolveCliLanguage({ lang: args.lang, projectDir, scaleDir: SCALE_DIR })
     const explicitPacks = parseCommaList(args.pack)
     const recommendedPacks = args.profile
       ? getBootstrapPlanForProfile(
@@ -3020,33 +3026,7 @@ const bootstrapDepsCommand = defineCommand({
       if (isTruthyFlag(args.apply) && !report.ok) process.exitCode = 1
       return
     }
-    console.log('\nSCALE Dependency Bootstrap')
-    console.log(`  Project: ${report.projectDir}`)
-    console.log(`  Packs: ${report.packIds.join(', ')}`)
-    console.log(`  Apply: ${report.apply}`)
-    console.log(`  Complete: ${report.complete}`)
-    for (const item of report.items) {
-      console.log(`  [${item.status.toUpperCase()}] ${item.id} (${item.kind})`)
-      console.log(`    source: ${item.source}`)
-      console.log(`    detected: ${item.detectedBy}`)
-      if (!item.installed && item.installCommand) console.log(`    install: ${item.installCommand}`)
-      if (!item.installed && item.manualReason) console.log(`    reason: ${item.manualReason}`)
-      if (!item.installed && item.prerequisites.length > 0) {
-        console.log(`    prereqs: ${item.prerequisites.map(req => `${req.command}=${req.present ? 'ok' : 'missing'}`).join(', ')}`)
-      }
-      if (item.error) console.log(`    error: ${item.error}`)
-    }
-    for (const action of report.postActions) console.log(`  [POST] ${action}`)
-    if (report.postChecks.length > 0) {
-      console.log(`  Post-checks: passed=${report.postCheckSummary.passed}, warned=${report.postCheckSummary.warned}, failed=${report.postCheckSummary.failed}`)
-      for (const check of report.postChecks) {
-        console.log(`  [POSTCHECK ${check.status.toUpperCase()}] ${check.label}: ${check.summary}`)
-        console.log(`    command: ${check.command}`)
-      }
-    }
-    for (const command of report.postCheckCommands) console.log(`  [CHECK] ${command}`)
-    for (const hint of report.rollbackHints) console.log(`  [ROLLBACK] ${hint}`)
-    for (const recommendation of report.recommendations) console.log(`  [NEXT] ${recommendation}`)
+    console.log(renderDependencyBootstrapReport(report, lang))
     if (report.apply && !report.ok) process.exitCode = 1
   },
 })
@@ -3057,6 +3037,74 @@ const bootstrap = defineCommand({
 })
 
 // ============================================================================
+const setup = defineCommand({
+  meta: { name: 'setup', description: 'Interactive SCALE setup for third-party skills, CLIs, memory, and knowledge providers' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    pack: { type: 'string', default: '', description: 'Comma-separated packs: ui,memory,knowledge,external-cli,full. Defaults to full unless --profile is supplied.' },
+    profile: { type: 'string', description: 'Resolve recommended packs from profile: minimal, standard, advanced' },
+    'governance-pack': { type: 'string', description: 'Optional governance pack hint, for example frontend-app -> ui' },
+    include: { type: 'string', description: 'Additional dependency ids to include explicitly' },
+    apply: { type: 'boolean', default: false, description: 'Run install commands for ready dependencies' },
+    yes: { type: 'boolean', default: false, description: 'Confirm installation without prompting' },
+    interactive: { type: 'boolean', default: true, description: 'Prompt before installation when dependencies are ready' },
+    lang: { type: 'string', description: 'Output language zh/en. Defaults to zh, then SCALE_LANG, then .scale/config.yaml locale.' },
+    'memory-provider': { type: 'string', description: 'Switch memory provider during setup: gbrain, agentmemory, or scale-local' },
+    'memory-mode': { type: 'string', description: 'Memory routing mode: auto, local-only, external-first' },
+    'memory-endpoint': { type: 'string', description: 'Optional endpoint to persist for the selected memory provider' },
+    'memory-write-mode': { type: 'string', description: 'Memory write mode: disabled, candidate-only, enabled' },
+    'allow-external-write': { type: 'boolean', default: false, description: 'Explicitly allow external memory writes in provider routing' },
+    json: { type: 'boolean', default: false, description: 'Output setup report as JSON' },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const lang = resolveCliLanguage({ lang: args.lang, projectDir, scaleDir: SCALE_DIR })
+    const explicitPacks = parseCommaList(args.pack)
+    const recommendedPacks = args.profile
+      ? getBootstrapPlanForProfile(
+        String(args.profile),
+        args['governance-pack'] ? String(args['governance-pack']) : undefined,
+      ).packs
+      : []
+    const report = await runSetupWizard({
+      projectDir,
+      scaleDir: SCALE_DIR,
+      packIds: explicitPacks.length > 0 ? uniqueStrings([...recommendedPacks, ...explicitPacks]) : recommendedPacks,
+      includeIds: parseCommaList(args.include),
+      apply: isTruthyFlag(args.apply),
+      yes: isTruthyFlag(args.yes),
+      interactive: isTruthyFlag(args.interactive) && !isTruthyFlag(args.json),
+      lang,
+      memoryProvider: args['memory-provider'] ? String(args['memory-provider']) : undefined,
+      memoryMode: normalizeMemoryModeArg(args['memory-mode']),
+      memoryEndpoint: args['memory-endpoint'] ? String(args['memory-endpoint']) : undefined,
+      memoryWriteMode: normalizeMemoryWriteModeArg(args['memory-write-mode']),
+      allowExternalWrite: isTruthyFlag(args['allow-external-write']) ? true : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log(lang === 'zh' ? '\nSCALE 交互式安装' : '\nSCALE Interactive Setup')
+    console.log(lang === 'zh'
+      ? `  已执行安装: ${report.applied ? '是' : '否'}`
+      : `  Applied: ${report.applied}`)
+    if (report.memoryProviderSwitch) {
+      const switched = report.memoryProviderSwitch
+      console.log(lang === 'zh' ? '  记忆供应商:' : '  Memory provider:')
+      console.log(`    provider=${switched.provider}; mode=${switched.mode}; config=${switched.path}`)
+      console.log(`    order=${switched.previousOrder.join(' -> ')} => ${switched.nextOrder.join(' -> ')}`)
+      if (switched.providerStatus) {
+        console.log(`    status=${switched.providerStatus.available ? 'available' : 'not-ready'}; reason=${switched.providerStatus.reason}`)
+      }
+      for (const warning of switched.warnings) console.log(lang === 'zh' ? `    [警告] ${warning}` : `    [WARN] ${warning}`)
+    }
+    console.log(renderDependencyBootstrapReport(report.final, lang))
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 // config command — Configuration profile management
 // ============================================================================
 
@@ -3978,7 +4026,10 @@ function readGitChangedFiles(projectDir: string): string[] {
 
 function readGitPathList(projectDir: string, args: string[]): string[] {
   try {
-    return execFileSync('git', ['-C', projectDir, ...args], { encoding: 'utf-8' })
+    return execFileSync('git', ['-C', projectDir, ...args], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
       .split(/\r?\n/)
       .map(item => item.trim())
       .filter(Boolean)
@@ -4302,8 +4353,19 @@ function normalizeThemeArg(value: unknown): 'dark' | 'light' | 'auto' {
 }
 
 function normalizeLangArg(value: unknown): 'zh' | 'en' {
-  const raw = String(value ?? process.env.SCALE_LANG ?? 'zh').trim().toLowerCase()
-  return raw === 'en' || raw.startsWith('en-') || raw === 'english' ? 'en' : 'zh'
+  return normalizeLanguage(value ?? process.env.SCALE_LANG)
+}
+
+function normalizeMemoryModeArg(value: unknown): 'auto' | 'local-only' | 'external-first' | undefined {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'auto' || normalized === 'local-only' || normalized === 'external-first') return normalized
+  return undefined
+}
+
+function normalizeMemoryWriteModeArg(value: unknown): 'disabled' | 'candidate-only' | 'enabled' | undefined {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (normalized === 'disabled' || normalized === 'candidate-only' || normalized === 'enabled') return normalized
+  return undefined
 }
 
 function launchLocalFile(path: string): void {
@@ -4342,13 +4404,34 @@ const evolve = defineCommand({
 // doctor command
 // ============================================================================
 
+function runEnvironmentDoctor(json: unknown) {
+  const report = inspectEnvironment()
+  if (json) {
+    console.log(JSON.stringify(report, null, 2))
+  } else {
+    console.log(renderEnvironmentDoctor(report))
+  }
+  process.exitCode = report.ok ? 0 : 1
+}
+
 const doctor = defineCommand({
   meta: { name: 'doctor', description: 'Diagnose SCALE Engine health' },
   args: {
+    scope: { type: 'positional', required: false, description: 'Optional diagnostic scope: env' },
     dir: { type: 'string', default: '.', description: 'Project directory' },
     json: { type: 'boolean', default: false, description: 'Output as JSON' },
   },
   async run({ args }) {
+    const scope = String(args.scope ?? '').trim().toLowerCase()
+    if (scope === 'env' || scope === 'environment') {
+      runEnvironmentDoctor(args.json)
+      return
+    }
+    if (scope) {
+      console.error(`Unknown doctor scope: ${scope}. Supported scope: env.`)
+      process.exitCode = 1
+      return
+    }
     const doc = new Doctor(args.dir)
     const report = await doc.diagnose()
     if (args.json) {
@@ -6227,6 +6310,7 @@ const main = defineCommand({
 
     // Original commands (preserved)
     init,
+    setup,
     bootstrap,
     doctor,
     session,

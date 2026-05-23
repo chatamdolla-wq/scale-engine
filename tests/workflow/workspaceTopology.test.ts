@@ -76,6 +76,7 @@ describe('WorkspaceTopology', () => {
     expect(template.topology).toBe('moe')
     expect(template.repositories).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'root', path: '.', role: 'root' }),
+      expect.objectContaining({ name: 'example-service', path: '../example-service', role: 'external' }),
     ]))
     expect(template.finishPolicy).toMatchObject({
       requireCleanRepositories: true,
@@ -90,6 +91,24 @@ describe('WorkspaceTopology', () => {
       releasePrefixes: ['release/'],
       hotfixPrefixes: ['hotfix/'],
     })
+  })
+
+  it('warns when MOE child repositories are nested under the root checkout', () => {
+    const dir = makeProject()
+    writeFileSync(join(dir, '.scale', 'workspace.json'), JSON.stringify({
+      version: 1,
+      topology: 'moe',
+      repositories: [
+        { name: 'root', path: '.', role: 'root', required: true },
+        { name: 'api', path: 'services/api', role: 'service', required: true },
+      ],
+    }, null, 2), 'utf-8')
+
+    const topology = loadWorkspaceTopology(dir)
+
+    expect(topology?.warnings).toEqual([
+      expect.stringContaining('prefer a sibling or absolute path'),
+    ])
   })
 
   it('generates a single-repository template without placeholder child repositories', () => {
