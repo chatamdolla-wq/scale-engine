@@ -525,8 +525,8 @@ export class ExplorationGate implements IGate {
         kind: 'file',
         label: 'Knowledge graph',
         passed: hasKnowledgeGraph,
-        path: 'graphify-out/GRAPH_REPORT.md',
-        detail: hasKnowledgeGraph ? 'available' : 'not available',
+        path: hasKnowledgeGraph ? 'graphify-out/graph.json' : 'graphify-out/graph.json',
+        detail: hasKnowledgeGraph ? 'graphify graph artifact is available' : 'graphify graph artifact is not available',
       })
     )
 
@@ -556,13 +556,16 @@ export class ExplorationGate implements IGate {
   }
 
   private async checkKnowledgeGraph(): Promise<boolean> {
-    try {
-      const fs = await import('fs/promises')
-      await fs.access('graphify-out/GRAPH_REPORT.md')
-      return true
-    } catch {
-      return false
+    const fs = await import('fs/promises')
+    for (const candidate of ['graphify-out/graph.json', 'graphify-out/GRAPH_REPORT.md']) {
+      try {
+        await fs.access(candidate)
+        return true
+      } catch {
+        // Try the next graphify artifact candidate.
+      }
     }
+    return false
   }
 }
 

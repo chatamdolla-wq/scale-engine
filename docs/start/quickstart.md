@@ -52,6 +52,8 @@ AGENTS.md 或对应 Agent 入口文档
 ## 3. 跑第一轮本地检查
 
 ```bash
+scale bootstrap deps --pack external-cli --json
+scale doctor
 scale preflight --preflight-profile quick
 scale status
 scale assets scan --dir .
@@ -62,10 +64,19 @@ scale runtime doctor --level S
 预期效果：
 
 - `preflight` 能说明当前治理文件是否完整。
+- `bootstrap deps` 会告诉你第三方 skills、RTK、记忆/知识图谱依赖哪些已经装好，哪些只是治理规则已经生成。
 - `status` 会告诉 Agent 下一步应该做什么。
 - `assets scan` 会把文档、模板、脚本、报告等资源分类。
 - `standards scan` 会扫描日志噪音、敏感信息、危险输入、测试和架构风险。
 - `runtime doctor` 会检查本地运行时证据目录和最终交付证据状态。
+
+建议再跑一次 `scale doctor`。现在它会按当前 profile 输出 `bootstrap` 建议，并把 `gbrain / codegraph / graphify` 的状态一起列出来。
+
+如果你确认要补环境依赖，再显式执行安装：
+
+```bash
+scale bootstrap deps --profile advanced --governance-pack frontend-app --apply
+```
 
 ## 4. 建立第一个任务上下文
 

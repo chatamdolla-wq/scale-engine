@@ -13,6 +13,15 @@ export interface ConfigProfile {
 }
 
 export type ConfigSection = 'basic' | 'guardrails' | 'knowledge' | 'evolution' | 'models' | 'advanced'
+export type DependencyBootstrapPackId = 'ui' | 'memory' | 'knowledge' | 'external-cli'
+
+export interface ProfileBootstrapPlan {
+  profileId: string
+  governancePack?: string
+  packs: DependencyBootstrapPackId[]
+  inspectCommand: string
+  applyCommand: string
+}
 
 export interface ProfileDefaults {
   scenario: 'sandbox' | 'standard' | 'critical'
@@ -70,7 +79,7 @@ export const PROFILES: Record<string, ConfigProfile> = {
   advanced: {
     id: 'advanced',
     name: 'Advanced',
-    description: 'Full governance: guardrails + knowledge recall + evolution + model routing. Requires Qdrant for vector search.',
+    description: 'Full governance: guardrails + graphify knowledge recall + gbrain memory routing + evolution + model routing.',
     sections: ['basic', 'guardrails', 'knowledge', 'evolution', 'models', 'advanced'],
     defaults: {
       scenario: 'standard',
@@ -87,6 +96,16 @@ export const PROFILES: Record<string, ConfigProfile> = {
   },
 }
 
+const PROFILE_BOOTSTRAP_PACKS: Record<string, DependencyBootstrapPackId[]> = {
+  minimal: ['external-cli'],
+  standard: ['external-cli'],
+  advanced: ['external-cli', 'memory', 'knowledge'],
+}
+
+const GOVERNANCE_PACK_BOOTSTRAP_PACKS: Record<string, DependencyBootstrapPackId[]> = {
+  'frontend-app': ['ui'],
+}
+
 /**
  * Get profile by ID, falling back to 'standard' if not found.
  */
@@ -97,12 +116,42 @@ export function getProfile(id: string): ConfigProfile {
 /**
  * List all available profiles for display.
  */
-export function listProfiles(): Array<{ id: string; name: string; description: string }> {
+export function listProfiles(): Array<{
+  id: string
+  name: string
+  description: string
+  bootstrapPacks: DependencyBootstrapPackId[]
+  dependencyBootstrapCommand: string
+}> {
   return Object.values(PROFILES).map(p => ({
     id: p.id,
     name: p.name,
     description: p.description,
+    bootstrapPacks: getRecommendedBootstrapPacks(p.id),
+    dependencyBootstrapCommand: getBootstrapPlanForProfile(p.id).inspectCommand,
   }))
+}
+
+export function getRecommendedBootstrapPacks(profileId: string, governancePack?: string): DependencyBootstrapPackId[] {
+  const profile = getProfile(profileId)
+  const selected = [
+    ...(PROFILE_BOOTSTRAP_PACKS[profile.id] ?? PROFILE_BOOTSTRAP_PACKS.standard),
+    ...(governancePack ? (GOVERNANCE_PACK_BOOTSTRAP_PACKS[governancePack] ?? []) : []),
+  ]
+  return unique(selected)
+}
+
+export function getBootstrapPlanForProfile(profileId: string, governancePack?: string): ProfileBootstrapPlan {
+  const profile = getProfile(profileId)
+  const packs = getRecommendedBootstrapPacks(profile.id, governancePack)
+  const packArg = packs.join(',')
+  return {
+    profileId: profile.id,
+    governancePack,
+    packs,
+    inspectCommand: `scale bootstrap deps --pack ${packArg} --json`,
+    applyCommand: `scale bootstrap deps --pack ${packArg} --apply`,
+  }
 }
 
 /**
@@ -133,9 +182,11 @@ export function generateConfigForProfile(
   lines.push(`  events: .scale/events`)
   lines.push(`  artifacts: .scale/artifacts`)
   if (d.knowledge.vectorSearch) {
-    lines.push(`  vectors:`)
-    lines.push(`    backend: qdrant`)
-    lines.push(`    url: http://localhost:6333`)
+    lines.push(`  knowledge:`)
+    lines.push(`    backend: graphify`)
+    lines.push(`    graph: graphify-out/graph.json`)
+    lines.push(`  memory:`)
+    lines.push(`    provider: gbrain`)
   }
   lines.push(``)
 
@@ -204,4 +255,8 @@ export function generateConfigForProfile(
   lines.push(`  file: .scale/scale.log`)
 
   return lines.join('\n')
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)]
 }

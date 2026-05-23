@@ -94,9 +94,9 @@ describe('writeGovernanceTemplates', () => {
       requireSkillPlan: true,
     })
     const skills = JSON.parse(readFileSync(join(dir, '.scale', 'skills.json'), 'utf-8'))
-    expect(skills.domains.ui.requiredSkills).toContain('frontend-design')
+    expect(skills.domains.ui.requiredSkills).toContain('awesome-design-md')
     expect(skills.domains.ui.requiredSkills).toContain('ui-ux-pro-max')
-    expect(skills.domains.ui.recommendedSkills).toContain('awesome-design-md')
+    expect(skills.domains.ui.recommendedSkills).toContain('frontend-design')
     expect(skills.domains.ui.recommendedSkills).toContain('webapp-testing')
     expect(skills.domains.webResearch.requiredSkills).toContain('web-access')
     expect(skills.domains.browserAutomation.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))

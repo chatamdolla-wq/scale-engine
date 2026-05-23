@@ -1,6 +1,6 @@
 # Code Intelligence
 
-SCALE uses an adapter-first code intelligence layer. It can consume external code graph tools when they exist, read graph artifacts such as Graphify outputs, and fall back to a scoped internal source scan when no provider is available.
+SCALE uses an adapter-first code intelligence layer. It can consume the upstream [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) CLI when it is installed and the project has a local `.codegraph/` index, read graph artifacts such as Graphify outputs, and fall back to a scoped internal source scan when no provider is available.
 
 The goal is not to replace IDE indexing. The goal is to make exploration measurable:
 
@@ -11,6 +11,15 @@ The goal is not to replace IDE indexing. The goal is to make exploration measura
 - what confidence the result has
 
 ## Quick Start
+
+Optional upstream install:
+
+```bash
+npx @colbymchenry/codegraph
+# or
+npm i -g @colbymchenry/codegraph
+codegraph init -i
+```
 
 Create the optional provider configuration:
 
@@ -23,6 +32,7 @@ Inspect provider availability:
 ```bash
 scale codegraph status
 scale codegraph status --json
+scale tool doctor --tools codegraph,graphify --json
 ```
 
 Query code intelligence:
@@ -53,14 +63,20 @@ Default shape:
       "type": "external-cli",
       "enabled": true,
       "command": "codegraph",
-      "capabilities": ["symbols", "callers", "callees", "impact", "context"]
+      "capabilities": ["symbols", "callers", "callees", "impact", "context", "summary", "module-map"],
+      "source": "https://github.com/colbymchenry/codegraph",
+      "installHint": "npx @colbymchenry/codegraph or npm i -g @colbymchenry/codegraph",
+      "projectInitHint": "codegraph init -i",
+      "serveCommand": "codegraph serve --mcp"
     },
     {
       "id": "graphify",
       "type": "artifact",
       "enabled": true,
-      "manifest": "graphify-out/GRAPH_REPORT.md",
-      "capabilities": ["summary", "module-map", "context"]
+      "manifest": "graphify-out/graph.json",
+      "capabilities": ["symbols", "callers", "callees", "impact", "context", "summary", "module-map"],
+      "source": "https://github.com/safishamsi/graphify",
+      "installHint": "pip install graphifyy && graphify install"
     }
   ],
   "fallback": {
@@ -74,7 +90,7 @@ Default shape:
 
 | Type | Use |
 | --- | --- |
-| `external-cli` | Detects an installed external code graph command. SCALE does not auto-install it. The first version treats this as availability evidence until a stable command contract is configured. |
+| `external-cli` | Detects an installed external code graph command. For `codegraph`, SCALE consumes the official JSON output from `codegraph query --json` and `codegraph context --format json` when `.codegraph/` exists. |
 | `artifact` | Reads a local graph manifest or report file. JSON manifests can provide symbol impact data. |
 | fallback | Uses a bounded internal source scan when providers are unavailable or return no hits. |
 
@@ -134,5 +150,6 @@ When a graph provider answers, the module is reported as measured evidence. When
 - SCALE must run when no code graph provider is installed.
 - Missing providers must produce explicit fallback, not silent success.
 - External tools are detected but not installed automatically.
+- When CodeGraph is installed and the project is initialized, SCALE should prefer the upstream JSON query/context surfaces before falling back to raw file scans.
 - Source files are read only through a bounded fallback scan.
 - Large generated graph outputs should stay outside default prompt context; use summaries and file paths.

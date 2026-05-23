@@ -1,4 +1,4 @@
-﻿{
+{
   "version": 1,
   "policy": {
     "mode": "warn",
@@ -38,11 +38,11 @@
         ]
       },
       "requiredSkills": [
-        "frontend-design",
+        "awesome-design-md",
         "ui-ux-pro-max"
       ],
       "recommendedSkills": [
-        "awesome-design-md",
+        "frontend-design",
         "webapp-testing",
         "agent-browser",
         "mcp-chrome-devtools",

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { wrapCliCommandWithRtk } from './RtkRuntime.js'
 
 export type ToolCapabilityCategory = 'skill' | 'cli' | 'mcp' | 'browser' | 'desktop'
 export type ToolCapabilityStatus = 'installed' | 'missing'
@@ -17,6 +18,7 @@ export interface ToolCatalogEntry {
   versionArgs?: string[]
   envFlag?: string
   source?: string
+  installHint?: string
 }
 
 export interface ToolCapabilityEntry extends ToolCatalogEntry {
@@ -58,14 +60,16 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: ['webResearch'],
     recommendedFor: ['browserAutomation'],
     source: 'https://github.com/eze-is/web-access',
+    installHint: 'npx skills add https://github.com/eze-is/web-access --skill web-access',
   },
   {
-    id: 'frontend-design',
-    name: 'Frontend Design',
+    id: 'awesome-design-md',
+    name: 'Awesome Design.md',
     category: 'skill',
-    skillId: 'frontend-design',
+    skillId: 'awesome-design-md',
     requiredFor: ['ui'],
-    source: 'https://github.com/anthropics/skills/tree/main/skills/frontend-design',
+    source: 'https://github.com/VoltAgent/awesome-design-md',
+    installHint: 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
   },
   {
     id: 'ui-ux-pro-max',
@@ -74,15 +78,61 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     skillId: 'ui-ux-pro-max',
     requiredFor: ['ui'],
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+    installHint: 'npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max',
   },
   {
-    id: 'awesome-design-md',
-    name: 'Awesome Design.md',
+    id: 'frontend-design',
+    name: 'Frontend Design',
     category: 'skill',
-    skillId: 'awesome-design-md',
+    skillId: 'frontend-design',
     requiredFor: [],
     recommendedFor: ['ui'],
-    source: 'https://github.com/VoltAgent/awesome-design-md',
+    source: 'https://github.com/anthropics/skills/tree/main/skills/frontend-design',
+    installHint: 'npx skills add anthropics/skills --skill frontend-design',
+  },
+  {
+    id: 'rtk',
+    name: 'RTK',
+    category: 'cli',
+    command: 'rtk',
+    versionArgs: ['--version'],
+    requiredFor: ['externalCli'],
+    recommendedFor: ['review'],
+    source: 'https://github.com/rtk-ai/rtk',
+    installHint: 'cargo install --git https://github.com/rtk-ai/rtk',
+  },
+  {
+    id: 'gbrain',
+    name: 'GBrain',
+    category: 'cli',
+    command: 'gbrain',
+    versionArgs: ['--version'],
+    requiredFor: [],
+    recommendedFor: ['review'],
+    source: 'https://github.com/garrytan/gbrain',
+    installHint: 'scale bootstrap deps --pack memory --apply',
+  },
+  {
+    id: 'codegraph',
+    name: 'CodeGraph',
+    category: 'cli',
+    command: 'codegraph',
+    versionArgs: ['--version'],
+    requiredFor: [],
+    recommendedFor: ['review'],
+    source: 'https://github.com/colbymchenry/codegraph',
+    installHint: 'scale bootstrap deps --pack knowledge --apply',
+  },
+  {
+    id: 'graphify',
+    name: 'Graphify',
+    category: 'cli',
+    command: 'graphify',
+    versionArgs: ['--version'],
+    requiredFor: [],
+    recommendedFor: ['review'],
+    source: 'https://github.com/safishamsi/graphify',
+    installHint: 'scale bootstrap deps --pack knowledge --apply',
   },
   {
     id: 'agent-browser',
@@ -93,6 +143,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: ['browserAutomation'],
     recommendedFor: ['ui', 'e2e'],
     source: 'https://github.com/vercel-labs/agent-browser',
+    installHint: 'Install or configure Agent Browser from https://github.com/vercel-labs/agent-browser',
   },
   {
     id: 'playwright',
@@ -103,6 +154,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: ['e2e'],
     recommendedFor: ['browserAutomation', 'ui'],
     source: 'https://playwright.dev',
+    installHint: 'npx playwright install',
   },
   {
     id: 'mcp-chrome-devtools',
@@ -112,6 +164,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: ['browserAutomation'],
     recommendedFor: ['ui', 'e2e'],
     source: 'https://github.com/ChromeDevTools/chrome-devtools-mcp',
+    installHint: 'Configure Chrome DevTools MCP for the active agent platform',
   },
   {
     id: 'desktop-cua',
@@ -121,6 +174,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     versionArgs: ['--version'],
     requiredFor: ['desktopAutomation'],
     source: 'https://github.com/trycua/cua',
+    installHint: 'Install or configure CUA from https://github.com/trycua/cua',
   },
   {
     id: 'codex-cli',
@@ -131,6 +185,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: [],
     recommendedFor: ['externalCli', 'review'],
     source: 'https://github.com/openai/codex',
+    installHint: 'Install Codex CLI and verify with: codex --version',
   },
   {
     id: 'gemini-cli',
@@ -141,6 +196,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: [],
     recommendedFor: ['externalCli', 'review'],
     source: 'https://github.com/google-gemini/gemini-cli',
+    installHint: 'Install Gemini CLI and verify with: gemini --version',
   },
   {
     id: 'opencode-cli',
@@ -151,6 +207,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     requiredFor: [],
     recommendedFor: ['externalCli', 'review'],
     source: 'https://github.com/sst/opencode',
+    installHint: 'Install OpenCode CLI and verify with: opencode --version',
   },
 ]
 
@@ -224,8 +281,8 @@ function inspectCliTool(tool: ToolCatalogEntry, deps: InspectToolCapabilityDeps)
   return {
     ...tool,
     checkedPaths,
-    installed: true,
-    status: 'installed',
+    installed: version.ok,
+    status: version.ok ? 'installed' : 'missing',
     version: version.ok ? (version.stdout ?? '').trim() : undefined,
     missingReason: version.ok ? undefined : version.stderr ?? 'Version command failed',
   }
@@ -265,7 +322,8 @@ function defaultCommandExists(command: string): boolean {
 
 function defaultRunVersion(command: string, args: string[]): { ok: boolean; stdout?: string; stderr?: string } {
   try {
-    const stdout = execFileSync(command, args, { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
+    const invocation = wrapCliCommandWithRtk(command, args, defaultCommandExists)
+    const stdout = execFileSync(invocation.command, invocation.args, { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
     return { ok: true, stdout }
   } catch (error) {
     return {

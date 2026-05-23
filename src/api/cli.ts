@@ -12,7 +12,7 @@ import { Gateway } from '../guardrails/Gateway.js'
 import { BruteRetryDetector, PrematureDoneDetector, BlameShiftDetector } from '../guardrails/detectors.js'
 import { DangerousCommandDetector, SecretLeakDetector, RoleGateDetector, ScopeCreepDetector, BUILT_IN_ROLES } from '../guardrails/advancedDetectors.js'
 import { auditDependencies } from '../guardrails/DependencyAuditor.js'
-import { SQLiteKnowledgeBase } from '../knowledge/SQLiteKnowledgeBase.js'
+import { GraphifyKnowledgeBase } from '../knowledge/GraphifyKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { ProjectAnatomy } from '../context/ProjectAnatomy.js'
 import {
@@ -47,6 +47,7 @@ import { createAdapter, SUPPORTED_AGENTS } from '../adapters/index.js'
 import { LessonExtractor, RuleProposer, HookGenerator, EvolutionEngine } from '../evolution/EvolutionEngine.js'
 import { Doctor } from './doctor.js'
 import { quickStart, detectPlatform, governanceNextSteps } from './quickstart.js'
+import { bootstrapDependencies } from '../bootstrap/DependencyBootstrap.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
 import {
@@ -73,7 +74,12 @@ import {
   type VerificationPolicy,
 } from '../workflow/VerificationProfile.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
-import { getProfile as getConfigProfile, generateConfigForProfile, listProfiles as listConfigProfiles } from '../config/profiles.js'
+import {
+  getBootstrapPlanForProfile,
+  getProfile as getConfigProfile,
+  generateConfigForProfile,
+  listProfiles as listConfigProfiles,
+} from '../config/profiles.js'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
 import {
   applyUpgradePlan,
@@ -167,6 +173,7 @@ import {
   inspectMemoryProviders,
   recallMemoryProviders,
   settleMemoryLearning,
+  useMemoryProvider,
   writeMemoryProvidersConfig,
 } from '../memory/index.js'
 import {
@@ -361,7 +368,7 @@ function createEngine() {
   gateway.registerDetector(new PrematureDoneDetector(), 'beforeStop')
   gateway.registerDetector(new BlameShiftDetector(), 'postTool')
 
-  const kb = new SQLiteKnowledgeBase(eventBus, { dbPath: join(SCALE_DIR, 'knowledge.db') })
+  const kb = new GraphifyKnowledgeBase(eventBus, { projectDir: PROJECT_DIR, scaleDir: SCALE_DIR })
   const ctx = new ContextBuilder(store, kb, eventBus)
   const fsmAgentBridge = new FSMAgentBridge(fsm, store)
   const capabilityRegistry = new CapabilityRegistry(eventBus)
@@ -1381,8 +1388,15 @@ const codegraphStatus = defineCommand({
     }
     console.log('SCALE Code Intelligence Status')
     console.log(`  Config: ${report.configPath} (${report.configExists ? 'found' : 'default'})`)
+    console.log(`  Project index: ${report.projectIndexExists ? report.projectIndexPath : `${report.projectIndexPath} (not initialized)`}`)
     for (const provider of report.providers) {
       console.log(`  [${provider.available ? 'AVAILABLE' : 'UNAVAILABLE'}] ${provider.id} (${provider.type}): ${provider.reason}`)
+      if (provider.source) console.log(`    source: ${provider.source}`)
+      if (!provider.available && provider.installHint) console.log(`    install: ${provider.installHint}`)
+      if (provider.available && provider.projectInitHint && provider.id === 'codegraph' && !report.projectIndexExists) {
+        console.log(`    init: ${provider.projectInitHint}`)
+      }
+      if (provider.serveCommand) console.log(`    mcp: ${provider.serveCommand}`)
     }
     console.log(`  Fallback: ${report.fallback.available ? 'available' : 'disabled'} (${report.fallback.tools.join(', ')})`)
     for (const recommendation of report.recommendations) console.log(`  recommendation: ${recommendation}`)
@@ -2743,7 +2757,7 @@ const status = defineCommand({
 // ============================================================================
 
 const init = defineCommand({
-  meta: { name: 'init', description: 'Initialize SCALE Engine in current project (one-click install)' },
+  meta: { name: 'init', description: 'Initialize SCALE Engine governance in current project (one-click bootstrap, not third-party auto-install)' },
   args: {
     agent: { type: 'string', default: '', description: `Agent type (${SUPPORTED_AGENTS.join('/')}) - auto-detected if not specified` },
     dir: { type: 'string', default: '.', description: 'Project directory' },
@@ -2852,17 +2866,23 @@ const init = defineCommand({
       console.log(`   Profile:       ${profileId}`)
 
       console.log(`\n📋 Next steps:`)
-      for (const step of governanceNextSteps()) console.log(`   → ${step}`)
+      for (const step of governanceNextSteps({
+        profileId,
+        governancePack: String(args['governance-pack']),
+      })) console.log(`   → ${step}`)
       return
     }
 
     // One-click quick start mode
     if (!args.agent) {
-      const qsResult = await quickStart(args.dir, { governancePack: args['governance-pack'] })
+      const profileId = args.profile || profileFromScenario(args.scenario)
+      const qsResult = await quickStart(args.dir, {
+        governancePack: args['governance-pack'],
+        profileId,
+      })
 
       // Generate config.yaml from profile
       if (qsResult.success) {
-        const profileId = args.profile || profileFromScenario(args.scenario)
         const projectName = args.dir.split(/[/\\]/).pop() || 'Project'
         const detectedAgent = qsResult.platform ? [qsResult.platform] : []
         const configPath = writeConfigYaml(args.dir, profileId, projectName, detectedAgent)
@@ -2878,8 +2898,10 @@ const init = defineCommand({
           created: qsResult.created,
           skipped: qsResult.skipped,
           constraintsApplied: qsResult.constraintsApplied,
+          workflowCapabilities: qsResult.workflowCapabilities,
           capabilitiesEnabled: qsResult.capabilitiesEnabled,
           knowledgeGraph: qsResult.knowledgeGraph,
+          dependencyBootstrapCommand: qsResult.dependencyBootstrapCommand,
           nextSteps: qsResult.nextSteps,
           suggestions: detection?.suggestions ?? [],
         }, null, 2))
@@ -2896,7 +2918,8 @@ const init = defineCommand({
           for (const f of qsResult.skipped) console.log(`   - ${f}`)
         }
         console.log(`\n🔒 Physical constraints applied: ${qsResult.constraintsApplied}`)
-        console.log(`\n🚀 Capabilities enabled: ${qsResult.capabilitiesEnabled.join(', ')}`)
+        console.log(`\n🧭 Workflow capability plan: ${qsResult.workflowCapabilities.join(', ')}`)
+        console.log(`\n🧰 Dependency bootstrap: ${qsResult.dependencyBootstrapCommand}`)
         console.log(`\n📋 Next steps:`)
         for (const step of qsResult.nextSteps) console.log(`   → ${step}`)
       } else {
@@ -2939,7 +2962,10 @@ const init = defineCommand({
         scaleDir: result.scaleDir,
         created: result.created,
         skipped: result.skipped,
-        nextSteps: governanceNextSteps(),
+        nextSteps: governanceNextSteps({
+          profileId,
+          governancePack: String(args['governance-pack']),
+        }),
       }, null, 2))
       return
     }
@@ -2955,8 +2981,79 @@ const init = defineCommand({
     console.log(`\n📄 Config:    ${configPath}`)
     console.log(`\n📂 Data dir:  ${result.scaleDir}`)
     console.log(`\n📋 Next steps:`)
-    for (const step of governanceNextSteps()) console.log(`   → ${step}`)
+    for (const step of governanceNextSteps({
+      profileId,
+      governancePack: String(args['governance-pack']),
+    })) console.log(`   → ${step}`)
   },
+})
+
+const bootstrapDepsCommand = defineCommand({
+  meta: { name: 'deps', description: 'Plan or install third-party skills, CLI dependencies, and project post-configuration' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: 'Project directory' },
+    pack: { type: 'string', default: '', description: 'Comma-separated packs: ui,memory,knowledge,external-cli,full. Defaults to full unless --profile is supplied.' },
+    profile: { type: 'string', description: 'Resolve recommended packs from profile: minimal, standard, advanced' },
+    'governance-pack': { type: 'string', description: 'Optional governance pack hint, for example frontend-app -> ui' },
+    include: { type: 'string', description: 'Additional dependency ids to include explicitly' },
+    apply: { type: 'boolean', default: false, description: 'Run install commands for ready dependencies' },
+    json: { type: 'boolean', default: false, description: 'Output bootstrap plan as JSON' },
+  },
+  async run({ args }) {
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const explicitPacks = parseCommaList(args.pack)
+    const recommendedPacks = args.profile
+      ? getBootstrapPlanForProfile(
+        String(args.profile),
+        args['governance-pack'] ? String(args['governance-pack']) : undefined,
+      ).packs
+      : []
+    const report = await bootstrapDependencies({
+      projectDir,
+      scaleDir: SCALE_DIR,
+      packIds: explicitPacks.length > 0 ? uniqueStrings([...recommendedPacks, ...explicitPacks]) : recommendedPacks,
+      includeIds: parseCommaList(args.include),
+      apply: isTruthyFlag(args.apply),
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (isTruthyFlag(args.apply) && !report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Dependency Bootstrap')
+    console.log(`  Project: ${report.projectDir}`)
+    console.log(`  Packs: ${report.packIds.join(', ')}`)
+    console.log(`  Apply: ${report.apply}`)
+    console.log(`  Complete: ${report.complete}`)
+    for (const item of report.items) {
+      console.log(`  [${item.status.toUpperCase()}] ${item.id} (${item.kind})`)
+      console.log(`    source: ${item.source}`)
+      console.log(`    detected: ${item.detectedBy}`)
+      if (!item.installed && item.installCommand) console.log(`    install: ${item.installCommand}`)
+      if (!item.installed && item.manualReason) console.log(`    reason: ${item.manualReason}`)
+      if (!item.installed && item.prerequisites.length > 0) {
+        console.log(`    prereqs: ${item.prerequisites.map(req => `${req.command}=${req.present ? 'ok' : 'missing'}`).join(', ')}`)
+      }
+      if (item.error) console.log(`    error: ${item.error}`)
+    }
+    for (const action of report.postActions) console.log(`  [POST] ${action}`)
+    if (report.postChecks.length > 0) {
+      console.log(`  Post-checks: passed=${report.postCheckSummary.passed}, warned=${report.postCheckSummary.warned}, failed=${report.postCheckSummary.failed}`)
+      for (const check of report.postChecks) {
+        console.log(`  [POSTCHECK ${check.status.toUpperCase()}] ${check.label}: ${check.summary}`)
+        console.log(`    command: ${check.command}`)
+      }
+    }
+    for (const command of report.postCheckCommands) console.log(`  [CHECK] ${command}`)
+    for (const hint of report.rollbackHints) console.log(`  [ROLLBACK] ${hint}`)
+    for (const recommendation of report.recommendations) console.log(`  [NEXT] ${recommendation}`)
+    if (report.apply && !report.ok) process.exitCode = 1
+  },
+})
+
+const bootstrap = defineCommand({
+  meta: { name: 'bootstrap', description: 'Bootstrap third-party workflow dependencies with explicit install intent' },
+  subCommands: { deps: bootstrapDepsCommand },
 })
 
 // ============================================================================
@@ -2967,6 +3064,7 @@ const configProfile = defineCommand({
   meta: { name: 'profile', description: 'View or switch configuration profile' },
   args: {
     set: { type: 'string', default: '', description: 'Switch to profile (minimal/standard/advanced)' },
+    'governance-pack': { type: 'string', description: 'Optional governance pack hint for bootstrap suggestions, for example frontend-app' },
     list: { type: 'boolean', default: false, description: 'List all available profiles' },
     json: { type: 'boolean', default: false, description: 'Output as JSON' },
   },
@@ -2991,12 +3089,27 @@ const configProfile = defineCommand({
         console.log(`\n⚠️  Profile "${args.set}" not found. Available: minimal, standard, advanced`)
         return
       }
+      const bootstrapPlan = getBootstrapPlanForProfile(profile.id, args['governance-pack'] ? String(args['governance-pack']) : undefined)
       // Update config.yaml
       const configPath = join('.scale', 'config.yaml')
       const projectName = process.cwd().split(/[/\\]/).pop() || 'Project'
       const content = generateConfigForProfile(args.set, { name: projectName })
       ensureDir('.scale')
       writeFileSync(configPath, content, 'utf-8')
+      if (args.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          profile: profile.id,
+          name: profile.name,
+          description: profile.description,
+          sections: profile.sections,
+          bootstrapPacks: bootstrapPlan.packs,
+          dependencyBootstrapCommand: bootstrapPlan.inspectCommand,
+          dependencyBootstrapApplyCommand: bootstrapPlan.applyCommand,
+          configPath,
+        }, null, 2))
+        return
+      }
       console.log(`\n✅ Profile switched to: ${profile.name}`)
       console.log(`   ${profile.description}`)
       console.log(`\n📄 Config updated: ${configPath}`)
@@ -3013,14 +3126,25 @@ const configProfile = defineCommand({
     const match = content.match(/^profile:\s*(.+)$/m)
     const currentProfile = match?.[1]?.trim() || 'standard'
     const profile = getConfigProfile(currentProfile)
+    const bootstrapPlan = getBootstrapPlanForProfile(profile.id, args['governance-pack'] ? String(args['governance-pack']) : undefined)
 
     if (args.json) {
-      console.log(JSON.stringify({ profile: profile.id, name: profile.name, description: profile.description, sections: profile.sections }, null, 2))
+      console.log(JSON.stringify({
+        profile: profile.id,
+        name: profile.name,
+        description: profile.description,
+        sections: profile.sections,
+        bootstrapPacks: bootstrapPlan.packs,
+        dependencyBootstrapCommand: bootstrapPlan.inspectCommand,
+        dependencyBootstrapApplyCommand: bootstrapPlan.applyCommand,
+      }, null, 2))
       return
     }
     console.log(`\nCurrent profile: ${profile.name} (${profile.id})`)
     console.log(`  ${profile.description}`)
     console.log(`\nSections: ${profile.sections.join(', ')}`)
+    console.log(`Bootstrap packs: ${bootstrapPlan.packs.join(', ')}`)
+    console.log(`Dependency bootstrap: ${bootstrapPlan.inspectCommand}`)
     console.log(`\nUse: scale config profile --set <id> to switch`)
   },
 })
@@ -5115,12 +5239,55 @@ const memoryProviderRecall = defineCommand({
   },
 })
 
+const memoryProviderUse = defineCommand({
+  meta: { name: 'use', description: 'Promote one memory provider to the front of routing and persist the selection' },
+  args: {
+    provider: { type: 'positional', required: true, description: 'Provider id: gbrain, agentmemory, or scale-local' },
+    mode: { type: 'string', description: 'Optional routing mode override: auto, local-only, external-first' },
+    endpoint: { type: 'string', description: 'Optional provider endpoint to persist while switching' },
+    'write-mode': { type: 'string', description: 'Optional provider write mode: disabled, candidate-only, enabled' },
+    'allow-external-write': { type: 'boolean', default: false, description: 'Persist external write allowance when explicitly switching' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const mode = args.mode ? String(args.mode) : undefined
+    const writeMode = args['write-mode']
+      ? String(args['write-mode']) as 'disabled' | 'candidate-only' | 'enabled'
+      : undefined
+    const report = useMemoryProvider({
+      projectDir: PROJECT_DIR,
+      scaleDir: SCALE_DIR,
+      provider: String(args.provider),
+      mode: mode as 'auto' | 'local-only' | 'external-first' | undefined,
+      endpoint: args.endpoint ? String(args.endpoint) : undefined,
+      writeMode,
+      allowExternalWrite: isTruthyFlag(args['allow-external-write']) ? true : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
+    console.log('\nSCALE Memory Provider Switch')
+    console.log(`  Provider: ${report.provider}`)
+    console.log(`  Mode: ${report.mode}`)
+    console.log(`  Config: ${report.path}`)
+    console.log(`  Order: ${report.previousOrder.join(' -> ')} -> ${report.nextOrder.join(' -> ')}`)
+    if (report.providerStatus) {
+      console.log(`  Status: ${report.providerStatus.available ? 'available' : 'not-ready'} (${report.providerStatus.reason})`)
+    }
+    for (const warning of report.warnings) console.log(`  [WARN] ${warning}`)
+    if (!report.ok) process.exitCode = 1
+  },
+})
+
 const memoryProvider = defineCommand({
   meta: { name: 'provider', description: 'Manage autonomous memory provider routing for agentmemory, gbrain, and scale-local' },
   subCommands: {
     init: memoryProviderInit,
     status: memoryProviderStatus,
     recall: memoryProviderRecall,
+    use: memoryProviderUse,
   },
 })
 
@@ -5727,6 +5894,7 @@ const toolDoctorCommand = defineCommand({
         if (entry.detectedPath) console.log(`    path: ${entry.detectedPath}`)
         if (entry.version) console.log(`    version: ${entry.version}`)
         if (entry.missingReason) console.log(`    reason: ${entry.missingReason}`)
+        if (!entry.installed && entry.installHint) console.log(`    install: ${entry.installHint}`)
       }
     }
     if (!report.ok) process.exitCode = 1
@@ -6059,6 +6227,7 @@ const main = defineCommand({
 
     // Original commands (preserved)
     init,
+    bootstrap,
     doctor,
     session,
     gate,

@@ -6,7 +6,7 @@ import { EventBus } from '../core/eventBus.js'
 import { InMemoryArtifactStore } from '../artifact/store.js'
 import { FSM } from '../artifact/fsm.js'
 import { registerAllFSMs, INITIAL_STATES } from '../artifact/fsmDefinitions.js'
-import { KnowledgeBase } from '../knowledge/KnowledgeBase.js'
+import { GraphifyKnowledgeBase } from '../knowledge/GraphifyKnowledgeBase.js'
 import { ContextBuilder } from '../context/ContextBuilder.js'
 import { wireEffects } from '../orchestration/EffectsWiring.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
@@ -45,7 +45,7 @@ export class ScaleMCPServer {
   private bus: EventBus
   private store: InMemoryArtifactStore
   private fsm: FSM
-  private kb: KnowledgeBase
+  private kb: GraphifyKnowledgeBase
   private ctx: ContextBuilder
 
   constructor(scaleDir: string = '.scale') {
@@ -60,7 +60,7 @@ export class ScaleMCPServer {
     this.fsm = new FSM(this.store, this.bus)
     registerAllFSMs(this.fsm)
     wireEffects(this.fsm, this.store, this.bus)
-    this.kb = new KnowledgeBase(this.bus)
+    this.kb = new GraphifyKnowledgeBase(this.bus, { projectDir: process.cwd(), scaleDir })
     this.ctx = new ContextBuilder(this.store, this.kb, this.bus)
   }
 

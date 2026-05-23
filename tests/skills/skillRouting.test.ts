@@ -62,7 +62,7 @@ describe('skill routing', () => {
     expect(apiPlan.requiredArtifacts).toEqual(expect.arrayContaining(['mini-prd.md', 'api-contract.md']))
   })
 
-  it('routes UI work to frontend-design with browser testing evidence', () => {
+  it('routes UI work to design-system-first skills with browser testing evidence', () => {
     const policy = resolveSkillRoutingPolicy(null)
     const plan = createSkillPlan({
       taskId: 'TASK-UI-SKILLS',
@@ -74,9 +74,9 @@ describe('skill routing', () => {
     })
 
     expect(plan.intents.map(intent => intent.domain)).toContain('ui')
-    expect(plan.requiredSkills).toContain('frontend-design')
+    expect(plan.requiredSkills).toContain('awesome-design-md')
     expect(plan.requiredSkills).toContain('ui-ux-pro-max')
-    expect(plan.recommendedSkills).toContain('awesome-design-md')
+    expect(plan.recommendedSkills).toContain('frontend-design')
     expect(plan.recommendedSkills).toContain('webapp-testing')
     expect(plan.recommendedSkills).toEqual(expect.arrayContaining(['agent-browser', 'mcp-chrome-devtools']))
     expect(plan.requiredArtifacts).toEqual(expect.arrayContaining(['skill-evidence.md', 'ui-spec.md', 'visual-review.md']))

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { MemoryBrain, type MemoryNode } from './MemoryBrain.js'
+import { externalCommandExists, runExternalCommandSync } from '../core/ExternalCommand.js'
 
 export type MemoryProviderKind = 'scale-local' | 'agentmemory' | 'gbrain' | 'generic-http'
 export type MemoryProviderCapability = 'keyword-recall' | 'semantic-recall' | 'graph-recall' | 'session-memory' | 'mcp' | 'write-memory'
@@ -98,12 +99,26 @@ export interface MemoryProviderRecallReport {
   warnings: string[]
 }
 
+export interface MemoryProviderUseReport {
+  ok: boolean
+  projectDir: string
+  scaleDir: string
+  path: string
+  existed: boolean
+  provider: string
+  mode: MemoryProviderRoutingConfig['mode']
+  previousOrder: string[]
+  nextOrder: string[]
+  providerStatus?: MemoryProviderStatus
+  warnings: string[]
+}
+
 export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
   return {
     version: '1.0',
     routing: {
-      mode: 'auto',
-      defaultOrder: ['agentmemory', 'gbrain', 'scale-local'],
+      mode: 'external-first',
+      defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
       allowExternalWrite: false,
       requireEvidence: true,
       maxResultsPerProvider: 5,
@@ -130,8 +145,8 @@ export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
       {
         id: 'gbrain',
         kind: 'gbrain',
-        enabled: false,
-        priority: 80,
+        enabled: true,
+        priority: 95,
         endpoint: process.env.GBRAIN_ENDPOINT,
         statusPath: '/health',
         searchPath: '/search',
@@ -176,6 +191,13 @@ export function writeMemoryProvidersConfig(options: {
   const config = defaultMemoryProvidersConfig()
   writeFileSync(path, JSON.stringify(config, null, 2), 'utf-8')
   return { path, written: true, config }
+}
+
+function saveMemoryProvidersConfig(projectDir: string, scaleDir: string | undefined, config: MemoryProvidersConfig): string {
+  const path = memoryProvidersConfigPath(projectDir, scaleDir)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(config, null, 2), 'utf-8')
+  return path
 }
 
 export function loadMemoryProvidersConfig(projectDir = process.cwd(), scaleDir = '.scale'): {
@@ -225,6 +247,70 @@ export function inspectMemoryProviders(options: {
     providers: statuses,
     availableProviderCount: statuses.filter(status => status.available).length,
     warnings: providerWarnings(statuses, loaded.config),
+  }
+}
+
+export function useMemoryProvider(options: {
+  projectDir?: string
+  scaleDir?: string
+  provider: string
+  mode?: MemoryProviderRoutingConfig['mode']
+  endpoint?: string
+  writeMode?: MemoryProviderWriteMode
+  allowExternalWrite?: boolean
+}): MemoryProviderUseReport {
+  const projectDir = resolve(options.projectDir ?? process.cwd())
+  const loaded = loadMemoryProvidersConfig(projectDir, options.scaleDir)
+  const provider = String(options.provider).trim()
+  const config: MemoryProvidersConfig = {
+    ...loaded.config,
+    routing: {
+      ...loaded.config.routing,
+    },
+    providers: loaded.config.providers.map(item => ({ ...item })),
+  }
+  const target = config.providers.find(item => item.id === provider)
+  if (!target) {
+    return {
+      ok: false,
+      projectDir,
+      scaleDir: resolveScaleRoot(projectDir, options.scaleDir),
+      path: loaded.path,
+      existed: loaded.exists,
+      provider,
+      mode: config.routing.mode,
+      previousOrder: [...loaded.config.routing.defaultOrder],
+      nextOrder: [...loaded.config.routing.defaultOrder],
+      warnings: [`Unknown memory provider: ${provider}`],
+    }
+  }
+
+  const previousOrder = [...config.routing.defaultOrder]
+  target.enabled = true
+  if (options.endpoint) target.endpoint = options.endpoint
+  if (options.writeMode) target.writeMode = options.writeMode
+
+  const nextOrder = [provider, ...config.routing.defaultOrder.filter(item => item !== provider)]
+  config.routing.defaultOrder = nextOrder
+  if (typeof options.allowExternalWrite === 'boolean') config.routing.allowExternalWrite = options.allowExternalWrite
+  if (options.mode) config.routing.mode = options.mode
+  else if (target.kind === 'scale-local') config.routing.mode = 'local-only'
+  else if (config.routing.mode === 'local-only') config.routing.mode = 'external-first'
+
+  const path = saveMemoryProvidersConfig(projectDir, options.scaleDir, config)
+  const status = inspectMemoryProviders({ projectDir, scaleDir: options.scaleDir })
+  return {
+    ok: true,
+    projectDir,
+    scaleDir: resolveScaleRoot(projectDir, options.scaleDir),
+    path,
+    existed: loaded.exists,
+    provider,
+    mode: status.routing.mode,
+    previousOrder,
+    nextOrder: [...status.routing.defaultOrder],
+    providerStatus: status.providers.find(item => item.id === provider),
+    warnings: status.warnings,
   }
 }
 
@@ -319,6 +405,9 @@ async function recallExternal(
   input: MemoryProviderRecallInput,
   limit: number,
 ): Promise<MemoryProviderRecallItem[]> {
+  if (provider.kind === 'gbrain' && commandExists('gbrain')) {
+    return recallGbrainCli(input, limit)
+  }
   if (!provider.endpoint) return []
   const response = await fetch(new URL(provider.searchPath ?? '/search', provider.endpoint), {
     method: 'POST',
@@ -401,11 +490,20 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
       reason: 'local MemoryBrain fallback is available',
     }
   }
+  if (provider.kind === 'gbrain' && commandExists('gbrain')) {
+    return {
+      ...providerStatusBase(provider, routing),
+      available: true,
+      reason: 'gbrain CLI is available for default graph-backed recall',
+    }
+  }
   if (!provider.endpoint) {
     return {
       ...providerStatusBase(provider, routing),
       available: false,
-      reason: `${provider.id} requires endpoint configuration before autonomous use`,
+      reason: provider.kind === 'gbrain'
+        ? `${provider.id} requires either a local gbrain CLI install or endpoint configuration before autonomous use`
+        : `${provider.id} requires endpoint configuration before autonomous use`,
     }
   }
   return {
@@ -442,6 +540,64 @@ function providerWarnings(statuses: MemoryProviderStatus[], config: MemoryProvid
     }
   }
   return warnings
+}
+
+function recallGbrainCli(
+  input: MemoryProviderRecallInput,
+  limit: number,
+): MemoryProviderRecallItem[] {
+  const stdout = runExternalCommandSync('gbrain', ['query', input.query], {
+    encoding: 'utf-8',
+    timeout: 2_500,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      GBRAIN_OUTPUT_MODE: process.env.GBRAIN_OUTPUT_MODE ?? 'json',
+    },
+  })
+  return parseGbrainResults(String(stdout))
+    .slice(0, limit)
+    .map((item, index) => externalToRecall('gbrain', item, index))
+}
+
+function parseGbrainResults(stdout: string): Array<Record<string, unknown>> {
+  const trimmed = stdout.trim()
+  if (!trimmed) return []
+  try {
+    return extractExternalResults(JSON.parse(trimmed))
+  } catch {
+    return parseGbrainTextResults(trimmed)
+  }
+}
+
+function parseGbrainTextResults(stdout: string): Array<Record<string, unknown>> {
+  const records: Array<Record<string, unknown>> = []
+  const lines = stdout.split(/\r?\n/)
+  let current: Record<string, unknown> | null = null
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const ranked = line.match(/^(\d+)\.\s+(.*)$/)
+    if (ranked) {
+      if (current) records.push(current)
+      current = { title: ranked[2], summary: ranked[2] }
+      continue
+    }
+    if (line.startsWith('- ') || line.startsWith('• ')) {
+      if (current) current.summary = `${String(current.summary ?? '')} ${line.slice(2)}`.trim()
+      continue
+    }
+    if (current) {
+      current.summary = `${String(current.summary ?? '')} ${line}`.trim()
+    }
+  }
+  if (current) records.push(current)
+  return records
+}
+
+function commandExists(command: string): boolean {
+  return externalCommandExists(command)
 }
 
 function normalizeProviders(input: unknown, defaults: MemoryProviderConfig[]): MemoryProviderConfig[] {

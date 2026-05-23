@@ -27,6 +27,7 @@ export { TaskEngine } from './tasks/TaskEngine.js'
 // Knowledge Base
 export { KnowledgeBase } from './knowledge/KnowledgeBase.js'
 export { SQLiteKnowledgeBase } from './knowledge/SQLiteKnowledgeBase.js'
+export { GraphifyKnowledgeBase } from './knowledge/GraphifyKnowledgeBase.js'
 export { CerebrumManager } from './knowledge/CerebrumManager.js'
 export type { CerebrumEntry, CerebrumHit } from './knowledge/CerebrumManager.js'
 export type { IKnowledgeBase } from './knowledge/KnowledgeBase.js'

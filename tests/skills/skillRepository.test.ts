@@ -58,8 +58,8 @@ describe('SkillRepository', () => {
       phase: 'design',
     })
 
-    expect(plan.primarySkills).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max', 'frontend-design']))
-    expect(plan.supportingSkills).toEqual(expect.arrayContaining(['webapp-testing', 'agent-browser', 'mcp-chrome-devtools']))
+    expect(plan.primarySkills).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
+    expect(plan.supportingSkills).toEqual(expect.arrayContaining(['frontend-design', 'webapp-testing', 'agent-browser', 'mcp-chrome-devtools']))
     expect(plan.safetyRequired).toBe(true)
     expect(plan.requiredEvidence).toEqual(expect.arrayContaining(['skill-safety-scan', 'design-spec', 'browser-evidence']))
   })

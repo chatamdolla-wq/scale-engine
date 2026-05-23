@@ -32,7 +32,7 @@ function uiPlan(projectDir: string) {
   const skillPlan = createSkillPlan({
     taskId: 'TASK-UI-GATE',
     taskName: 'Improve upload page UI',
-    description: 'Improve frontend UI and responsive visual review',
+    description: 'Improve frontend UI and responsive behavior',
     level: 'M',
     files: ['src/components/Upload.tsx'],
     policy: resolveSkillRoutingPolicy(null),
@@ -42,7 +42,7 @@ function uiPlan(projectDir: string) {
     policy: resolveToolPolicy({ mode: 'evidence-required' }),
     capabilityReport: inspectToolCapabilities({
       projectDir,
-      toolIds: ['frontend-design', 'ui-ux-pro-max'],
+      toolIds: ['awesome-design-md', 'ui-ux-pro-max', 'frontend-design'],
     }),
   })
   return orchestrator.plan({ skillPlan })
@@ -51,7 +51,7 @@ function uiPlan(projectDir: string) {
 describe('ToolEvidenceGate', () => {
   it('blocks M level required tools when no execution evidence exists', () => {
     const projectDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
     writeSkill(projectDir, 'ui-ux-pro-max')
     const evidenceStore = new ToolEvidenceStore({ projectDir })
 
@@ -69,12 +69,12 @@ describe('ToolEvidenceGate', () => {
       complete: false,
       blocked: true,
     })
-    expect(result.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(result.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
   })
 
   it('requires passed evidence and treats dry-run skipped evidence as incomplete by default', () => {
     const projectDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
     writeSkill(projectDir, 'ui-ux-pro-max')
     const evidenceStore = new ToolEvidenceStore({ projectDir })
     const plan = uiPlan(projectDir)
@@ -82,7 +82,7 @@ describe('ToolEvidenceGate', () => {
     evidenceStore.save({
       taskId: plan.taskId,
       domain: 'ui',
-      tool: 'frontend-design',
+      tool: 'awesome-design-md',
       adapter: 'skill',
       status: 'skipped',
       sanitizedInput: {},
@@ -111,13 +111,13 @@ describe('ToolEvidenceGate', () => {
 
     expect(result.complete).toBe(false)
     expect(result.blocked).toBe(true)
-    expect(result.skipped.map(item => item.toolId)).toEqual(['frontend-design'])
+    expect(result.skipped.map(item => item.toolId)).toEqual(['awesome-design-md'])
     expect(result.passed.map(item => item.toolId)).toEqual(['ui-ux-pro-max'])
   })
 
   it('passes when every required tool has passed evidence and skips S level checks', () => {
     const projectDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
     writeSkill(projectDir, 'ui-ux-pro-max')
     const evidenceStore = new ToolEvidenceStore({ projectDir })
     const plan = uiPlan(projectDir)

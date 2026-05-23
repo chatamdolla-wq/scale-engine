@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.37.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.38.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.37.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.38.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
 [![RepoStars](https://repostars.dev/api/embed?repo=hongmaple0820%2Fscale-engine&theme=copper)](https://repostars.dev/?repos=hongmaple0820%2Fscale-engine&theme=copper)
@@ -35,6 +35,7 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 npm install -g @hongmaple0820/scale-engine
 mkdir scale-demo && cd scale-demo
 scale init --governance-pack standard
+scale bootstrap deps --pack external-cli --json
 scale preflight --preflight-profile quick
 scale status
 ```
@@ -65,6 +66,15 @@ scale --version
 ```
 
 需要 Node.js 20 或更高版本。
+
+如果你希望把 UI skills、RTK、记忆/知识图谱这类第三方能力一起补齐，使用显式 bootstrap，而不是依赖静默自动安装：
+
+```bash
+scale bootstrap deps --profile advanced --governance-pack frontend-app --json
+scale bootstrap deps --pack ui,knowledge --apply
+```
+
+`bootstrap deps` 默认先出计划；只有显式加 `--apply` 才会执行安装命令。
 
 ## 适合谁
 

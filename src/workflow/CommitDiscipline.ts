@@ -1,4 +1,4 @@
-// SCALE Engine — Commit Discipline (v0.37.0)
+// SCALE Engine — Commit Discipline (v0.38.0)
 // Prevents agents from accumulating uncommitted changes. Monitors git state,
 // enforces thresholds, suggests logical commit groupings, tracks commit cadence.
 

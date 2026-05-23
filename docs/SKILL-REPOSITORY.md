@@ -29,9 +29,9 @@
 | --- | --- | --- | --- | --- |
 | `planning-with-files` | planning | community | Use persistent planning files, progress logs, findings, active-plan selection, and plan attestation for long-running agent work. | memory-brain, web-access, code-reviewer |
 | `agentmemory` | memory | community | Use as an optional external memory provider via REST or MCP when teams want cross-agent persistent memory beyond SCALE local Memory Brain. | memory-brain, mcp-chrome-devtools, codex-cli |
-| `gbrain` | memory | community | Use as an optional graph-backed memory provider for long-running project knowledge, entity relationships, and background memory maintenance. | memory-brain, agentmemory, codegraph |
-| `frontend-design` | ui | official | UI 视觉方向、布局、组件状态和前端实现约束。 | awesome-design-md, ui-ux-pro-max, webapp-testing |
-| `awesome-design-md` | ui | ecosystem | 建立产品级设计规范和视觉语言。 | ui-ux-pro-max, frontend-design |
+| `gbrain` | memory | community | Use as the default graph-backed memory provider for long-running project knowledge, entity relationships, and background memory maintenance. | memory-brain, agentmemory, codegraph |
+| `frontend-design` | ui | official | 在 DESIGN.md 和 UX 验收之后补齐前端实现约束、组件状态和落地方式。 | awesome-design-md, ui-ux-pro-max, webapp-testing |
+| `awesome-design-md` | ui | ecosystem | 建立产品级设计规范、品牌语言和 DESIGN.md。 | ui-ux-pro-max, frontend-design |
 | `ui-ux-pro-max` | ui | ecosystem | 补齐体验策略、交互状态和 UI 验收维度。 | awesome-design-md, webapp-testing |
 | `webapp-testing` | testing | official | 验证页面点击、表单、控制台、截图和端到端行为。 | agent-browser, mcp-chrome-devtools |
 | `web-access` | browser | ecosystem | 获取一手资料、动态页面内容、网页证据和来源引用。 | agent-browser, mcp-chrome-devtools |

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
-import { execFileSync } from 'node:child_process'
+import * as childProcess from 'node:child_process'
 import { estimateTokens } from '../context/ContextBudget.js'
+import { externalCommandExists, runExternalCommandSync } from '../core/ExternalCommand.js'
 
 export type CodeIntelligenceProviderType = 'external-cli' | 'artifact'
 export type CodeIntelligenceCapability = 'symbols' | 'callers' | 'callees' | 'impact' | 'context' | 'summary' | 'module-map'
@@ -13,6 +14,10 @@ export interface CodeIntelligenceProviderConfig {
   command?: string
   manifest?: string
   capabilities?: CodeIntelligenceCapability[]
+  source?: string
+  installHint?: string
+  projectInitHint?: string
+  serveCommand?: string
 }
 
 export interface CodeIntelligenceConfig {
@@ -31,6 +36,10 @@ export interface CodeIntelligenceProviderStatus {
   available: boolean
   capabilities: CodeIntelligenceCapability[]
   reason: string
+  source?: string
+  installHint?: string
+  projectInitHint?: string
+  serveCommand?: string
 }
 
 export interface CodeIntelligenceStatusReport {
@@ -38,6 +47,8 @@ export interface CodeIntelligenceStatusReport {
   scaleDir: string
   configPath: string
   configExists: boolean
+  projectIndexPath: string
+  projectIndexExists: boolean
   providers: CodeIntelligenceProviderStatus[]
   fallback: {
     enabled: boolean
@@ -142,24 +153,47 @@ const IGNORED_DIRS = new Set([
   '.worktrees',
 ])
 
+const CODEGRAPH_SOURCE = 'https://github.com/colbymchenry/codegraph'
+const CODEGRAPH_INSTALL_HINT = 'npx @colbymchenry/codegraph or npm i -g @colbymchenry/codegraph'
+const CODEGRAPH_PROJECT_INIT_HINT = 'codegraph init -i'
+const CODEGRAPH_SERVE_COMMAND = 'codegraph serve --mcp'
+const GRAPHIFY_SOURCE = 'https://github.com/safishamsi/graphify'
+const GRAPHIFY_INSTALL_HINT = 'pip install graphifyy && graphify install'
+
+const DEFAULT_CODEGRAPH_PROVIDER: CodeIntelligenceProviderConfig = {
+  id: 'codegraph',
+  type: 'external-cli',
+  enabled: true,
+  command: 'codegraph',
+  capabilities: ['symbols', 'callers', 'callees', 'impact', 'context', 'summary', 'module-map'],
+  source: CODEGRAPH_SOURCE,
+  installHint: CODEGRAPH_INSTALL_HINT,
+  projectInitHint: CODEGRAPH_PROJECT_INIT_HINT,
+  serveCommand: CODEGRAPH_SERVE_COMMAND,
+}
+
+const DEFAULT_GRAPHIFY_PROVIDER: CodeIntelligenceProviderConfig = {
+  id: 'graphify',
+  type: 'artifact',
+  enabled: true,
+  manifest: 'graphify-out/graph.json',
+  capabilities: ['symbols', 'callers', 'callees', 'impact', 'context', 'summary', 'module-map'],
+  source: GRAPHIFY_SOURCE,
+  installHint: GRAPHIFY_INSTALL_HINT,
+}
+
+let execFileSyncImpl: typeof childProcess.execFileSync = childProcess.execFileSync
+
+export function setCodeIntelligenceExecFileSyncForTesting(impl?: typeof childProcess.execFileSync): void {
+  execFileSyncImpl = impl ?? childProcess.execFileSync
+}
+
 export function defaultCodeIntelligenceConfig(): CodeIntelligenceConfig {
   return {
     version: '1.0',
     providers: [
-      {
-        id: 'codegraph',
-        type: 'external-cli',
-        enabled: true,
-        command: 'codegraph',
-        capabilities: ['symbols', 'callers', 'callees', 'impact', 'context'],
-      },
-      {
-        id: 'graphify',
-        type: 'artifact',
-        enabled: true,
-        manifest: 'graphify-out/GRAPH_REPORT.md',
-        capabilities: ['summary', 'module-map', 'context'],
-      },
+      { ...DEFAULT_CODEGRAPH_PROVIDER },
+      { ...DEFAULT_GRAPHIFY_PROVIDER },
     ],
     fallback: {
       enabled: true,
@@ -204,7 +238,9 @@ export function loadCodeIntelligenceConfig(projectDir = process.cwd(), scaleDir 
       exists: true,
       config: {
         version: parsed.version ?? '1.0',
-        providers: Array.isArray(parsed.providers) ? parsed.providers as CodeIntelligenceProviderConfig[] : [],
+        providers: Array.isArray(parsed.providers)
+          ? parsed.providers.map(provider => hydrateProviderConfig(provider as CodeIntelligenceProviderConfig))
+          : [],
         fallback: {
           enabled: parsed.fallback?.enabled !== false,
           tools: Array.isArray(parsed.fallback?.tools) ? parsed.fallback.tools.map(String) : ['internal-scan', 'rg', 'read'],
@@ -222,6 +258,8 @@ export function inspectCodeIntelligence(options: {
 } = {}): CodeIntelligenceStatusReport {
   const projectDir = resolve(options.projectDir ?? process.cwd())
   const loaded = loadCodeIntelligenceConfig(projectDir, options.scaleDir)
+  const projectIndexPath = codegraphProjectIndexPath(projectDir)
+  const projectIndexExists = existsSync(projectIndexPath)
   const providers = loaded.config.providers.map(providerStatus(projectDir))
   const availableProviderCount = providers.filter(provider => provider.available).length
   const fallbackAvailable = loaded.config.fallback.enabled
@@ -230,6 +268,8 @@ export function inspectCodeIntelligence(options: {
     scaleDir: resolveScaleRoot(projectDir, options.scaleDir),
     configPath: loaded.path,
     configExists: loaded.exists,
+    projectIndexPath,
+    projectIndexExists,
     providers,
     fallback: {
       enabled: loaded.config.fallback.enabled,
@@ -238,7 +278,7 @@ export function inspectCodeIntelligence(options: {
       reason: fallbackAvailable ? 'internal source scan fallback is available' : 'fallback is disabled by policy',
     },
     availableProviderCount,
-    recommendations: recommendations(loaded.exists, providers, fallbackAvailable),
+    recommendations: recommendations(loaded.exists, providers, fallbackAvailable, projectIndexExists),
   }
 }
 
@@ -270,6 +310,48 @@ export function buildCodeGraphContext(options: {
   budget?: number
 }): CodeGraphContextReport {
   const budget = options.budget ?? 2000
+  const projectDir = resolve(options.projectDir ?? process.cwd())
+  const externalContext = queryExternalCodeGraphContext({
+    projectDir,
+    scaleDir: options.scaleDir,
+    query: options.symbol,
+  })
+  if (externalContext) {
+    let total = 0
+    const contextFiles: CodeGraphContextFile[] = []
+    for (const file of externalContext.files) {
+      const absolute = resolve(projectDir, file)
+      const tokens = existsSync(absolute) && statSync(absolute).isFile()
+        ? estimateTokens(readFileSync(absolute, 'utf-8'))
+        : 0
+      const included = total + tokens <= budget
+      if (included) total += tokens
+      contextFiles.push({
+        path: file,
+        estimatedTokens: tokens,
+        included,
+        reason: included ? 'within codegraph context budget' : `omitted because it would exceed budget ${budget}`,
+      })
+    }
+    return {
+      projectDir,
+      generatedAt: new Date().toISOString(),
+      mode: 'context',
+      query: options.symbol,
+      provider: 'codegraph',
+      fallbackUsed: false,
+      hits: externalContext.hits,
+      files: externalContext.files,
+      symbols: externalContext.symbols,
+      confidence: confidence(externalContext.hits.length, false),
+      roi: roiMetrics(externalContext.hits.length, false, externalContext.files.length),
+      warnings: [`CodeGraph context summary: ${externalContext.summary}`],
+      budget,
+      totalEstimatedTokens: total,
+      contextFiles,
+      omitted: contextFiles.filter(file => !file.included),
+    }
+  }
   const base = impactCodeGraph(options)
   let total = 0
   const contextFiles: CodeGraphContextFile[] = []
@@ -342,8 +424,20 @@ function runCodeGraphQuery(options: {
       provider = providerConfig.id
       if (hits.length === 0) warnings.push(`Provider ${providerConfig.id} returned no hits for "${query}".`)
     }
+  } else if (externalAvailable?.id === 'codegraph' && status.projectIndexExists && options.mode === 'query') {
+    const externalQuery = queryExternalCodeGraph(projectDir, query)
+    if (externalQuery) {
+      hits = externalQuery.hits
+      provider = externalAvailable.id
+      warnings.push(...externalQuery.warnings)
+      if (hits.length === 0) warnings.push(`Provider ${externalAvailable.id} returned no hits for "${query}".`)
+    }
   } else if (externalAvailable) {
-    warnings.push(`External provider ${externalAvailable.id} is available, but no command adapter is configured yet; using fallback unless an artifact provider is configured.`)
+    if (externalAvailable.id === 'codegraph' && !status.projectIndexExists) {
+      warnings.push('CodeGraph CLI is installed, but this project has no .codegraph/ index yet; run codegraph init -i to enable upstream graph queries.')
+    } else {
+      warnings.push(`External provider ${externalAvailable.id} is available, but no command adapter is configured yet; using fallback unless an artifact provider is configured.`)
+    }
   }
 
   if (hits.length === 0 && status.fallback.enabled) {
@@ -378,8 +472,20 @@ function providerStatus(projectDir: string): (provider: CodeIntelligenceProvider
   return provider => {
     const enabled = provider.enabled !== false
     const capabilities = provider.capabilities ?? []
+    const projectIndexExists = existsSync(codegraphProjectIndexPath(projectDir))
     if (!enabled) {
-      return { id: provider.id, type: provider.type, enabled, available: false, capabilities, reason: 'provider disabled by policy' }
+      return {
+        id: provider.id,
+        type: provider.type,
+        enabled,
+        available: false,
+        capabilities,
+        reason: 'provider disabled by policy',
+        source: provider.source,
+        installHint: provider.installHint,
+        projectInitHint: provider.projectInitHint,
+        serveCommand: provider.serveCommand,
+      }
     }
     if (provider.type === 'artifact') {
       const manifest = provider.manifest ? resolveProjectPath(projectDir, provider.manifest) : ''
@@ -391,20 +497,44 @@ function providerStatus(projectDir: string): (provider: CodeIntelligenceProvider
         available,
         capabilities,
         reason: available ? `manifest found at ${provider.manifest}` : `manifest not found: ${provider.manifest ?? '(missing)'}`,
+        source: provider.source,
+        installHint: provider.installHint,
+        projectInitHint: provider.projectInitHint,
+        serveCommand: provider.serveCommand,
       }
     }
     if (provider.type === 'external-cli') {
       const available = provider.command ? commandExists(provider.command) : false
+      const readinessSuffix = provider.id === 'codegraph'
+        ? projectIndexExists
+          ? '; project index found at .codegraph/'
+          : '; project index missing (.codegraph/)'
+        : ''
       return {
         id: provider.id,
         type: provider.type,
         enabled,
         available,
         capabilities,
-        reason: available ? `command available: ${provider.command}` : `command not found: ${provider.command ?? '(missing)'}`,
+        reason: available ? `command available: ${provider.command}${readinessSuffix}` : `command not found: ${provider.command ?? '(missing)'}`,
+        source: provider.source,
+        installHint: provider.installHint,
+        projectInitHint: provider.projectInitHint,
+        serveCommand: provider.serveCommand,
       }
     }
-    return { id: provider.id, type: provider.type, enabled, available: false, capabilities, reason: 'unknown provider type' }
+    return {
+      id: provider.id,
+      type: provider.type,
+      enabled,
+      available: false,
+      capabilities,
+      reason: 'unknown provider type',
+      source: provider.source,
+      installHint: provider.installHint,
+      projectInitHint: provider.projectInitHint,
+      serveCommand: provider.serveCommand,
+    }
   }
 }
 
@@ -576,22 +706,26 @@ function confidence(hitCount: number, fallbackUsed: boolean): number {
   return fallbackUsed ? 0.35 : Math.min(0.9, 0.55 + hitCount * 0.05)
 }
 
-function recommendations(configExists: boolean, providers: CodeIntelligenceProviderStatus[], fallbackAvailable: boolean): string[] {
+function recommendations(configExists: boolean, providers: CodeIntelligenceProviderStatus[], fallbackAvailable: boolean, projectIndexExists: boolean): string[] {
   const output: string[] = []
+  const codegraph = providers.find(provider => provider.id === 'codegraph')
   if (!configExists) output.push('Run scale codegraph init to create .scale/code-intelligence.json.')
+  if (codegraph && !codegraph.available && codegraph.installHint) {
+    output.push(`Install CodeGraph from ${codegraph.source ?? CODEGRAPH_SOURCE}: ${codegraph.installHint}.`)
+  }
+  if (codegraph?.available && !projectIndexExists) {
+    output.push('Run codegraph init -i in the project root to build the local .codegraph/ index.')
+  }
   if (providers.every(provider => !provider.available)) output.push('No graph provider is available; exploration will use explicit fallback.')
   if (!fallbackAvailable) output.push('Fallback is disabled; missing providers may leave code intelligence unavailable.')
   return output
 }
 
 function commandExists(command: string): boolean {
-  try {
-    const lookup = process.platform === 'win32' ? 'where' : 'which'
-    execFileSync(lookup, [command], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
+  return externalCommandExists(command, {
+    execFileSync: execFileSyncImpl,
+    spawnSync: childProcess.spawnSync,
+  })
 }
 
 function resolveScaleRoot(projectDir: string, scaleDir = '.scale'): string {
@@ -626,4 +760,123 @@ function dedupeHits(hits: CodeGraphHit[]): CodeGraphHit[] {
     seen.add(key)
     return true
   })
+}
+
+function hydrateProviderConfig(provider: CodeIntelligenceProviderConfig): CodeIntelligenceProviderConfig {
+  const defaults = provider.id === 'codegraph'
+    ? DEFAULT_CODEGRAPH_PROVIDER
+    : provider.id === 'graphify'
+      ? DEFAULT_GRAPHIFY_PROVIDER
+      : undefined
+  return {
+    ...(defaults ?? {}),
+    ...provider,
+    capabilities: provider.capabilities ?? defaults?.capabilities,
+    source: provider.source ?? defaults?.source,
+    installHint: provider.installHint ?? defaults?.installHint,
+    projectInitHint: provider.projectInitHint ?? defaults?.projectInitHint,
+    serveCommand: provider.serveCommand ?? defaults?.serveCommand,
+  }
+}
+
+function codegraphProjectIndexPath(projectDir: string): string {
+  return join(projectDir, '.codegraph')
+}
+
+function queryExternalCodeGraph(projectDir: string, query: string): { hits: CodeGraphHit[]; warnings: string[] } | null {
+  try {
+    const output = runExternalCommandSync('codegraph', ['query', query, '-p', projectDir, '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }, {
+      execFileSync: execFileSyncImpl,
+      spawnSync: childProcess.spawnSync,
+    })
+    const parsed = JSON.parse(String(output)) as Array<{
+      node?: {
+        kind?: string
+        name?: string
+        qualifiedName?: string
+        filePath?: string
+        startLine?: number
+      }
+    }>
+    const hits = parsed.flatMap((entry, index) => {
+      const file = normalizeManifestPath(entry.node?.filePath)
+      const symbol = String(entry.node?.qualifiedName ?? entry.node?.name ?? '').trim()
+      if (!file) return []
+      return [{
+        provider: 'codegraph',
+        file,
+        symbol: symbol || undefined,
+        line: entry.node?.startLine,
+        reason: `CodeGraph CLI symbol search match${entry.node?.kind ? ` (${entry.node.kind})` : ''}`,
+        confidence: Math.max(0.55, Math.min(0.95, 0.9 - index * 0.05)),
+      }]
+    })
+    return {
+      hits: dedupeHits(hits.filter(hit => existsOrLooksLikePath(projectDir, hit.file))),
+      warnings: [],
+    }
+  } catch (error) {
+    return {
+      hits: [],
+      warnings: [`CodeGraph CLI query failed: ${error instanceof Error ? error.message : String(error)}`],
+    }
+  }
+}
+
+function queryExternalCodeGraphContext(options: {
+  projectDir: string
+  scaleDir?: string
+  query: string
+}): { summary: string; hits: CodeGraphHit[]; files: string[]; symbols: string[] } | null {
+  const status = inspectCodeIntelligence({ projectDir: options.projectDir, scaleDir: options.scaleDir })
+  const provider = status.providers.find(item => item.id === 'codegraph' && item.available)
+  if (!provider || !status.projectIndexExists) return null
+  try {
+    const output = runExternalCommandSync('codegraph', ['context', options.query, '-p', options.projectDir, '--format', 'json', '--no-code'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }, {
+      execFileSync: execFileSyncImpl,
+      spawnSync: childProcess.spawnSync,
+    })
+    const parsed = JSON.parse(String(output)) as {
+      summary?: string
+      entryPoints?: Array<{
+        kind?: string
+        name?: string
+        qualifiedName?: string
+        filePath?: string
+        startLine?: number
+      }>
+      relatedFiles?: string[]
+    }
+    const hits = Array.isArray(parsed.entryPoints)
+      ? parsed.entryPoints.flatMap((entry, index) => {
+          const file = normalizeManifestPath(entry.filePath)
+          const symbol = String(entry.qualifiedName ?? entry.name ?? '').trim()
+          if (!file) return []
+          return [{
+            provider: 'codegraph',
+            file,
+            symbol: symbol || undefined,
+            line: entry.startLine,
+            reason: `CodeGraph CLI context entry point${entry.kind ? ` (${entry.kind})` : ''}`,
+            confidence: Math.max(0.55, Math.min(0.92, 0.88 - index * 0.05)),
+          }]
+        })
+      : []
+    const files = unique((parsed.relatedFiles ?? []).map(file => normalizeManifestPath(file)).filter(Boolean))
+    if (hits.length === 0 && files.length === 0) return null
+    return {
+      summary: parsed.summary ?? 'CodeGraph returned related files and entry points.',
+      hits: dedupeHits(hits.filter(hit => existsOrLooksLikePath(options.projectDir, hit.file))),
+      files,
+      symbols: unique(hits.map(hit => hit.symbol).filter((value): value is string => Boolean(value))),
+    }
+  } catch {
+    return null
+  }
 }

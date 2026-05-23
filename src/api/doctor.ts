@@ -3,7 +3,7 @@
 // Usage: scale doctor
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs'
-import { getProfile } from '../config/profiles.js'
+import { getBootstrapPlanForProfile, getProfile, type ProfileBootstrapPlan } from '../config/profiles.js'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { computeGovernanceDrift } from '../workflow/GovernanceLock.js'
@@ -11,6 +11,9 @@ import { doctorEngineeringStandards } from '../workflow/EngineeringStandards.js'
 import { doctorResourceAssets } from '../workflow/ResourceGovernance.js'
 import { doctorRuntimeEvidence } from '../runtime/RuntimeDoctor.js'
 import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
+import { inspectCodeIntelligence, type CodeIntelligenceStatusReport } from '../codegraph/CodeIntelligence.js'
+import { inspectMemoryProviders, type MemoryProviderStatusReport } from '../memory/MemoryProviders.js'
+import { inspectToolCapabilities, type ToolCapabilityReport } from '../tools/ToolCapabilityRegistry.js'
 
 export interface DiagnosticResult {
   name: string
@@ -18,28 +21,49 @@ export interface DiagnosticResult {
   message: string
   fix?: string
   optional?: boolean // Optional checks don't affect overall health
-  category?: 'governance' | 'knowledge-graph' | 'runtime'
+  category?: 'governance' | 'knowledge-graph' | 'runtime' | 'memory'
 }
 
 export interface DoctorReport {
   overall: 'healthy' | 'degraded' | 'broken'
   checks: DiagnosticResult[]
   timestamp: number
+  bootstrapPlan?: ProfileBootstrapPlan
   knowledgeGraph?: {
     available: boolean
     pythonVersion?: string
     graphifyInstalled?: boolean
+    codegraphInstalled?: boolean
+    codegraphProjectInitialized?: boolean
   }
+  memoryProviders?: {
+    available: boolean
+    gbrainAvailable: boolean
+    defaultOrder: string[]
+    mode: string
+  }
+}
+
+interface DoctorDeps {
+  execSyncImpl?: typeof execSync
+  inspectCodeIntelligenceImpl?: typeof inspectCodeIntelligence
+  inspectMemoryProvidersImpl?: typeof inspectMemoryProviders
+  inspectToolCapabilitiesImpl?: typeof inspectToolCapabilities
 }
 
 export class Doctor {
   constructor(
     private projectDir: string = '.',
     private scaleDir: string = '.scale',
+    private deps: DoctorDeps = {},
   ) {}
 
   async diagnose(): Promise<DoctorReport> {
     const checks: DiagnosticResult[] = []
+    const bootstrapPlan = this.resolveBootstrapPlan()
+    const codeIntelligence = this.inspectCodeIntelligence()
+    const memoryProviders = this.inspectMemoryProviders()
+    const toolCapabilities = this.inspectToolCapabilities(['graphify', 'codegraph', 'gbrain'])
 
     checks.push(this.checkScaleDir())
     checks.push(this.checkEventsDir())
@@ -96,14 +120,30 @@ export class Doctor {
     checks.push(configHealthCheck)
 
     // Optional knowledge graph checks (non-blocking)
-    const pythonCheck = this.checkPython()
-    const graphifyCheck = this.checkGraphify()
+    const pythonCheck = this.checkPython(bootstrapPlan)
+    const graphifyCheck = this.checkGraphifyCli(toolCapabilities, bootstrapPlan)
+    const graphifyArtifactCheck = this.checkGraphifyArtifact(codeIntelligence)
+    const codegraphCheck = this.checkCodegraph(toolCapabilities, bootstrapPlan)
+    const codegraphProjectCheck = this.checkCodegraphProject(codeIntelligence)
+    const memoryRoutingCheck = this.checkMemoryProviders(memoryProviders, bootstrapPlan)
     pythonCheck.optional = true
     graphifyCheck.optional = true
+    graphifyArtifactCheck.optional = true
+    codegraphCheck.optional = true
+    codegraphProjectCheck.optional = true
+    memoryRoutingCheck.optional = true
     pythonCheck.category = 'knowledge-graph'
     graphifyCheck.category = 'knowledge-graph'
+    graphifyArtifactCheck.category = 'knowledge-graph'
+    codegraphCheck.category = 'knowledge-graph'
+    codegraphProjectCheck.category = 'knowledge-graph'
+    memoryRoutingCheck.category = 'memory'
     checks.push(pythonCheck)
     checks.push(graphifyCheck)
+    checks.push(graphifyArtifactCheck)
+    checks.push(codegraphCheck)
+    checks.push(codegraphProjectCheck)
+    checks.push(memoryRoutingCheck)
 
     // Calculate overall health excluding optional checks
     const coreChecks = checks.filter((c) => !c.optional)
@@ -113,12 +153,26 @@ export class Doctor {
 
     // Knowledge graph availability metadata
     const knowledgeGraph = {
-      available: pythonCheck.status === 'ok' && graphifyCheck.status === 'ok',
+      available: graphifyArtifactCheck.status === 'ok' || codegraphProjectCheck.status === 'ok',
       pythonVersion: pythonCheck.status === 'ok' ? pythonCheck.message : undefined,
       graphifyInstalled: graphifyCheck.status === 'ok',
+      codegraphInstalled: codegraphCheck.status === 'ok',
+      codegraphProjectInitialized: codegraphProjectCheck.status === 'ok',
     }
 
-    return { overall, checks, timestamp: Date.now(), knowledgeGraph }
+    return {
+      overall,
+      checks,
+      timestamp: Date.now(),
+      bootstrapPlan,
+      knowledgeGraph,
+      memoryProviders: {
+        available: memoryProviders.availableProviderCount > 0,
+        gbrainAvailable: Boolean(memoryProviders.providers.find(provider => provider.id === 'gbrain')?.available),
+        defaultOrder: [...memoryProviders.routing.defaultOrder],
+        mode: memoryProviders.routing.mode,
+      },
+    }
   }
 
   private checkScaleDir(): DiagnosticResult {
@@ -192,7 +246,28 @@ export class Doctor {
     }
     try {
       const content = JSON.parse(readFileSync(found.path, 'utf-8'))
-      const hasScaleHooks = JSON.stringify(content).includes('scale ')
+      const collectHookEntries = (entries: unknown[]): Array<{ command?: unknown; description?: unknown; hooks?: unknown[] }> => {
+        const flattened: Array<{ command?: unknown; description?: unknown; hooks?: unknown[] }> = []
+        for (const entry of entries) {
+          if (!entry || typeof entry !== 'object') continue
+          flattened.push(entry as { command?: unknown; description?: unknown; hooks?: unknown[] })
+          if (Array.isArray((entry as { hooks?: unknown[] }).hooks)) {
+            flattened.push(...collectHookEntries((entry as { hooks?: unknown[] }).hooks ?? []))
+          }
+        }
+        return flattened
+      }
+      const hookEntries = collectHookEntries(
+        Object.values(content.hooks ?? {}).flatMap((value) => Array.isArray(value) ? value : []),
+      )
+      const hasScaleHooks = hookEntries.some((entry) => {
+        const command = typeof entry.command === 'string' ? entry.command : ''
+        const description = typeof entry.description === 'string' ? entry.description : ''
+        return /(^|\s)scale\s/.test(command)
+          || command.includes('.claude/hooks/')
+          || command.includes('scripts/hooks/')
+          || /scale|workflow/i.test(description)
+      })
       if (!hasScaleHooks) {
         return {
           name: 'Agent settings',
@@ -571,9 +646,9 @@ export class Doctor {
     }
   }
 
-  private checkPython(): DiagnosticResult {
+  private checkPython(bootstrapPlan: ProfileBootstrapPlan): DiagnosticResult {
     try {
-      const version = execSync('python3 --version', { encoding: 'utf-8', timeout: 5000 }).trim()
+      const version = this.runExecSync('python3 --version').trim()
       const match = version.match(/Python (\d+)\.(\d+)/)
       if (match) {
         const major = parseInt(match[1])
@@ -587,40 +662,85 @@ export class Doctor {
     } catch {
       // Try python (without 3) for Windows
       try {
-        const version = execSync('python --version', { encoding: 'utf-8', timeout: 5000 }).trim()
+        const version = this.runExecSync('python --version').trim()
         return { name: 'Python version', status: 'ok', message: version }
       } catch {
         return {
           name: 'Python version',
           status: 'warn',
           message: 'Not installed — knowledge graph requires Python',
-          fix: 'Install Python 3.8+ or skip with --no-knowledge-graph',
+          fix: `Install Python 3.8+, then run: ${this.knowledgeBootstrapApplyCommand(bootstrapPlan)}`,
         }
       }
     }
   }
 
-  private checkGraphify(): DiagnosticResult {
-    try {
-      const result = execSync('pip show graphifyy', { encoding: 'utf-8', timeout: 5000 })
-      const match = result.match(/Version: (\S+)/)
-      if (match) {
-        return { name: 'Graphify', status: 'ok', message: `graphifyy v${match[1]} installed` }
+  private checkGraphifyCli(toolCapabilities: ToolCapabilityReport, bootstrapPlan: ProfileBootstrapPlan): DiagnosticResult {
+    const graphify = toolCapabilities.tools.find(tool => tool.id === 'graphify')
+    if (graphify?.installed) {
+      return { name: 'Graphify CLI', status: 'ok', message: graphify.version ?? graphify.detectedPath ?? 'installed' }
+    }
+    return {
+      name: 'Graphify CLI',
+      status: 'warn',
+      message: graphify?.missingReason ?? 'Graphify CLI is not installed',
+      fix: `Run: ${this.knowledgeBootstrapApplyCommand(bootstrapPlan)}`,
+    }
+  }
+
+  private checkGraphifyArtifact(codeIntelligence: CodeIntelligenceStatusReport): DiagnosticResult {
+    const graphify = codeIntelligence.providers.find(provider => provider.id === 'graphify')
+    if (graphify?.available) {
+      return { name: 'Graphify artifact', status: 'ok', message: graphify.reason }
+    }
+    return {
+      name: 'Graphify artifact',
+      status: 'warn',
+      message: graphify?.reason ?? 'Graphify artifact is not available',
+      fix: 'Run: scale codegraph status --json and generate graphify-out/graph.json before relying on graph-backed knowledge recall',
+    }
+  }
+
+  private checkCodegraph(toolCapabilities: ToolCapabilityReport, bootstrapPlan: ProfileBootstrapPlan): DiagnosticResult {
+    const codegraph = toolCapabilities.tools.find(tool => tool.id === 'codegraph')
+    if (codegraph?.installed) {
+      return { name: 'CodeGraph CLI', status: 'ok', message: codegraph.version ?? codegraph.detectedPath ?? 'installed' }
+    }
+    return {
+      name: 'CodeGraph CLI',
+      status: 'warn',
+      message: codegraph?.missingReason ?? 'CodeGraph CLI is not installed',
+      fix: `Run: ${this.knowledgeBootstrapApplyCommand(bootstrapPlan)}`,
+    }
+  }
+
+  private checkCodegraphProject(codeIntelligence: CodeIntelligenceStatusReport): DiagnosticResult {
+    if (codeIntelligence.projectIndexExists) {
+      return { name: 'CodeGraph project index', status: 'ok', message: `Found at ${codeIntelligence.projectIndexPath}` }
+    }
+    return {
+      name: 'CodeGraph project index',
+      status: 'warn',
+      message: 'Project is not initialized for CodeGraph',
+      fix: 'Run: scale codegraph init',
+    }
+  }
+
+  private checkMemoryProviders(memoryProviders: MemoryProviderStatusReport, bootstrapPlan: ProfileBootstrapPlan): DiagnosticResult {
+    const gbrain = memoryProviders.providers.find(provider => provider.id === 'gbrain')
+    if (gbrain?.available) {
+      return {
+        name: 'Memory provider routing',
+        status: memoryProviders.warnings.length > 0 ? 'warn' : 'ok',
+        message: `mode=${memoryProviders.routing.mode}; order=${memoryProviders.routing.defaultOrder.join(' -> ')}; gbrain=available`,
+        fix: memoryProviders.warnings.length > 0 ? 'Run: scale memory provider status --json' : undefined,
       }
-      return { name: 'Graphify', status: 'ok', message: 'installed' }
-    } catch {
-      // Try pip3
-      try {
-        execSync('pip3 show graphifyy', { encoding: 'utf-8', timeout: 5000 })
-        return { name: 'Graphify', status: 'ok', message: 'installed (pip3)' }
-      } catch {
-        return {
-          name: 'Graphify',
-          status: 'warn',
-          message: 'Not installed — code knowledge graph optional',
-          fix: 'pip install graphifyy && graphify install',
-        }
-      }
+    }
+    return {
+      name: 'Memory provider routing',
+      status: 'warn',
+      message: `mode=${memoryProviders.routing.mode}; order=${memoryProviders.routing.defaultOrder.join(' -> ')}; gbrain=unavailable`,
+      fix: `Run: ${this.memoryBootstrapApplyCommand(bootstrapPlan)}`,
     }
   }
 
@@ -676,23 +796,23 @@ export class Doctor {
       const profileMatch = content.match(/^profile:\s*(.+)$/m)
       const profileId = profileMatch?.[1]?.trim() || 'standard'
       const profile = getProfile(profileId)
+      const bootstrapPlan = getBootstrapPlanForProfile(profile.id)
 
       if (profile.id !== profileId) {
         issues.push(`Unknown profile "${profileId}", falling back to standard`)
       }
 
-      // Check vector search config without Qdrant
+      // Check legacy vector-search config drift
       if (content.includes('backend: qdrant')) {
-        try {
-          execSync('curl -s http://localhost:6333/readyz', { timeout: 3000, stdio: 'pipe' })
-        } catch {
-          issues.push('Vector search configured with Qdrant, but Qdrant is not reachable at localhost:6333')
-        }
+        issues.push('Legacy Qdrant backend configured; default knowledge and recall flow now expects graphify + codegraph instead of Qdrant')
+        recommendations.push('Update .scale/config.yaml to use graphify-backed knowledge, or rerun: scale config profile --set advanced')
       }
 
       // Check evolution enabled without eval setup
       if (content.includes('evolution:') && content.includes('enabled: true')) {
-        const evalPath = join(this.projectDir, this.scaleDir, 'eval')
+        const evalPath = existsSync(join(this.projectDir, this.scaleDir, 'evals'))
+          ? join(this.projectDir, this.scaleDir, 'evals')
+          : join(this.projectDir, this.scaleDir, 'eval')
         if (!existsSync(evalPath)) {
           recommendations.push('Evolution enabled but no .scale/eval/ directory — run: scale eval init')
         }
@@ -712,6 +832,10 @@ export class Doctor {
           recommendations.push(`Could not parse ${thresholdsPath}; run: scale config doctor`)
           void error
         }
+      }
+
+      if (bootstrapPlan.packs.length > 0 && profile.defaults.knowledge.enabled) {
+        recommendations.push(`Bootstrap profile-aligned dependencies with: ${bootstrapPlan.inspectCommand}`)
       }
 
       if (issues.length > 0) {
@@ -740,7 +864,61 @@ export class Doctor {
     }
   }
 
+  private resolveBootstrapPlan(): ProfileBootstrapPlan {
+    return getBootstrapPlanForProfile(this.readProfileId())
+  }
+
+  private readProfileId(): string {
+    const configPath = join(this.projectDir, this.scaleDir, 'config.yaml')
+    if (!existsSync(configPath)) return 'standard'
+    try {
+      const content = readFileSync(configPath, 'utf-8')
+      const match = content.match(/^profile:\s*(.+)$/m)
+      return match?.[1]?.trim() || 'standard'
+    } catch {
+      return 'standard'
+    }
+  }
+
+  private inspectCodeIntelligence(): CodeIntelligenceStatusReport {
+    return (this.deps.inspectCodeIntelligenceImpl ?? inspectCodeIntelligence)({
+      projectDir: this.projectDir,
+      scaleDir: this.scaleDir,
+    })
+  }
+
+  private inspectMemoryProviders(): MemoryProviderStatusReport {
+    return (this.deps.inspectMemoryProvidersImpl ?? inspectMemoryProviders)({
+      projectDir: this.projectDir,
+      scaleDir: this.scaleDir,
+    })
+  }
+
+  private inspectToolCapabilities(toolIds: string[]): ToolCapabilityReport {
+    return (this.deps.inspectToolCapabilitiesImpl ?? inspectToolCapabilities)({
+      projectDir: this.projectDir,
+      toolIds,
+    })
+  }
+
+  private runExecSync(command: string): string {
+    return String((this.deps.execSyncImpl ?? execSync)(command, { encoding: 'utf-8', timeout: 5000 }))
+  }
+
+  private knowledgeBootstrapApplyCommand(bootstrapPlan: ProfileBootstrapPlan): string {
+    return bootstrapPlan.packs.includes('knowledge')
+      ? bootstrapPlan.applyCommand
+      : 'scale bootstrap deps --pack knowledge --apply'
+  }
+
+  private memoryBootstrapApplyCommand(bootstrapPlan: ProfileBootstrapPlan): string {
+    return bootstrapPlan.packs.includes('memory')
+      ? bootstrapPlan.applyCommand
+      : 'scale bootstrap deps --pack memory --apply'
+  }
+
   formatReport(report: DoctorReport): string {
+    return this.formatReportAscii(report)
     const icon = { healthy: '✅', degraded: '⚠️', broken: '❌' }
     const statusIcon = { ok: '✅', warn: '⚠️', fail: '❌' }
     const lines: string[] = [
@@ -777,15 +955,32 @@ export class Doctor {
       }
     }
 
+    const memoryChecks = report.checks.filter((c) => c.optional && c.category === 'memory')
+    if (memoryChecks.length > 0) {
+      lines.push('')
+      lines.push('Memory Providers (Optional):')
+      for (const check of memoryChecks) {
+        lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+        if (check.fix) lines.push(`     Fix: ${check.fix}`)
+      }
+    }
+
     // Knowledge graph status summary
     if (report.knowledgeGraph) {
+      const knowledgeGraph = report.knowledgeGraph!
       lines.push('')
-      if (report.knowledgeGraph.available) {
+      if (knowledgeGraph.available) {
         lines.push('  ✅ Code knowledge graph available')
-        lines.push('  → Use: scale graphify .')
+        if (knowledgeGraph.codegraphProjectInitialized) {
+          lines.push('  → Use: scale codegraph context --symbol <Symbol>')
+        }
+        if (knowledgeGraph.graphifyInstalled) {
+          lines.push('  → Use: scale graphify .')
+        }
       } else {
         lines.push('  ⚠️ Code knowledge graph not available (optional feature)')
-        lines.push('  → Install: pip install graphifyy && graphify install')
+        lines.push('  → Install CodeGraph: npx @colbymchenry/codegraph')
+        lines.push('  → Install Graphify: pip install graphifyy && graphify install')
       }
       lines.push(`${'─'.repeat(50)}`)
     }
@@ -799,6 +994,71 @@ export class Doctor {
         if (check.fix) lines.push(`     Fix: ${check.fix}`)
       }
       lines.push(`${'-'.repeat(50)}`)
+    }
+
+    const ok = report.checks.filter((c) => c.status === 'ok').length
+    const warn = report.checks.filter((c) => c.status === 'warn').length
+    const fail = report.checks.filter((c) => c.status === 'fail').length
+    const optional = report.checks.filter((c) => c.optional).length
+    lines.push(`  ${ok} passed, ${warn} warnings, ${fail} failures (${optional} optional)`)
+    return lines.join('\n')
+  }
+
+  private formatReportAscii(report: DoctorReport): string {
+    const icon = { healthy: '[OK]', degraded: '[WARN]', broken: '[FAIL]' } as const
+    const statusIcon = { ok: '[OK]', warn: '[WARN]', fail: '[FAIL]' } as const
+    const divider = '-'.repeat(50)
+    const lines: string[] = [
+      '',
+      `${icon[report.overall]} SCALE Engine Health: ${report.overall.toUpperCase()}`,
+      divider,
+    ]
+
+    for (const check of report.checks.filter((c) => !c.optional)) {
+      lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+      if (check.fix) lines.push(`     Fix: ${check.fix}`)
+    }
+
+    lines.push(divider)
+
+    const appendSection = (title: string, category: NonNullable<DiagnosticResult['category']>) => {
+      const sectionChecks = report.checks.filter((c) => c.optional && c.category === category)
+      if (sectionChecks.length === 0) return
+      lines.push('')
+      lines.push(title)
+      for (const check of sectionChecks) {
+        lines.push(`  ${statusIcon[check.status]} ${check.name}: ${check.message}`)
+        if (check.fix) lines.push(`     Fix: ${check.fix}`)
+      }
+    }
+
+    appendSection('Project Governance (Optional):', 'governance')
+    appendSection('Knowledge Graph (Optional):', 'knowledge-graph')
+    appendSection('Memory Providers (Optional):', 'memory')
+    appendSection('Runtime Evidence (Optional):', 'runtime')
+
+    if (report.knowledgeGraph) {
+      const knowledgeGraph = report.knowledgeGraph
+      lines.push('')
+      if (knowledgeGraph.available) {
+        lines.push('  [OK] Code knowledge graph available')
+        if (report.knowledgeGraph.codegraphProjectInitialized) {
+          lines.push('  -> Use: scale codegraph context --symbol <Symbol>')
+        }
+        if (report.knowledgeGraph.graphifyInstalled) {
+          lines.push('  -> Use: scale graphify .')
+        }
+      } else {
+        lines.push('  [WARN] Code knowledge graph not available (optional feature)')
+        lines.push(`  -> Bootstrap inspect: ${report.bootstrapPlan?.inspectCommand ?? 'scale bootstrap deps --pack knowledge --json'}`)
+        lines.push(`  -> Bootstrap apply: ${report.bootstrapPlan?.packs.includes('knowledge') ? report.bootstrapPlan.applyCommand : 'scale bootstrap deps --pack knowledge --apply'}`)
+      }
+      lines.push(divider)
+    }
+
+    if (report.memoryProviders && !report.memoryProviders.gbrainAvailable) {
+      lines.push(`  -> Memory bootstrap: ${report.bootstrapPlan?.packs.includes('memory') ? report.bootstrapPlan.applyCommand : 'scale bootstrap deps --pack memory --apply'}`)
+      lines.push(divider)
     }
 
     const ok = report.checks.filter((c) => c.status === 'ok').length
