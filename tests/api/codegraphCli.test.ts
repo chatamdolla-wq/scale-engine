@@ -89,8 +89,8 @@ describe('codegraph CLI', () => {
     expect(report.written).toBe(true)
     expect(report.path.replace(/\\/g, '/')).toContain('/code-intelligence.json')
     expect(report.config.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'codegraph' }),
-      expect.objectContaining({ id: 'graphify' }),
+      expect.objectContaining({ id: 'codegraph', source: 'https://github.com/colbymchenry/codegraph' }),
+      expect.objectContaining({ id: 'graphify', source: 'https://github.com/safishamsi/graphify' }),
     ]))
     expect(report.config.fallback.enabled).toBe(true)
   }, 120_000)
@@ -105,14 +105,20 @@ describe('codegraph CLI', () => {
     expect(result.exitCode).toBe(0)
     const report = parseJson<{
       configExists: boolean
+      projectIndexExists: boolean
+      projectIndexPath: string
       availableProviderCount: number
+      providers: Array<{ id: string; source?: string }>
       fallback: { available: boolean }
       recommendations: string[]
     }>(result.stdout)
     expect(report.configExists).toBe(false)
-    expect(report.availableProviderCount).toBe(0)
+    expect(report.projectIndexExists).toBe(false)
+    expect(report.projectIndexPath.replace(/\\/g, '/')).toContain('/.codegraph')
+    expect(report.availableProviderCount).toBeGreaterThanOrEqual(0)
+    expect(report.providers.find(provider => provider.id === 'codegraph')?.source).toBe('https://github.com/colbymchenry/codegraph')
     expect(report.fallback.available).toBe(true)
-    expect(report.recommendations.join('\n')).toContain('No graph provider is available')
+    expect(report.recommendations.join('\n')).toContain('Run scale codegraph init to create .scale/code-intelligence.json.')
   }, 120_000)
 
   it('uses internal source scan fallback for query when graph data is unavailable', async () => {

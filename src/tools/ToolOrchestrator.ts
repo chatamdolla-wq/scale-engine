@@ -3,6 +3,7 @@ import { execa } from 'execa'
 import { inspectToolCapabilities, TOOL_CAPABILITY_CATALOG, type ToolCapabilityEntry, type ToolCapabilityReport, type ToolCapabilityCategory } from './ToolCapabilityRegistry.js'
 import { ToolEvidenceStore, type ToolEvidenceAdapter, type ToolEvidenceStatus, type ToolRunEvidence } from './ToolEvidenceStore.js'
 import { requiredToolsForDomains, resolveToolPolicy, type ResolvedToolPolicy } from './ToolPolicy.js'
+import { wrapCliCommandWithRtk } from './RtkRuntime.js'
 
 export type ToolStepStatus = 'ready' | 'missing' | 'skipped'
 
@@ -259,7 +260,8 @@ async function executeCliCapabilityCheck(step: ToolExecutionStep): Promise<ToolS
   }
 
   try {
-    const result = await execa(command, args, {
+    const invocation = wrapCliCommandWithRtk(command, args)
+    const result = await execa(invocation.command, invocation.args, {
       reject: false,
       timeout: 10_000,
       cwd: process.cwd(),
@@ -269,7 +271,7 @@ async function executeCliCapabilityCheck(step: ToolExecutionStep): Promise<ToolS
     const stdout = result.stdout.trim()
     const stderr = result.stderr.trim()
     const exitCode = result.exitCode ?? 1
-    const outputSummary = summarizeCliOutput(step.toolId, stdout, stderr, exitCode)
+    const outputSummary = summarizeCliOutput(step.toolId, stdout, stderr, exitCode, invocation.wrapped)
     return {
       status: exitCode === 0 ? 'passed' : 'failed',
       outputSummary,
@@ -287,8 +289,8 @@ async function executeCliCapabilityCheck(step: ToolExecutionStep): Promise<ToolS
   }
 }
 
-function summarizeCliOutput(toolId: string, stdout: string, stderr: string, exitCode: number): string {
-  const lines = [`CLI version check for ${toolId} exited with ${exitCode}.`]
+function summarizeCliOutput(toolId: string, stdout: string, stderr: string, exitCode: number, wrappedByRtk = false): string {
+  const lines = [`CLI version check for ${toolId} exited with ${exitCode}.${wrappedByRtk ? ' Wrapped with RTK.' : ''}`]
   if (stdout) lines.push(`stdout: ${tail(stdout)}`)
   if (stderr) lines.push(`stderr: ${tail(stderr)}`)
   return lines.join(' ')

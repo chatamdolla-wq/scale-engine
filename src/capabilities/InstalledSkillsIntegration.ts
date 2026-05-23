@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { execa } from 'execa'
+import { wrapShellCommandWithRtk } from '../tools/RtkRuntime.js'
 
 export const SKILLS_DIR = join(homedir(), '.claude', 'skills')
 export const AGENTS_SKILLS_DIR = join(homedir(), '.agents', 'skills')
@@ -24,12 +25,19 @@ export function resolveInstalledSkillPath(skillId: string, segments: string[] = 
 export async function runInstalledSkillCommand(cmd: string, timeout: number, skillId: string): Promise<SkillInvocationResult> {
   const start = Date.now()
   try {
-    const result = await execa(cmd, {
-      shell: true,
-      timeout,
-      reject: false,
-      all: false,
-    })
+    const wrapped = wrapShellCommandWithRtk(cmd)
+    const result = wrapped
+      ? await execa(wrapped.command, wrapped.args, {
+          timeout,
+          reject: false,
+          all: false,
+        })
+      : await execa(cmd, {
+          shell: true,
+          timeout,
+          reject: false,
+          all: false,
+        })
     return {
       success: (result.exitCode ?? 1) === 0,
       output: result.stdout ?? '',

@@ -129,11 +129,11 @@ export const SKILL_REPOSITORY: SkillRepositoryEntry[] = [
     id: 'gbrain',
     name: 'GBrain',
     category: 'memory',
-    description: 'Optional graph memory provider for AI agents with brain repos, hybrid search, entity links, MCP, and background maintenance.',
+    description: 'Graph-backed memory provider for AI agents with brain repos, hybrid search, entity links, MCP, and background maintenance.',
     sourceUrl: 'https://github.com/garrytan/gbrain',
-    installCommand: 'Optional external provider: review https://github.com/garrytan/gbrain and configure SCALE memory provider routing; do not vendor upstream source.',
+    installCommand: 'Install and configure GBrain from https://github.com/garrytan/gbrain, then let SCALE route memory recall through the provider contract; do not vendor upstream source.',
     trust: 'community',
-    primaryUse: 'Use as an optional graph-backed memory provider for long-running project knowledge, entity relationships, and background memory maintenance.',
+    primaryUse: 'Use as the default graph-backed memory provider for long-running project knowledge, entity relationships, and background memory maintenance.',
     combineWith: ['memory-brain', 'agentmemory', 'codegraph'],
     evidence: ['memory-provider-health', 'graph-recall-result', 'privacy-boundary', 'data-retention-policy'],
     attribution: {
@@ -362,8 +362,8 @@ export function recommendSkillWorkflow(input: SkillWorkflowRecommendationInput):
   const rationale: string[] = []
 
   if (matches(text, ['ui', 'ux', 'design', 'frontend', '视觉', '审美', '交互', '前端'])) {
-    add(primary, ['awesome-design-md', 'ui-ux-pro-max', 'frontend-design'])
-    add(supporting, ['webapp-testing', 'agent-browser', 'mcp-chrome-devtools'])
+    add(primary, ['awesome-design-md', 'ui-ux-pro-max'])
+    add(supporting, ['frontend-design', 'webapp-testing', 'agent-browser', 'mcp-chrome-devtools'])
     add(evidence, ['design-spec', 'browser-evidence'])
     rationale.push('检测到 UI/UX 或前端体验任务，需要设计 Skill 和浏览器证据组合。')
   }

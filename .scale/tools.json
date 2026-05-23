@@ -13,7 +13,7 @@
       "destructiveActions": "block",
       "evidenceRequired": true
     },
-    "frontend-design": {
+    "awesome-design-md": {
       "enabled": true,
       "requiredFor": [
         "ui"
@@ -24,6 +24,15 @@
     "ui-ux-pro-max": {
       "enabled": true,
       "requiredFor": [
+        "ui"
+      ],
+      "destructiveActions": "block",
+      "evidenceRequired": true
+    },
+    "frontend-design": {
+      "enabled": true,
+      "requiredFor": [],
+      "recommendedFor": [
         "ui"
       ],
       "destructiveActions": "block",
@@ -90,6 +99,18 @@
       ],
       "destructiveActions": "block",
       "command": "codex",
+      "evidenceRequired": true
+    },
+    "rtk": {
+      "enabled": true,
+      "requiredFor": [
+        "externalCli"
+      ],
+      "recommendedFor": [
+        "review"
+      ],
+      "destructiveActions": "block",
+      "command": "rtk",
       "evidenceRequired": true
     },
     "gemini-cli": {

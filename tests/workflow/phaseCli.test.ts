@@ -1067,9 +1067,9 @@ export function leaky(token: string) {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()
     await execa('git', ['init'], { cwd: projectDir })
-    mkdirSync(join(projectDir, '.agents', 'skills', 'frontend-design'), { recursive: true })
+    mkdirSync(join(projectDir, '.agents', 'skills', 'awesome-design-md'), { recursive: true })
     mkdirSync(join(projectDir, '.agents', 'skills', 'ui-ux-pro-max'), { recursive: true })
-    writeFileSync(join(projectDir, '.agents', 'skills', 'frontend-design', 'SKILL.md'), '---\nname: frontend-design\n---\n', 'utf-8')
+    writeFileSync(join(projectDir, '.agents', 'skills', 'awesome-design-md', 'SKILL.md'), '---\nname: awesome-design-md\n---\n', 'utf-8')
     writeFileSync(join(projectDir, '.agents', 'skills', 'ui-ux-pro-max', 'SKILL.md'), '---\nname: ui-ux-pro-max\n---\n', 'utf-8')
     mkdirSync(join(projectDir, 'src', 'components'), { recursive: true })
     writeFileSync(join(projectDir, 'src', 'components', 'Upload.tsx'), 'export const Upload = () => null\n', 'utf-8')
@@ -1142,7 +1142,7 @@ export function leaky(token: string) {
       complete: false,
       blocked: true,
     })
-    expect(verifyResult.toolEvidenceGate.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(verifyResult.toolEvidenceGate.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
     expect(verifyResult.metric.finalGateStatus).toBe('blocked')
 
     const ship = await runScale(['ship', taskId, '--no-commit', '--json'], scaleDir, projectDir)

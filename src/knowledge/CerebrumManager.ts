@@ -3,7 +3,7 @@
 // Inspired by OpenWolf's cerebrum system.
 
 import type { KnowledgeEntry } from '../artifact/types.js'
-import type { SQLiteKnowledgeBase } from './SQLiteKnowledgeBase.js'
+import type { IKnowledgeBase } from './KnowledgeBase.js'
 
 export interface CerebrumEntry {
   id: string
@@ -22,7 +22,7 @@ export interface CerebrumHit {
 export class CerebrumManager {
   private entries: CerebrumEntry[] = []
 
-  constructor(private kb: SQLiteKnowledgeBase) {}
+  constructor(private kb: IKnowledgeBase) {}
 
   async addDoNotRepeat(pattern: string, description: string): Promise<CerebrumEntry> {
     const kbEntry = await this.kb.add({

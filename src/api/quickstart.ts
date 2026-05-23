@@ -5,6 +5,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import type { AgentPlatform } from '../artifact/types.js'
+import { bootstrapDependencies, type DependencyBootstrapReport } from '../bootstrap/DependencyBootstrap.js'
+import { inspectCodeIntelligence, type CodeIntelligenceStatusReport } from '../codegraph/CodeIntelligence.js'
+import { getBootstrapPlanForProfile } from '../config/profiles.js'
+import { inspectToolCapabilities, type ToolCapabilityReport } from '../tools/ToolCapabilityRegistry.js'
 import { writeGovernanceTemplates } from '../workflow/GovernanceTemplates.js'
 
 export interface PlatformDetectionResult {
@@ -48,7 +52,23 @@ export interface KnowledgeGraphResult {
   pythonVersion?: string
   graphifyInstalled: boolean
   graphifyVersion?: string
+  codegraphInstalled?: boolean
+  codegraphVersion?: string
+  codegraphProjectInitialized?: boolean
+  graphifyArtifactPresent?: boolean
   instructions?: string[]
+}
+
+interface KnowledgeGraphDeps {
+  execSyncImpl?: typeof execSync
+  inspectToolCapabilitiesImpl?: typeof inspectToolCapabilities
+  inspectCodeIntelligenceImpl?: typeof inspectCodeIntelligence
+  bootstrapDependenciesImpl?: (options: {
+    projectDir?: string
+    scaleDir?: string
+    packIds?: string[]
+    apply?: boolean
+  }) => Promise<DependencyBootstrapReport>
 }
 
 export interface QuickStartResult {
@@ -57,15 +77,26 @@ export interface QuickStartResult {
   created: string[]
   skipped: string[]
   constraintsApplied: number
+  workflowCapabilities: string[]
   capabilitiesEnabled: string[]
   knowledgeGraph?: KnowledgeGraphResult
+  dependencyBootstrapCommand: string
   nextSteps: string[]
 }
 
-export function governanceNextSteps(options: { includeAgentInit?: boolean } = {}): string[] {
+export function governanceNextSteps(options: {
+  includeAgentInit?: boolean
+  includeDependencyBootstrap?: boolean
+  profileId?: string
+  governancePack?: string
+} = {}): string[] {
   const steps: string[] = []
+  const bootstrapPlan = getBootstrapPlanForProfile(options.profileId ?? 'standard', options.governancePack)
   if (options.includeAgentInit) {
     steps.push('scale init --agent <platform>  # optional: add agent-specific hooks later')
+  }
+  if (options.includeDependencyBootstrap !== false) {
+    steps.push(`${bootstrapPlan.inspectCommand}  # inspect/install third-party skills and CLI dependencies explicitly`)
   }
   steps.push(
     'scale doctor',
@@ -77,10 +108,19 @@ export function governanceNextSteps(options: { includeAgentInit?: boolean } = {}
   return steps
 }
 
-export async function quickStart(projectDir: string = '.', options?: { installKnowledgeGraph?: boolean; governancePack?: string }): Promise<QuickStartResult> {
+export async function quickStart(projectDir: string = '.', options?: {
+  installKnowledgeGraph?: boolean
+  governancePack?: string
+  profileId?: string
+}): Promise<QuickStartResult> {
+  const bootstrapPlan = getBootstrapPlanForProfile(options?.profileId ?? 'standard', options?.governancePack)
   const result: QuickStartResult = {
     success: false, platform: null, created: [], skipped: [],
-    constraintsApplied: 0, capabilitiesEnabled: ['browser', 'search', 'computer'], nextSteps: []
+    constraintsApplied: 0,
+    workflowCapabilities: ['browser', 'search', 'computer'],
+    capabilitiesEnabled: ['browser', 'search', 'computer'],
+    dependencyBootstrapCommand: bootstrapPlan.inspectCommand,
+    nextSteps: [],
   }
   const detection = detectPlatform(projectDir)
   result.platform = detection.platform
@@ -106,104 +146,114 @@ export async function quickStart(projectDir: string = '.', options?: { installKn
   result.created.push(...governance.created)
   result.skipped.push(...governance.skipped)
 
-  // Optional: Install knowledge graph (graphify)
+  // Optional: Install governed knowledge dependencies (codegraph/graphify)
   if (options?.installKnowledgeGraph) {
-    result.knowledgeGraph = await installKnowledgeGraph()
+    result.knowledgeGraph = await installKnowledgeGraph(projectDir, { scaleDir: '.scale' })
     if (result.knowledgeGraph.available) {
-      result.nextSteps.push('scale graphify .  # Build code knowledge graph')
+      if (result.knowledgeGraph.codegraphInstalled) {
+        result.nextSteps.push('codegraph init -i .  # Build local CodeGraph index')
+      }
+      if (result.knowledgeGraph.graphifyInstalled) {
+        result.nextSteps.push('scale graphify .  # Build code knowledge graph')
+      }
     }
   } else {
-    result.knowledgeGraph = checkKnowledgeGraphAvailability()
+    result.knowledgeGraph = checkKnowledgeGraphAvailability(projectDir, { scaleDir: '.scale' })
   }
 
   result.success = true
-  result.nextSteps.push(...governanceNextSteps({ includeAgentInit: !detection.platform }))
+  result.nextSteps.push(...governanceNextSteps({
+    includeAgentInit: !detection.platform,
+    includeDependencyBootstrap: true,
+    profileId: options?.profileId ?? 'standard',
+    governancePack: options?.governancePack,
+  }))
   return result
 }
 
 /**
- * Check if Python and graphify are available (without installing)
+ * Check if CodeGraph or Graphify are available (without installing)
  */
-export function checkKnowledgeGraphAvailability(): KnowledgeGraphResult {
-  const result: KnowledgeGraphResult = { available: false, graphifyInstalled: false }
+export function checkKnowledgeGraphAvailability(projectDir: string = '.', deps: KnowledgeGraphDeps & {
+  scaleDir?: string
+} = {}): KnowledgeGraphResult {
+  const inspectTools = deps.inspectToolCapabilitiesImpl ?? inspectToolCapabilities
+  const inspectCode = deps.inspectCodeIntelligenceImpl ?? inspectCodeIntelligence
+  const execSyncImpl = deps.execSyncImpl ?? execSync
+  const toolReport = inspectTools({
+    projectDir,
+    toolIds: ['codegraph', 'graphify'],
+  })
+  const codeReport = inspectCode({
+    projectDir,
+    scaleDir: deps.scaleDir,
+  })
+  const codegraphTool = toolReport.tools.find(tool => tool.id === 'codegraph')
+  const graphifyTool = toolReport.tools.find(tool => tool.id === 'graphify')
+  const graphifyProvider = codeReport.providers.find(provider => provider.id === 'graphify')
+  const result: KnowledgeGraphResult = {
+    available: false,
+    graphifyInstalled: Boolean(graphifyTool?.installed),
+    graphifyVersion: graphifyTool?.version,
+    codegraphInstalled: Boolean(codegraphTool?.installed),
+    codegraphVersion: codegraphTool?.version,
+    codegraphProjectInitialized: codeReport.projectIndexExists,
+    graphifyArtifactPresent: Boolean(graphifyProvider?.available),
+  }
 
-  // Check Python
   try {
-    const version = execSync('python3 --version', { encoding: 'utf-8', timeout: 5000 }).trim()
-    result.pythonVersion = version
+    result.pythonVersion = execSyncImpl('python3 --version', { encoding: 'utf-8', timeout: 5000 }).trim()
   } catch {
     try {
-      const version = execSync('python --version', { encoding: 'utf-8', timeout: 5000 }).trim()
-      result.pythonVersion = version
+      result.pythonVersion = execSyncImpl('python --version', { encoding: 'utf-8', timeout: 5000 }).trim()
     } catch {
-      result.instructions = ['Install Python 3.8+: https://python.org/downloads']
-      return result
+      // Python is optional when Graphify is already installed.
     }
   }
 
-  // Check graphify
-  try {
-    const info = execSync('pip show graphifyy', { encoding: 'utf-8', timeout: 5000 })
-    const match = info.match(/Version: (\S+)/)
-    result.graphifyInstalled = true
-    result.graphifyVersion = match?.[1] ?? 'unknown'
-    result.available = true
-  } catch {
-    try {
-      execSync('pip3 show graphifyy', { encoding: 'utf-8', timeout: 5000 })
-      result.graphifyInstalled = true
-      result.available = true
-    } catch {
-      result.instructions = [
-        'pip install graphifyy',
-        'graphify install',
-      ]
-    }
+  const instructions: string[] = []
+  if (!result.codegraphInstalled || !result.graphifyInstalled) {
+    instructions.push('scale bootstrap deps --pack knowledge --json')
+    instructions.push('scale bootstrap deps --pack knowledge --apply')
+  }
+  if (!result.pythonVersion && !result.graphifyInstalled && !result.graphifyArtifactPresent) {
+    instructions.push('Install Python 3.10+ to enable Graphify CLI installation.')
+  }
+  if (result.codegraphInstalled && !result.codegraphProjectInitialized) {
+    instructions.push('codegraph init -i .')
+  }
+  if (result.graphifyInstalled && !result.graphifyArtifactPresent) {
+    instructions.push('Generate graphify-out/graph.json before relying on graph-backed knowledge recall.')
   }
 
+  result.available = result.graphifyInstalled || Boolean(result.codegraphInstalled)
+  result.instructions = instructions.length > 0 ? uniqueStrings(instructions) : undefined
   return result
 }
 
 /**
- * Attempt to install graphify (requires Python already installed)
+ * Attempt to install knowledge graph dependencies through the governed bootstrap path.
  */
-export async function installKnowledgeGraph(): Promise<KnowledgeGraphResult> {
-  const result = checkKnowledgeGraphAvailability()
-
-  if (!result.pythonVersion) {
-    return result // Python not installed, can't proceed
-  }
-
-  if (!result.graphifyInstalled) {
-    try {
-      // Try pip install
-      execSync('pip install graphifyy', { encoding: 'utf-8', timeout: 60000 })
-      result.graphifyInstalled = true
-      result.graphifyVersion = 'latest'
-    } catch {
-      try {
-        execSync('pip3 install graphifyy', { encoding: 'utf-8', timeout: 60000 })
-        result.graphifyInstalled = true
-        result.graphifyVersion = 'latest'
-      } catch {
-        result.instructions = [
-          'Manual install required:',
-          'pip install graphifyy',
-          'graphify install',
-        ]
-        return result
-      }
-    }
-
-    // Try graphify install
-    try {
-      execSync('graphify install', { encoding: 'utf-8', timeout: 30000 })
-    } catch {
-      // Non-blocking - user can run manually
-      result.instructions?.push('graphify install  # Initialize graphify')
-    }
-  }
-
-  result.available = result.graphifyInstalled
+export async function installKnowledgeGraph(projectDir: string = '.', deps: KnowledgeGraphDeps & {
+  scaleDir?: string
+} = {}): Promise<KnowledgeGraphResult> {
+  const bootstrap = deps.bootstrapDependenciesImpl ?? bootstrapDependencies
+  const bootstrapReport = await bootstrap({
+    projectDir,
+    scaleDir: deps.scaleDir,
+    packIds: ['knowledge'],
+    apply: true,
+  })
+  const result = checkKnowledgeGraphAvailability(projectDir, deps)
+  const instructions = uniqueStrings([
+    ...(result.instructions ?? []),
+    ...bootstrapReport.recommendations,
+    ...bootstrapReport.postCheckCommands,
+  ])
+  result.instructions = instructions.length > 0 ? instructions : undefined
   return result
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))]
 }

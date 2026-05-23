@@ -96,7 +96,7 @@
 4. verify：要求截图、浏览器检查、控制台/网络检查和移动端适配证据。
 
 必须主动使用 skills/MCP/CLI：
-- 设计方向用 awesome-design-md / ui-ux-pro-max / frontend-design。
+- 设计方向先用 awesome-design-md / ui-ux-pro-max，frontend-design 作为实现陪跑与落地约束。
 - 浏览器验证用 agent-browser / Chrome DevTools MCP / webapp-testing。
 - 如需真实网页或竞品参考，使用 web-access 并记录来源。
 

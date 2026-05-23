@@ -45,7 +45,7 @@ export const DEFAULT_TOOL_POLICY: ResolvedToolPolicy = {
       destructiveActions: 'block',
       evidenceRequired: true,
     },
-    'frontend-design': {
+    'awesome-design-md': {
       enabled: true,
       requiredFor: ['ui'],
       destructiveActions: 'block',
@@ -54,6 +54,13 @@ export const DEFAULT_TOOL_POLICY: ResolvedToolPolicy = {
     'ui-ux-pro-max': {
       enabled: true,
       requiredFor: ['ui'],
+      destructiveActions: 'block',
+      evidenceRequired: true,
+    },
+    'frontend-design': {
+      enabled: true,
+      requiredFor: [],
+      recommendedFor: ['ui'],
       destructiveActions: 'block',
       evidenceRequired: true,
     },
@@ -95,6 +102,14 @@ export const DEFAULT_TOOL_POLICY: ResolvedToolPolicy = {
       recommendedFor: ['externalCli', 'review'],
       destructiveActions: 'block',
       command: 'codex',
+      evidenceRequired: true,
+    },
+    rtk: {
+      enabled: true,
+      requiredFor: ['externalCli'],
+      recommendedFor: ['review'],
+      destructiveActions: 'block',
+      command: 'rtk',
       evidenceRequired: true,
     },
     'gemini-cli': {

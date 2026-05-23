@@ -44,12 +44,12 @@ describe('ToolOrchestrator', () => {
   it('builds a tool execution plan from skill plan, tool policy, and capability status', () => {
     const projectDir = makeProject()
     const homeDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
 
     const capabilityReport = inspectToolCapabilities({
       projectDir,
       homeDir,
-      toolIds: ['frontend-design', 'ui-ux-pro-max', 'agent-browser'],
+      toolIds: ['awesome-design-md', 'ui-ux-pro-max', 'frontend-design', 'agent-browser'],
       commandExists: () => false,
     })
     const orchestrator = new ToolOrchestrator({
@@ -61,8 +61,8 @@ describe('ToolOrchestrator', () => {
     const plan = orchestrator.plan({ skillPlan: uiSkillPlan() })
 
     expect(plan.mode).toBe('block')
-    expect(plan.steps.map(step => step.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
-    expect(plan.steps.find(step => step.toolId === 'frontend-design')).toMatchObject({
+    expect(plan.steps.map(step => step.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
+    expect(plan.steps.find(step => step.toolId === 'awesome-design-md')).toMatchObject({
       required: true,
       status: 'ready',
       adapter: 'skill',
@@ -78,7 +78,7 @@ describe('ToolOrchestrator', () => {
 
   it('runs ready steps in dry-run mode and writes skipped evidence', async () => {
     const projectDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
     writeSkill(projectDir, 'ui-ux-pro-max')
 
     const evidenceStore = new ToolEvidenceStore({ projectDir })
@@ -88,7 +88,7 @@ describe('ToolOrchestrator', () => {
       evidenceStore,
       capabilityReport: inspectToolCapabilities({
         projectDir,
-        toolIds: ['frontend-design', 'ui-ux-pro-max'],
+        toolIds: ['awesome-design-md', 'ui-ux-pro-max'],
       }),
     })
     const plan = orchestrator.plan({ skillPlan: uiSkillPlan() })
@@ -106,7 +106,7 @@ describe('ToolOrchestrator', () => {
 
   it('records failed execution evidence and marks the report failed', async () => {
     const projectDir = makeProject()
-    writeSkill(projectDir, 'frontend-design')
+    writeSkill(projectDir, 'awesome-design-md')
 
     const evidenceStore = new ToolEvidenceStore({ projectDir })
     const orchestrator = new ToolOrchestrator({
@@ -115,7 +115,7 @@ describe('ToolOrchestrator', () => {
       evidenceStore,
       capabilityReport: inspectToolCapabilities({
         projectDir,
-        toolIds: ['frontend-design'],
+        toolIds: ['awesome-design-md'],
       }),
       executeStep: async step => ({
         status: 'failed',
@@ -126,18 +126,18 @@ describe('ToolOrchestrator', () => {
     })
     const plan = orchestrator.plan({ skillPlan: {
       ...uiSkillPlan(),
-      requiredSkills: ['frontend-design'],
+      requiredSkills: ['awesome-design-md'],
       recommendedSkills: [],
     } })
 
     const report = await orchestrator.run(plan)
 
     expect(report.ok).toBe(false)
-    expect(report.blockers).toEqual([expect.stringContaining('frontend-design')])
+    expect(report.blockers).toEqual([expect.stringContaining('awesome-design-md')])
     const evidence = evidenceStore.list('TASK-UI')
     expect(evidence).toHaveLength(1)
     expect(evidence[0]).toMatchObject({
-      tool: 'frontend-design',
+      tool: 'awesome-design-md',
       status: 'failed',
       exitCode: 1,
     })

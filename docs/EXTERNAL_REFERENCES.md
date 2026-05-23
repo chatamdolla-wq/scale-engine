@@ -14,12 +14,15 @@ The inventory is intentionally conservative:
 | Upstream | Role in SCALE | Usage status | License status | Primary source surface |
 | --- | --- | --- | --- | --- |
 | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | File-backed planning workflow reference | adapted concept, not vendored | MIT | `SkillRepository`, README, `THIRD_PARTY_SKILLS` |
-| [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Optional external memory provider | external provider, read-only by default | Apache-2.0 | `MemoryProviders`, `SkillRepository`, README |
-| [garrytan/gbrain](https://github.com/garrytan/gbrain) | Optional graph memory provider | external provider, read-only by default | MIT | `MemoryProviders`, `SkillRepository`, README |
+| [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Secondary external memory provider | external provider, fallback-only | Apache-2.0 | `MemoryProviders`, `SkillRepository`, README |
+| [garrytan/gbrain](https://github.com/garrytan/gbrain) | Default graph-backed memory provider | external provider, default-enabled | MIT | `MemoryProviders`, `SkillRepository`, README |
+| [safishamsi/graphify](https://github.com/safishamsi/graphify) | Default knowledge graph and semantic recall source | external provider, default-enabled | review-required | `GraphifyKnowledgeBase`, `CodeIntelligence`, docs |
+| [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | Upstream code intelligence CLI and MCP server for project-local code graph queries | external CLI and MCP reference | MIT | `CodeIntelligence`, `doctor`, quickstart docs |
 | [anthropics/skills](https://github.com/anthropics/skills) | Frontend and webapp testing skill references | external skill reference | review-required | `SkillRepository`, `SkillCatalog`, `ToolCapabilityRegistry` |
 | [anthropics/claude-code](https://github.com/anthropics/claude-code) | Graphify and playwright-interactive skill references | optional discovery reference | review-required | `SkillDiscovery` |
 | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | Design system and DESIGN.md guidance | external skill reference | review-required | `SkillRepository`, `ExternalSkills`, `SkillDoctor` |
 | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | UI/UX design intelligence reference | external skill reference | review-required | `SkillRepository`, `ExternalSkills`, `ToolCapabilityRegistry` |
+| [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Governed CLI proxy for output compression and shell wrapping | external CLI reference | review-required | `ToolCapabilityRegistry`, `ToolOrchestrator`, `InstalledSkillsIntegration`, docs |
 | [eze-is/web-access](https://github.com/eze-is/web-access) | Web research and browser automation skill | external skill reference | review-required | `SkillRepository`, `ExternalSkills`, `SkillDoctor` |
 | [vercel-labs/agent-browser](https://github.com/vercel-labs/agent-browser) | Browser automation CLI | external CLI reference | review-required | `SkillRepository`, `ExternalSkills`, `ToolCapabilityRegistry` |
 | [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp) | Chrome DevTools MCP integration | MCP reference | review-required | `SkillRepository`, `ExternalSkills`, `ToolCapabilityRegistry` |

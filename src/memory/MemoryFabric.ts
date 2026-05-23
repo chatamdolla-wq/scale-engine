@@ -281,6 +281,7 @@ export class MemoryFabric {
 
   private graphSection(): DraftSection {
     const candidates: Array<{ path: string; kind: GraphContextItem['kind'] }> = [
+      { path: join(this.projectDir, 'graphify-out', 'graph.json'), kind: 'graph-manifest' },
       { path: join(this.projectDir, 'graphify-out', 'GRAPH_REPORT.md'), kind: 'graph-report' },
       { path: join(this.scaleRoot, 'graph', 'manifest.json'), kind: 'graph-manifest' },
     ]

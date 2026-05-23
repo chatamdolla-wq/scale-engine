@@ -7,7 +7,7 @@ Memory Fabric 是 SCALE 用来降低长会话 token 消耗、提升 Agent 记忆
 - Runtime Evidence：真实运行过的命令、工具、浏览器、skill、MCP 和人工验证证据。
 - Session Events：当前会话的阶段、工具使用和证据写入事件。
 - Knowledge Recall：从项目知识库召回已验证经验、规则和历史教训。
-- Project Graph：检测 `graphify-out/GRAPH_REPORT.md` 或 `.scale/graph/manifest.json`，只引用图谱状态和摘要，不把大型图谱全文塞进上下文。
+- Project Graph：检测 `graphify-out/graph.json`、`graphify-out/GRAPH_REPORT.md` 或 `.scale/graph/manifest.json`，只引用图谱状态和摘要，不把大型图谱全文塞进上下文。
 
 ## 基本命令
 
@@ -113,7 +113,7 @@ SCALE now treats strong memory systems as providers instead of rebuilding them i
 Default provider order:
 
 ```text
-agentmemory -> gbrain -> scale-local
+gbrain -> agentmemory -> scale-local
 ```
 
 Commands:
@@ -121,13 +121,17 @@ Commands:
 ```bash
 scale memory provider init
 scale memory provider status --json
+scale memory provider use gbrain --json
+scale tool doctor --tools gbrain --json
 scale memory provider recall "OAuth callback Redis state" --json
 scale ai-os plan --task "Fix OAuth callback Redis state" --files src/auth/oauth.ts --json
 ```
 
 Provider rules:
 
-- `agentmemory` and `gbrain` are external providers and start disabled until endpoint, privacy, retention, and delete boundaries are reviewed.
+- `gbrain` is the default external-first provider. The preferred remote production path is the official thin-client flow: run `gbrain serve --http` on the host, then configure the local CLI with `gbrain init --mcp-only` so SCALE can keep calling `gbrain query` through the thin client instead of inventing a separate ad-hoc REST contract.
+- `agentmemory` remains optional and can be added as a second provider when teams want cross-agent shared memory.
+- `memory provider use <id>` is the fast path for switching the default route without hand-editing `.scale/memory-providers.json`.
 - External providers are read-only by default. Writes require an explicit provider policy change.
 - `scale-local` remains the fallback provider through Memory Brain and only promotes reviewed, evidence-backed memory.
 - `memory pack` automatically includes a `provider-memory` section when provider recall returns relevant active memories.

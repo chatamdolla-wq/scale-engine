@@ -35,6 +35,7 @@ npm：https://www.npmjs.com/package/@hongmaple0820/scale-engine
 npm install -g @hongmaple0820/scale-engine
 mkdir scale-demo && cd scale-demo
 scale init --governance-pack standard
+scale bootstrap deps --pack external-cli --json
 scale preflight --preflight-profile quick
 scale status
 ```
@@ -65,6 +66,15 @@ scale --version
 ```
 
 需要 Node.js 20 或更高版本。
+
+如果你希望把 UI skills、RTK、记忆/知识图谱这类第三方能力一起补齐，使用显式 bootstrap，而不是依赖静默自动安装：
+
+```bash
+scale bootstrap deps --profile advanced --governance-pack frontend-app --json
+scale bootstrap deps --pack ui,knowledge --apply
+```
+
+`bootstrap deps` 默认先出计划；只有显式加 `--apply` 才会执行安装命令。
 
 ## 适合谁
 

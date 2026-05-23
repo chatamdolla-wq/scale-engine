@@ -45,6 +45,7 @@ scale-engine-compare
 .codex/tmp/
 .codex-tmp/
 .cursor/tmp/
+.codegraph/
 .continue/
 .aider*
 .gemini/tmp/
@@ -53,6 +54,7 @@ scale-engine-compare
 .cline/tmp/
 .windsurf/
 .playwright-mcp/
+rtk/
 .baoyu-skills/
 tmp/
 temp/

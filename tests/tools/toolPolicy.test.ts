@@ -17,7 +17,7 @@ describe('ToolPolicy', () => {
     })
     expect(requiredToolsForDomains(policy, ['webResearch', 'ui']).map(tool => tool.id)).toEqual(expect.arrayContaining([
       'web-access',
-      'frontend-design',
+      'awesome-design-md',
       'ui-ux-pro-max',
     ]))
   })

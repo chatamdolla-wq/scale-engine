@@ -69,7 +69,7 @@ describe('ai-os CLI', () => {
     expect(report.task.taskId).toBe('TASK-AI-OS-CLI')
     expect(report.governance.effectiveMode).toBe('critical')
     expect(report.context.compiler?.strategy).toBe('relevance-budget-v1')
-    expect(report.memory.providerOrder).toEqual(['agentmemory', 'gbrain', 'scale-local'])
+    expect(report.memory.providerOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
     expect(report.skillPlan.executionPlan.steps.length).toBeGreaterThan(0)
     expect(report.roi.modules).toEqual(expect.arrayContaining([
       expect.objectContaining({ module: 'context-compiler' }),

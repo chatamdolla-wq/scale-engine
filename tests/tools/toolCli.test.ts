@@ -84,13 +84,13 @@ describe('tool CLI', () => {
 
     expect(result.exitCode).toBe(0)
     const parsed = JSON.parse(result.stdout) as { steps: Array<{ toolId: string }> }
-    expect(parsed.steps.map(step => step.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(parsed.steps.map(step => step.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
   }, CLI_TEST_TIMEOUT_MS)
 
   it('dry-runs a tool execution plan and writes evidence', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
     const projectDir = makeDir('scale-tool-project-')
-    for (const skillId of ['frontend-design', 'ui-ux-pro-max']) {
+    for (const skillId of ['awesome-design-md', 'ui-ux-pro-max']) {
       const skillDir = join(projectDir, '.agents', 'skills', skillId)
       mkdirSync(skillDir, { recursive: true })
       writeFileSync(join(skillDir, 'SKILL.md'), `---\nname: ${skillId}\n---\n`, 'utf-8')
@@ -123,7 +123,7 @@ describe('tool CLI', () => {
   it('checks tool execution evidence and blocks missing or skipped required evidence', async () => {
     const scaleDir = makeDir('scale-tool-cli-')
     const projectDir = makeDir('scale-tool-project-')
-    for (const skillId of ['frontend-design', 'ui-ux-pro-max']) {
+    for (const skillId of ['awesome-design-md', 'ui-ux-pro-max']) {
       const skillDir = join(projectDir, '.agents', 'skills', skillId)
       mkdirSync(skillDir, { recursive: true })
       writeFileSync(join(skillDir, 'SKILL.md'), `---\nname: ${skillId}\n---\n`, 'utf-8')
@@ -149,7 +149,7 @@ describe('tool CLI', () => {
     const missingResult = JSON.parse(missing.stdout) as { complete: boolean; blocked: boolean; missing: Array<{ toolId: string }> }
     expect(missingResult.complete).toBe(false)
     expect(missingResult.blocked).toBe(true)
-    expect(missingResult.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(missingResult.missing.map(item => item.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
 
     const dryRun = await runScale([
       'tool',
@@ -187,6 +187,6 @@ describe('tool CLI', () => {
 
     expect(skipped.exitCode).toBe(1)
     const skippedResult = JSON.parse(skipped.stdout) as { skipped: Array<{ toolId: string }> }
-    expect(skippedResult.skipped.map(item => item.toolId)).toEqual(expect.arrayContaining(['frontend-design', 'ui-ux-pro-max']))
+    expect(skippedResult.skipped.map(item => item.toolId)).toEqual(expect.arrayContaining(['awesome-design-md', 'ui-ux-pro-max']))
   }, CLI_TEST_TIMEOUT_MS)
 })

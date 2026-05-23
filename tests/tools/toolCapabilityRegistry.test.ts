@@ -83,4 +83,39 @@ describe('ToolCapabilityRegistry', () => {
       status: 'installed',
     })
   })
+
+  it('treats a CLI as missing when the version probe fails even if the command exists', () => {
+    const report = inspectToolCapabilities({
+      projectDir: makeDir('scale-tools-project-'),
+      homeDir: makeDir('scale-tools-home-'),
+      toolIds: ['playwright'],
+      commandExists: command => command === 'npx',
+      runVersion: () => ({ ok: false, stderr: 'playwright package is not installed' }),
+    })
+
+    expect(report.ok).toBe(false)
+    expect(report.tools[0]).toMatchObject({
+      id: 'playwright',
+      installed: false,
+      status: 'missing',
+      missingReason: 'playwright package is not installed',
+    })
+  })
+
+  it('detects memory and knowledge CLIs through the shared tool doctor catalog', () => {
+    const report = inspectToolCapabilities({
+      projectDir: makeDir('scale-tools-project-'),
+      homeDir: makeDir('scale-tools-home-'),
+      toolIds: ['gbrain', 'codegraph', 'graphify'],
+      commandExists: command => ['gbrain', 'codegraph', 'graphify'].includes(command),
+      runVersion: command => ({ ok: true, stdout: `${command} 1.0.0` }),
+    })
+
+    expect(report.ok).toBe(true)
+    expect(report.tools.map(tool => tool.id)).toEqual(['gbrain', 'codegraph', 'graphify'])
+    expect(report.tools.every(tool => tool.installed)).toBe(true)
+    expect(report.tools.find(tool => tool.id === 'gbrain')?.installHint).toBe('scale bootstrap deps --pack memory --apply')
+    expect(report.tools.find(tool => tool.id === 'codegraph')?.installHint).toBe('scale bootstrap deps --pack knowledge --apply')
+    expect(report.tools.find(tool => tool.id === 'graphify')?.installHint).toBe('scale bootstrap deps --pack knowledge --apply')
+  })
 })
