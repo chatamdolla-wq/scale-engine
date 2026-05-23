@@ -605,6 +605,59 @@ export function leaky(token: string) {
     expect(result.engineeringStandards.findings.map(finding => finding.ruleId)).toContain('sensitive-log')
   }, 120_000)
 
+  it('scopes preflight engineering standards to changed files inside a Git worktree', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    mkdirSync(join(projectDir, 'src'), { recursive: true })
+    writeFileSync(join(projectDir, 'src', 'legacy.ts'), `
+export function legacy(token: string) {
+  console.log('token', token)
+}
+`, 'utf-8')
+    writeFileSync(join(projectDir, 'src', 'safe.ts'), 'export const safe = 1\n', 'utf-8')
+    writeFileSync(join(scaleDir, 'verification.json'), JSON.stringify({
+      version: 1,
+      defaultProfile: 'default',
+      profiles: { default: { commands: {} } },
+      policy: {
+        engineeringStandardsGate: 'block',
+      },
+    }, null, 2), 'utf-8')
+    await execa('git', ['init'], { cwd: projectDir })
+    await execa('git', ['config', 'user.email', 'scale-test@example.com'], { cwd: projectDir })
+    await execa('git', ['config', 'user.name', 'SCALE Test'], { cwd: projectDir })
+    await execa('git', ['add', 'src'], { cwd: projectDir })
+    await execa('git', ['commit', '-m', 'legacy baseline'], { cwd: projectDir })
+    writeFileSync(join(projectDir, 'src', 'safe.ts'), 'export const safe = 2\n', 'utf-8')
+
+    const preflight = await runScale([
+      'preflight',
+      '--build-cmd',
+      'node -v',
+      '--lint-cmd',
+      'node -v',
+      '--test-cmd',
+      'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(preflight.exitCode).toBe(0)
+    const result = parseJson<{
+      passed: boolean
+      engineeringStandards: {
+        blocked: boolean
+        changedFiles?: string[]
+        findings: Array<{ path: string; ruleId: string }>
+        summary?: { filesScanned: number }
+      }
+    }>(preflight.stdout)
+    expect(result.passed).toBe(true)
+    expect(result.engineeringStandards.blocked).toBe(false)
+    expect(result.engineeringStandards.changedFiles).toContain('src/safe.ts')
+    expect(result.engineeringStandards.summary?.filesScanned).toBe(1)
+    expect(result.engineeringStandards.findings.some(finding => finding.path === 'src/legacy.ts')).toBe(false)
+  }, 120_000)
+
   it('blocks task verification when engineering standards gate is configured as block', async () => {
     const scaleDir = makeScaleDir()
     const projectDir = makeProjectDir()

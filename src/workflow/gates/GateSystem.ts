@@ -7,6 +7,7 @@ import { EvidenceStore } from '../EvidenceStore.js'
 import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig, type VerificationRuntimeEvidenceConfig } from '../VerificationCommands.js'
 import { registerMetaGovernanceGates } from './MetaGovernanceGates.js'
+import { META_GOVERNANCE_GATE_STAGES } from '../GateCatalog.js'
 import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
 import { compressCommandOutput, type CommandOutputCompressionResult } from '../../tools/CommandOutputCompressor.js'
@@ -303,9 +304,8 @@ export class GateSystem {
 
   async executeMetaGovernance(scaleDir: string = '.scale'): Promise<GateResult[]> {
     this.registerMetaGates(scaleDir)
-    const metaStages: GateStage[] = ['G9', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15']
     const results: GateResult[] = []
-    for (const stage of metaStages) {
+    for (const stage of META_GOVERNANCE_GATE_STAGES) {
       const result = await this.executeGate(stage)
       results.push(result)
     }

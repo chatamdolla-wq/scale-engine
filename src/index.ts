@@ -56,6 +56,7 @@ export { SkillExecutor } from './skills/SkillExecutor.js'
 export type { ISkillExecutor } from './skills/SkillExecutor.js'
 export { SkillDiscovery } from './skills/SkillDiscovery.js'
 export * from './skills/SkillRepository.js'
+export * from './prompts/PromptOptimizer.js'
 export * from './prompts/VibeTemplateGallery.js'
 export * from './agents/LeadershipPresets.js'
 

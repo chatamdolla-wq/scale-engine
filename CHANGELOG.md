@@ -1,3 +1,19 @@
+## 0.39.0 - 2026-05-24
+
+### Prompt Optimization
+
+- Added deterministic `scale prompt optimize` to rewrite raw coding requests into structured execution prompts without a model call.
+- `scale define` now optimizes user requirements before ambiguity scoring and spec creation, with `promptOptimization` included in JSON output.
+- Added prompt optimization docs and tests covering Chinese/English output, vague request diagnostics, and DEFINE integration.
+
+### Gate Catalog and Task Scoring
+
+- Added `scale gates status --json` for machine-readable gate catalog, meta-governance, and extension-gate visibility.
+- Added `scale score task --changed --json` for deterministic task quality, evidence, architecture, context, efficiency, and risk scoring.
+- Scoped engineering standards checks to Git-changed files when a project is inside a Git worktree, while preserving full-scan behavior for non-Git projects.
+
+---
+
 ## 0.38.0 - 2026-05-23
 
 ### Governed Bootstrap and Routing

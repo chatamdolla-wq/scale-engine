@@ -40,6 +40,7 @@ import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js
 import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
 import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
+import { optimizeCodingPrompt } from '../prompts/PromptOptimizer.js'
 
 const SCALE_DIR = process.env.SCALE_DIR ?? '.scale'
 const PROJECT_DIR = process.env.SCALE_PROJECT_DIR ?? process.cwd()
@@ -207,6 +208,7 @@ interface EngineeringStandardsGateStatus {
   findings: EngineeringStandardFinding[]
   summary?: EngineeringStandardsSummary
   standardsImpactPath?: string
+  changedFiles?: string[]
 }
 
 function normalizeArtifactGateMode(value: unknown): VerificationArtifactGateMode | undefined {
@@ -261,6 +263,7 @@ function evaluateEngineeringStandardsGate(options: {
   taskId?: string
   artifactsDir?: string
   settle?: boolean
+  changedFiles?: string[]
 }): EngineeringStandardsGateStatus {
   const mode = normalizeEngineeringStandardsGateMode(options.policy.engineeringStandardsGate)
   if (mode === 'off') {
@@ -279,11 +282,13 @@ function evaluateEngineeringStandardsGate(options: {
         scaleDir: SCALE_DIR,
         taskId: options.taskId,
         artifactsDir: options.artifactsDir,
+        changedFiles: options.changedFiles,
       })
     : undefined
   const doctor = settlement?.doctor ?? doctorEngineeringStandards({
     projectDir: PROJECT_DIR,
     scaleDir: SCALE_DIR,
+    changedFiles: options.changedFiles,
   })
 
   return {
@@ -294,6 +299,7 @@ function evaluateEngineeringStandardsGate(options: {
     findings: doctor.findings,
     summary: doctor.scan.summary,
     standardsImpactPath: settlement?.standardsImpactPath,
+    changedFiles: options.changedFiles,
   }
 }
 
@@ -456,12 +462,19 @@ export const phaseDefine = defineCommand({
   },
   async run({ args }) {
     const { store, fsm, workflowEngine } = getEngine()
-    const desc = args.description ?? args.title
+    const rawDesc = String(args.description ?? args.title)
 
     // Parse success criteria
     const successCriteria = args['success-criteria']
       ? args['success-criteria'].split(',').map(s => s.trim()).filter(s => s)
       : ['Feature works as described', 'No regression in existing functionality']
+    const promptOptimization = optimizeCodingPrompt({
+      rawPrompt: rawDesc,
+      title: String(args.title),
+      language: 'auto',
+      successCriteria,
+    })
+    const desc = promptOptimization.optimizedPrompt
 
     // === WorkflowEngine Integration ===
     // Step 1: Explore with AmbiguityScorer + SocraticQuestioner
@@ -619,7 +632,7 @@ export const phaseDefine = defineCommand({
       console.log('   FSM: DRAFT -> REVIEWING -> FROZEN ✓')
     }
 
-    const result = { phase: 'DEFINE', spec, specPath, specHtmlPath, ambiguityScore, successCriteria, format: outputFormat }
+    const result = { phase: 'DEFINE', spec, specPath, specHtmlPath, ambiguityScore, successCriteria, format: outputFormat, promptOptimization }
 
     // Write explore artifact for Gate G1 verification
     const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
@@ -627,7 +640,7 @@ export const phaseDefine = defineCommand({
       timestamp: new Date().toISOString(),
       files: [specPath],
       fileCount: 1,
-      mainContradiction: refinedRequirement !== desc ? 'requirement ambiguity resolved via Socratic refinement' : '',
+      mainContradiction: refinedRequirement !== desc ? 'requirement ambiguity resolved via Socratic refinement' : 'raw prompt optimized into structured execution prompt',
       ambiguityScore,
       socraticCompleted: !ambiguityResult.requiresQuestioning || (ambiguityResult.requiresQuestioning && !exploreResult.socraticSession),
     })
@@ -1166,6 +1179,7 @@ export const phaseVerify = defineCommand({
       taskId: args['task-id'],
       artifactsDir: workflowState.artifactsDir,
       settle: Boolean(workflowState.artifactsDir),
+      changedFiles: taskFiles.length > 0 ? taskFiles : undefined,
     })
 
     const metricLevel = metricLevelFromPayload(updatedPayload)

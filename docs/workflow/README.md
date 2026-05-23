@@ -18,6 +18,9 @@ make explore FILES='AGENTS.md CLAUDE.md README.md package.json' MSG='main contra
 make gate-workflow
 make gate-quality
 make verify PROFILE=default
+scale gates status --json
+scale score task --changed --json
+scale prompt optimize --input "raw coding request" --json
 ```
 
 PowerShell:
@@ -25,6 +28,10 @@ PowerShell:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/workflow/verify.ps1 -Profile default
 ```
+
+See [GATES_AND_SCORE.md](GATES_AND_SCORE.md) for gate catalog visibility, architecture standards gate scope, and deterministic task scoring.
+
+See [PROMPT_OPTIMIZATION.md](PROMPT_OPTIMIZATION.md) for the deterministic prompt rewrite layer used by `scale prompt optimize` and `scale define`.
 
 ## 门禁说明
 

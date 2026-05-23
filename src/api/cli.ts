@@ -77,6 +77,10 @@ import {
   type VerificationEngineeringStandardsGateMode,
   type VerificationPolicy,
 } from '../workflow/VerificationProfile.js'
+import { preflightGateStages } from '../workflow/GateCatalog.js'
+import { gatesCommand } from '../cli/gateStatusCommands.js'
+import { scoreCommand } from '../cli/scoreCommands.js'
+import { promptCommand } from '../cli/promptCommands.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import {
   getBootstrapPlanForProfile,
@@ -248,8 +252,7 @@ function normalizePreflightProfile(value: unknown): PreflightProfile {
 }
 
 function gatesForPreflightProfile(profile: PreflightProfile): GateStage[] {
-  if (profile === 'quick') return ['G3', 'G0', 'G4', 'G5']
-  return ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
+  return preflightGateStages(profile)
 }
 
 function shouldSkipPreflightCommandTargets(
@@ -283,6 +286,7 @@ interface EngineeringStandardsGateStatus {
   findings: EngineeringStandardFinding[]
   summary?: EngineeringStandardsSummary
   standardsImpactPath?: string
+  changedFiles?: string[]
 }
 
 function evaluateEngineeringStandardsGate(options: {
@@ -292,6 +296,7 @@ function evaluateEngineeringStandardsGate(options: {
   taskId?: string
   artifactsDir?: string
   settle?: boolean
+  changedFiles?: string[]
 }): EngineeringStandardsGateStatus {
   const mode = normalizeEngineeringStandardsGateMode(options.policy.engineeringStandardsGate)
   if (mode === 'off') {
@@ -310,11 +315,13 @@ function evaluateEngineeringStandardsGate(options: {
         scaleDir: options.scaleDir ?? SCALE_DIR,
         taskId: options.taskId,
         artifactsDir: options.artifactsDir,
+        changedFiles: options.changedFiles,
       })
     : undefined
   const doctor = settlement?.doctor ?? doctorEngineeringStandards({
     projectDir: options.projectDir ?? PROJECT_DIR,
     scaleDir: options.scaleDir ?? SCALE_DIR,
+    changedFiles: options.changedFiles,
   })
 
   return {
@@ -325,6 +332,7 @@ function evaluateEngineeringStandardsGate(options: {
     findings: doctor.findings,
     summary: doctor.scan.summary,
     standardsImpactPath: settlement?.standardsImpactPath,
+    changedFiles: options.changedFiles,
   }
 }
 
@@ -2532,12 +2540,14 @@ const preflight = defineCommand({
       resolved.warnings.push('No verification services or profile commands configured; command gates skipped for this governance-only project.')
     }
     const workspaceSafety = inspectWorkspaceSafety(projectDir)
+    const engineeringStandardsChangedFiles = readGitChangedFilesForStandards(projectDir)
     const engineeringStandards = workspaceSafety.blocked
       ? skippedEngineeringStandardsGate('Workspace has unresolved git conflicts; resolve them before standards scanning.', resolved.policy)
       : evaluateEngineeringStandardsGate({
           policy: resolved.policy,
           projectDir,
           scaleDir,
+          changedFiles: engineeringStandardsChangedFiles,
         })
 
     const targetResults: Array<{
@@ -2559,6 +2569,9 @@ const preflight = defineCommand({
       if (engineeringStandards.checked) {
         const status = engineeringStandards.blocked ? 'BLOCKED' : engineeringStandards.ok ? 'OK' : 'WARN'
         console.log(`  Engineering standards: ${status} (${engineeringStandards.mode})`)
+        if (engineeringStandards.changedFiles) {
+          console.log(`  Engineering standards scope: changed files (${engineeringStandards.changedFiles.length})`)
+        }
       } else {
         console.log('  Engineering standards: skipped')
       }
@@ -4023,6 +4036,18 @@ function readGitChangedFiles(projectDir: string): string[] {
   const tracked = readGitPathList(projectDir, ['diff', '--name-only', '--diff-filter=ACMRTUXB', 'HEAD', '--'])
   const untracked = readGitPathList(projectDir, ['ls-files', '--others', '--exclude-standard'])
   return Array.from(new Set([...tracked, ...untracked]))
+}
+
+function readGitChangedFilesForStandards(projectDir: string): string[] | undefined {
+  try {
+    execFileSync('git', ['-C', projectDir, 'rev-parse', '--is-inside-work-tree'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return undefined
+  }
+  return readGitChangedFiles(projectDir)
 }
 
 function readGitPathList(projectDir: string, args: string[]): string[] {
@@ -6316,6 +6341,7 @@ const main = defineCommand({
     doctor,
     session,
     gate,
+    gates: gatesCommand,
     'meta-governance': metaGovernance,
     create,
     list,
@@ -6330,6 +6356,8 @@ const main = defineCommand({
     preflight,
     upgrade,
     governance,
+    prompt: promptCommand,
+    score: scoreCommand,
     'ai-os': aiOs,
     codegraph,
     eval: evalCommand,
