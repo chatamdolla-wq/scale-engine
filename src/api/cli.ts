@@ -3080,6 +3080,7 @@ const setup = defineCommand({
       memoryEndpoint: args['memory-endpoint'] ? String(args['memory-endpoint']) : undefined,
       memoryWriteMode: normalizeMemoryWriteModeArg(args['memory-write-mode']),
       allowExternalWrite: isTruthyFlag(args['allow-external-write']) ? true : undefined,
+      promptLanguage: isTruthyFlag(args.interactive) && !args.lang,
     })
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))

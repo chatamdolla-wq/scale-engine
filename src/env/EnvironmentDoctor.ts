@@ -203,7 +203,7 @@ const CHECK_DEFINITIONS: Array<{
     required: false,
     candidates: [{ command: 'graphify', args: ['--version'], display: 'graphify' }],
     requiredFor: ['knowledge graph provider'],
-    installHint: 'Install with `uv tool install graphifyy && graphify install --platform codex`.',
+    installHint: 'Install with `uv tool install graphify && graphify install --platform codex`.',
   },
   {
     id: 'codegraph',
@@ -403,7 +403,7 @@ function commandVersionStatus(id: string, version: string): { status: Environmen
     }
   }
   if (id === 'python-installer' && version && !/^(uv|pipx)\b/i.test(version)) {
-    return { status: 'warn', reason: `${version} is available, but uv or pipx is preferred for isolated graphifyy installs.` }
+    return { status: 'warn', reason: `${version} is available, but uv or pipx is preferred for isolated graphify installs.` }
   }
   return { status: 'ok' }
 }

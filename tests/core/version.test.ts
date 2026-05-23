@@ -22,4 +22,14 @@ describe('version', () => {
     expect(script).toContain('npm audit --omit=dev')
     expect(script).toContain('npm pack --dry-run')
   })
+
+  it('exposes repeatable real-provider rehearsal scripts outside release gates', () => {
+    const packageJson = JSON.parse(readFileSync('package.json', 'utf-8')) as { scripts: Record<string, string>; files: string[] }
+
+    expect(packageJson.scripts['smoke:providers']).toBe('node scripts/workflow/provider-rehearsal.mjs')
+    expect(packageJson.scripts['smoke:gbrain']).toContain('--require-gbrain')
+    expect(packageJson.scripts['smoke:graphify']).toContain('--require-graphify')
+    expect(packageJson.scripts['release:check']).not.toContain('smoke:providers')
+    expect(packageJson.files).toContain('scripts/workflow/provider-rehearsal.mjs')
+  })
 })

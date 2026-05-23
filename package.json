@@ -48,7 +48,8 @@
     "docs/workflow",
     "image",
     "examples/demo-projects/agent-governance-demo",
-    "scripts/workflow/setup-smoke.mjs"
+    "scripts/workflow/setup-smoke.mjs",
+    "scripts/workflow/provider-rehearsal.mjs"
   ],
   "publishConfig": {
     "access": "public"
@@ -61,6 +62,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
     "smoke:setup": "node scripts/workflow/setup-smoke.mjs",
+    "smoke:providers": "node scripts/workflow/provider-rehearsal.mjs",
+    "smoke:gbrain": "node scripts/workflow/provider-rehearsal.mjs --skip-graphify --require-gbrain",
+    "smoke:graphify": "node scripts/workflow/provider-rehearsal.mjs --skip-gbrain --require-graphify",
     "release:check": "npm run typecheck && npm run lint && npm test && npm run smoke:setup && npm run build && npm audit --omit=dev && git diff --check && npm pack --dry-run",
     "mcp": "node dist/api/mcp.js",
     "serve": "node dist/api/http.js"

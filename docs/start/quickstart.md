@@ -104,6 +104,20 @@ scale codegraph status --json
 
 未运行验证，不要声称通过。`setup --json` 和 `bootstrap deps --json` 只代表依赖计划可解析，不等于第三方服务已经可用。
 
+真实第三方能力需要单独跑回放验证。默认命令会把未配置的远端能力标记为 `blocked`，但不会让本地发布门禁误失败；需要作为强制门禁时使用对应 npm script 或加 `--require-*`。
+
+```bash
+npm run smoke:providers
+npm run smoke:gbrain
+npm run smoke:graphify -- --large-project /path/to/large-project
+```
+
+验证语义：
+
+- `smoke:gbrain` 会先执行真实 `gbrain doctor --json`，通过后写入一个临时记忆页，再用独立 CLI 进程 `get/query/search` 回放，证明不是本地 mock。
+- `smoke:graphify` 会对真实项目执行 `graphify extract ... --out <temp>/graphify-out --no-cluster`，检查 `graph.json`，再执行 `graphify query`。
+- `graphify-out/` 是生成产物，不应该提交到 Git；长期知识沉淀应进入经过评审的 `memory/`、docs 或规则文件。
+
 ## 5. 建立任务上下文
 
 ```bash
@@ -153,10 +167,12 @@ MOE 默认把子工程配置为兄弟仓库或绝对路径，不建议把独立 
 
 ```bash
 npm run smoke:setup
+npm run smoke:providers
 make setup-smoke
 ```
 
-这个烟测只验证安装计划、双语输出、运行时依赖诊断、记忆供应商切换和 CodeGraph/Graphify 状态路径，不会执行真实第三方安装。
+`smoke:setup` 只验证安装计划、双语输出、运行时依赖诊断、记忆供应商切换和 CodeGraph/Graphify 状态路径，不会执行真实第三方安装。
+`smoke:providers` 会执行真实供应商回放；未配置 gbrain 或 graphify 时输出 `blocked` 和修复命令，只有 `smoke:gbrain`/`smoke:graphify` 或显式 `--require-*` 才会失败退出。
 
 遇到跨系统命令兼容、PATH 或运行时依赖问题时，先导出环境诊断：
 

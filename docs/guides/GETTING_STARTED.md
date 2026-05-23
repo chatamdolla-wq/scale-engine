@@ -39,7 +39,10 @@ git diff --check
 ```bash
 make setup-smoke
 npm run smoke:setup
+npm run smoke:providers
 ```
+
+`smoke:setup` 负责安装入口和配置路径；`smoke:providers` 负责真实 gbrain/graphify 回放。没有远端 gbrain 或大项目 Graphify 环境时，默认报告 `blocked` 并给出修复命令；如果要把它作为强制门禁，使用 `npm run smoke:gbrain` 或 `npm run smoke:graphify -- --large-project <path>`。
 
 准备发版本仓库时，直接跑完整发布门禁：
 

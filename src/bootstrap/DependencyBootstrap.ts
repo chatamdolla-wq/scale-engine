@@ -143,12 +143,12 @@ const UI_SKILL_INSTALLS = {
 
 const RTK_INSTALL = 'cargo install --git https://github.com/rtk-ai/rtk'
 const CODEGRAPH_INSTALL = 'npm install -g @colbymchenry/codegraph'
-const GRAPHIFY_UV_INSTALL = 'uv tool install graphifyy && graphify install --platform codex'
-const GRAPHIFY_PIPX_INSTALL = 'pipx install graphifyy && graphify install --platform codex'
-const GRAPHIFY_PIP_INSTALL = 'pip install graphifyy && graphify install --platform codex'
-const GRAPHIFY_PIP3_INSTALL = 'pip3 install graphifyy && graphify install --platform codex'
-const GRAPHIFY_PYTHON_INSTALL = 'python -m pip install graphifyy && graphify install --platform codex'
-const GRAPHIFY_PYTHON3_INSTALL = 'python3 -m pip install graphifyy && graphify install --platform codex'
+const GRAPHIFY_UV_INSTALL = 'uv tool install graphify && graphify install --platform codex'
+const GRAPHIFY_PIPX_INSTALL = 'pipx install graphify && graphify install --platform codex'
+const GRAPHIFY_PIP_INSTALL = 'pip install graphify && graphify install --platform codex'
+const GRAPHIFY_PIP3_INSTALL = 'pip3 install graphify && graphify install --platform codex'
+const GRAPHIFY_PYTHON_INSTALL = 'python -m pip install graphify && graphify install --platform codex'
+const GRAPHIFY_PYTHON3_INSTALL = 'python3 -m pip install graphify && graphify install --platform codex'
 const GBRAIN_INSTALL = 'bun install -g github:garrytan/gbrain && gbrain init --pglite'
 const GBRAIN_SOURCE = 'https://github.com/garrytan/gbrain'
 
@@ -498,7 +498,7 @@ function pythonRuntimeCheck(requiredFor: string[]): DependencyBootstrapRuntimeCh
     { command: 'py', args: ['--version'], display: 'py' },
   ]
   const detected = firstAvailableRuntimeTool(candidates)
-  const installHint = 'Install Python 3.10+ and prefer uv or pipx for graphifyy installation.'
+  const installHint = 'Install Python 3.10+ and prefer uv or pipx for graphify installation.'
   if (!detected) {
     return {
       id: 'python',
@@ -548,7 +548,7 @@ function pythonInstallerRuntimeCheck(requiredFor: string[]): DependencyBootstrap
     { command: 'python3', args: ['-m', 'pip', '--version'], display: 'python3 -m pip' },
   ]
   const detected = firstAvailableRuntimeTool(candidates)
-  const installHint = 'Install uv or pipx first; pip is supported only as a fallback for graphifyy.'
+  const installHint = 'Install uv or pipx first; pip is supported only as a fallback for graphify.'
   if (!detected) {
     return {
       id: 'python-installer',
@@ -556,7 +556,7 @@ function pythonInstallerRuntimeCheck(requiredFor: string[]): DependencyBootstrap
       commands: candidates.map(candidate => candidate.display),
       status: 'missing',
       requiredFor,
-      reason: 'No supported Python installer was detected for graphifyy.',
+      reason: 'No supported Python installer was detected for graphify.',
       installHint,
     }
   }
@@ -571,7 +571,7 @@ function pythonInstallerRuntimeCheck(requiredFor: string[]): DependencyBootstrap
     detectedCommand: detected.display,
     version,
     reason: preferred
-      ? `${detected.display} is available for isolated graphifyy installation.`
+      ? `${detected.display} is available for isolated graphify installation.`
       : `${detected.display} is available, but uv or pipx is preferred to avoid polluting project environments.`,
     installHint,
   }
@@ -954,7 +954,7 @@ function buildRollbackHints(items: DependencyBootstrapItemReport[]): string[] {
         hints.add('CodeGraph rollback: npm uninstall -g @colbymchenry/codegraph')
         break
       case 'graphify':
-        hints.add('Graphify rollback: pip uninstall graphifyy  # or pip3/python -m pip uninstall graphifyy')
+        hints.add('Graphify rollback: pip uninstall graphify  # or pip3/python -m pip uninstall graphify')
         break
       case 'gbrain':
         hints.add('GBrain rollback: bun unlink gbrain, then remove ~/.scale/vendor/gbrain if you want a full local cleanup')

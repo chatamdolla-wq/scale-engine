@@ -150,3 +150,12 @@ scale memory provider status --json
 ```
 
 `setup --memory-provider` is the preferred UX for provider switching during onboarding. It writes the same routing file as `scale memory provider use`, returns `memoryProviderSwitch` in JSON, and keeps external writes disabled unless `--allow-external-write` is explicitly passed.
+
+Remote replay validation:
+
+```bash
+npm run smoke:gbrain
+node scripts/workflow/provider-rehearsal.mjs --skip-graphify --require-gbrain
+```
+
+This is intentionally stronger than `scale memory provider status --json`: it requires a real configured gbrain, writes a temporary page, then reads and queries it through separate CLI processes. If no remote/thin-client brain is configured, the rehearsal must report `blocked` or fail under `--require-gbrain`; falling back to `scale-local` is not a valid substitute for cross-session provider validation.

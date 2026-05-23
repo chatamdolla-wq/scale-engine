@@ -31,10 +31,19 @@ scale codegraph status --json
 For Graphify, prefer isolated tool installation:
 
 ```bash
-uv tool install graphifyy
+uv tool install graphify
 graphify install --platform codex
 graphify query "auth service" --graph graphify-out/graph.json
 ```
+
+Run a real large-project rehearsal before treating Graphify as an operational knowledge provider:
+
+```bash
+npm run smoke:graphify -- --large-project /path/to/large-project
+node scripts/workflow/provider-rehearsal.mjs --skip-gbrain --require-graphify --large-project /path/to/large-project
+```
+
+The rehearsal executes `graphify extract` against the supplied project, locates the generated `graph.json`, parses graph stats, and runs `graphify query`. Use `--out <dir>` when you want to keep the generated graph for inspection. Do not commit generated `graphify-out/` artifacts by default; commit only reviewed knowledge summaries, docs, or rules derived from the graph.
 
 Create the optional provider configuration:
 
@@ -91,7 +100,7 @@ Default shape:
       "manifest": "graphify-out/graph.json",
       "capabilities": ["symbols", "callers", "callees", "impact", "context", "summary", "module-map"],
       "source": "https://github.com/safishamsi/graphify",
-      "installHint": "uv tool install graphifyy && graphify install --platform codex"
+      "installHint": "uv tool install graphify && graphify install --platform codex"
     }
   ],
   "fallback": {

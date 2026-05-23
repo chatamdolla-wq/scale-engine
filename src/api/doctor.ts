@@ -980,7 +980,7 @@ export class Doctor {
       } else {
         lines.push('  ⚠️ Code knowledge graph not available (optional feature)')
         lines.push('  → Install CodeGraph: npx @colbymchenry/codegraph')
-        lines.push('  → Install Graphify: pip install graphifyy && graphify install')
+        lines.push('  → Install Graphify: pip install graphify && graphify install')
       }
       lines.push(`${'─'.repeat(50)}`)
     }
