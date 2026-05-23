@@ -76,6 +76,21 @@ scale bootstrap deps --pack ui,knowledge --apply
 
 `bootstrap deps` 默认先出计划；只有显式加 `--apply` 才会执行安装命令。
 
+安装入口变更后，先跑安装烟测：
+
+```bash
+npm run smoke:setup
+make setup-smoke
+```
+
+它会验证中英文安装输出、运行时依赖诊断、记忆供应商切换，以及 Graphify/CodeGraph 状态路径；不会执行真实第三方安装。
+
+如果用户机器出现 Windows/Unix 命令差异、PATH 不对、缺 Python/Bun/Cargo/RTK 等问题，先跑：
+
+```bash
+scale doctor env --json
+```
+
 ## 适合谁
 
 - 正在用 Codex、Claude Code、Cursor、Gemini CLI、OpenCode、Aider 等 Agent 写真实项目的团队。

@@ -4,7 +4,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { execSync } from 'node:child_process'
-import type { WorkspaceRepositoryConfig, WorkspaceTopologyConfig } from './WorkspaceTopology.js'
+import { resolveRepositoryPath, type WorkspaceRepositoryConfig, type WorkspaceTopologyConfig } from './WorkspaceTopology.js'
+
+const SILENT_GIT_STDIO: ['ignore', 'pipe', 'ignore'] = ['ignore', 'pipe', 'ignore']
 
 // ============================================================================
 // Types
@@ -259,7 +261,7 @@ export class CrossRepoOrchestrator {
         continue
       }
 
-      const repoPath = join(this.projectDir, repo.path)
+      const repoPath = resolveRepositoryPath(this.projectDir, repo)
       const stepStart = Date.now()
 
       try {
@@ -285,7 +287,7 @@ export class CrossRepoOrchestrator {
       const repo = this.repositories.find(r => r.name === repoName)
       if (!repo) continue
 
-      const repoPath = join(this.projectDir, repo.path)
+      const repoPath = resolveRepositoryPath(this.projectDir, repo)
       const stepStart = Date.now()
 
       try {
@@ -314,7 +316,7 @@ export class CrossRepoOrchestrator {
       const repo = this.repositories.find(r => r.name === repoName)
       if (!repo) continue
 
-      const repoPath = join(this.projectDir, repo.path)
+      const repoPath = resolveRepositoryPath(this.projectDir, repo)
       const stepStart = Date.now()
 
       try {
@@ -343,7 +345,7 @@ export class CrossRepoOrchestrator {
 
   getCrossRepoStatus(): CrossRepoStatus {
     const repoStates = this.repositories.map(repo => {
-      const repoPath = join(this.projectDir, repo.path)
+      const repoPath = resolveRepositoryPath(this.projectDir, repo)
       return {
         name: repo.name,
         path: repo.path,
@@ -444,13 +446,19 @@ export class CrossRepoOrchestrator {
     if (!existsSync(repoPath)) return defaults
 
     try {
-      const branch = execSync('git branch --show-current', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim()
-      const status = execSync('git status --porcelain', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim()
+      const branch = execSync('git branch --show-current', {
+        cwd: repoPath, encoding: 'utf-8', timeout: 5000, stdio: SILENT_GIT_STDIO,
+      }).trim()
+      const status = execSync('git status --porcelain', {
+        cwd: repoPath, encoding: 'utf-8', timeout: 5000, stdio: SILENT_GIT_STDIO,
+      }).trim()
       const clean = status.length === 0
 
       let ahead = 0, behind = 0
       try {
-        const tracking = execSync('git rev-list --left-right --count HEAD...@{u}', { cwd: repoPath, encoding: 'utf-8', timeout: 5000 }).trim()
+        const tracking = execSync('git rev-list --left-right --count HEAD...@{u}', {
+          cwd: repoPath, encoding: 'utf-8', timeout: 5000, stdio: SILENT_GIT_STDIO,
+        }).trim()
         const parts = tracking.split(/\s+/)
         ahead = parseInt(parts[0] ?? '0', 10) || 0
         behind = parseInt(parts[1] ?? '0', 10) || 0

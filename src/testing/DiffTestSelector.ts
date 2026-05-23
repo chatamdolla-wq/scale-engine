@@ -145,7 +145,7 @@ function getChangedFiles(baseBranch: string, projectDir: string): string[] {
   try {
     const output = execSync(
       `git diff --name-only ${baseBranch}...HEAD`,
-      { cwd: projectDir, encoding: 'utf-8', timeout: 10000 },
+      { cwd: projectDir, encoding: 'utf-8', timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] },
     ).trim()
 
     if (!output) return []

@@ -47,7 +47,8 @@
     "docs/start",
     "docs/workflow",
     "image",
-    "examples/demo-projects/agent-governance-demo"
+    "examples/demo-projects/agent-governance-demo",
+    "scripts/workflow/setup-smoke.mjs"
   ],
   "publishConfig": {
     "access": "public"
@@ -55,10 +56,12 @@
   "scripts": {
     "build": "tsc",
     "dev": "bun --watch src/api/cli.ts",
-    "test": "vitest run --reporter dot --pool=forks --poolOptions.forks.maxForks=1 --poolOptions.forks.minForks=1",
+    "test": "vitest run --reporter dot --pool=forks --maxWorkers=4 --minWorkers=1",
+    "test:serial": "vitest run --reporter dot --pool=forks --poolOptions.forks.maxForks=1 --poolOptions.forks.minForks=1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.ts",
-    "release:check": "npm run typecheck && npm run lint && npm test && npm run build && npm audit --omit=dev && npm pack --dry-run",
+    "smoke:setup": "node scripts/workflow/setup-smoke.mjs",
+    "release:check": "npm run typecheck && npm run lint && npm test && npm run smoke:setup && npm run build && npm audit --omit=dev && git diff --check && npm pack --dry-run",
     "mcp": "node dist/api/mcp.js",
     "serve": "node dist/api/http.js"
   },

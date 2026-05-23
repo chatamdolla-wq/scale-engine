@@ -1,6 +1,7 @@
-.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify workflow-aios-adopt scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
+.PHONY: help preflight new-task plan explore checkpoint gate gate-workflow gate-quality resume status lint-scaffold verify verify-list validate bootstrap-scale bootstrap-scale-install bootstrap-scale-latest workflow-upgrade-check workflow-upgrade-plan workflow-upgrade-apply workflow-upgrade-rollback workflow-upgrade-verify workflow-aios-adopt setup-smoke scale-version scale-mode scale-context scale-codegraph scale-eval scale-radar scale-dashboard scale-smoke
 
 SCALE ?= scale
+SCALE_SMOKE ?= node --import tsx src/api/cli.ts
 SCALE_VERSION ?= locked
 TASK ?= scale-engine workflow adaptation
 FILES ?= AGENTS.md,CLAUDE.md,README.md
@@ -13,6 +14,7 @@ help:
 	@echo "make preflight | make new-task NAME=x LEVEL=M | make explore FILES='...' MSG='...'"
 	@echo "make plan NAME=x LEVEL=M | make gate-workflow | make gate-quality | make verify PROFILE=default"
 	@echo "make bootstrap-scale | make workflow-upgrade-check | make workflow-upgrade-plan | make workflow-aios-adopt"
+	@echo "make setup-smoke | make scale-smoke"
 
 gate:
 	bash scripts/gates/all.sh --all
@@ -84,6 +86,9 @@ workflow-upgrade-verify:
 
 workflow-aios-adopt:
 	$(SCALE) ai-os adopt --dir . --task "$(TASK)" --files "$(FILES)" --level "$(LEVEL)" --budget "$(BUDGET)" --lang zh
+
+setup-smoke:
+	node scripts/workflow/setup-smoke.mjs --scale-command "$(SCALE_SMOKE)"
 
 scale-version:
 	$(SCALE) --version

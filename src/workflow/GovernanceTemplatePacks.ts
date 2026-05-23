@@ -758,7 +758,7 @@ raise SystemExit(COMMANDS[sys.argv[1]](sys.argv[2:]))
 function moeWorkspaceGuide(): string {
   return `# MOE Workspace Governance
 
-MOE workspaces are multi-repository engineering environments where the root checkout, nested repositories, submodules, and temporary agent worktrees must be finished as one coordinated unit.
+MOE workspaces are multi-repository engineering environments where the root checkout, sibling repositories, external repositories, submodules, and temporary agent worktrees must be finished as one coordinated unit. Independent child projects should not be placed inside the root checkout unless they are intentional submodules.
 
 ## Source Of Truth
 
@@ -775,6 +775,21 @@ Before deleting an agent worktree or reporting a task complete:
 3. Commit and push child repository work in each repository's own remote.
 4. Review whether the root repository needs a submodule pointer, lock file, integration metadata, or documentation update.
 5. Run service-aware verification for every touched service.
+
+## Repository Layout
+
+Prefer sibling or absolute repository paths:
+
+\`\`\`json
+{
+  "repositories": [
+    { "name": "root", "path": ".", "role": "root", "required": true },
+    { "name": "api", "path": "../api", "role": "external", "required": true, "remote": "origin" }
+  ]
+}
+\`\`\`
+
+Nested paths such as \`services/api\` are only appropriate for monorepos or intentional submodules. In MOE/polyrepo mode, SCALE warns when a child repository path sits under the root checkout because that layout easily causes Git status, branch, and commit-scope conflicts.
 
 \`scale ship <task-id>\` performs the same child-repository boundary check before creating a root commit. Dirty or unpushed child repositories block shipping. The default branch policy follows GitLab Flow: short branches merge to \`dev\`, verified production changes land on \`master\`, and release publishing is triggered by user-created \`vX.Y.Z\` tags. Direct governed commits on \`dev\`, \`master\`, \`main\`, or detached HEAD are blocked. Raw \`git add .\` bypasses this protection and is not allowed for governed MOE workspaces.
 
@@ -893,7 +908,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/workflow/verify.ps1 
 ## Default Verification Matrix
 
 - quick loop: \`npm run build\`, \`npm run lint\`, \`npm test\`
-- release loop: add \`npm run typecheck\`, \`git diff --check\`, and \`npm pack --dry-run\`
+- release loop: run \`npm run release:check\` when available; otherwise add \`npm run typecheck\`, \`npm run smoke:setup\`, \`npm audit --omit=dev\`, \`git diff --check\`, and \`npm pack --dry-run\`
 - product smoke: enable a real probe in \`.scale/product-smoke.json\` instead of treating a health endpoint as completion proof
 
 ## Branch Policy
@@ -912,8 +927,8 @@ Before a package release or demo handoff:
 
 1. Run \`bash scripts/preflight/all.sh\` or the PowerShell equivalent.
 2. Run \`scale preflight --preflight-profile full --json\`.
-3. Run \`npm pack --dry-run\`.
-4. Run \`git diff --check\`.
+3. Run \`npm run release:check\` when the package exposes it, or run the equivalent build/test/smoke/audit/pack commands explicitly.
+4. Run \`git diff --check\` if it is not already included in the release command.
 5. Confirm runtime evidence and review artifacts for M/L/CRITICAL work.
 `
 }

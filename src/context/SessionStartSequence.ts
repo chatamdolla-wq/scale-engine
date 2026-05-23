@@ -10,6 +10,8 @@ import type { IArtifactStore } from '../artifact/store.js'
 import type { Artifact } from '../artifact/types.js'
 import { logger } from '../core/logger.js'
 
+const SILENT_GIT_STDIO: ['ignore', 'pipe', 'ignore'] = ['ignore', 'pipe', 'ignore']
+
 export interface SessionStartContext {
   workingDir: string
   gitStatus: GitStatusInfo
@@ -68,9 +70,15 @@ export class SessionStartSequence {
 
   private getGitStatus(): GitStatusInfo {
     try {
-      const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: this.projectDir, encoding: 'utf-8' }).trim()
-      const ahead = parseInt(execSync('git rev-list --count HEAD..origin/main 2>/dev/null || echo 0', { cwd: this.projectDir, encoding: 'utf-8' }).trim(), 10)
-      const status = execSync('git status --porcelain', { cwd: this.projectDir, encoding: 'utf-8' }).trim()
+      const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd: this.projectDir, encoding: 'utf-8', stdio: SILENT_GIT_STDIO,
+      }).trim()
+      const ahead = parseInt(execSync('git rev-list --count HEAD..origin/main 2>/dev/null || echo 0', {
+        cwd: this.projectDir, encoding: 'utf-8', stdio: SILENT_GIT_STDIO,
+      }).trim(), 10)
+      const status = execSync('git status --porcelain', {
+        cwd: this.projectDir, encoding: 'utf-8', stdio: SILENT_GIT_STDIO,
+      }).trim()
       const untracked = status.split('\n').filter(l => l.startsWith('??')).map(l => l.slice(3))
       return { branch, aheadOfMain: ahead, uncommittedChanges: status.length > 0, untrackedFiles: untracked }
     } catch {
@@ -80,7 +88,9 @@ export class SessionStartSequence {
 
   private getRecentCommits(limit: number): CommitInfo[] {
     try {
-      const log = execSync(`git log --oneline -${limit} --format="%H|%s|%at|%an"`, { cwd: this.projectDir, encoding: 'utf-8' }).trim()
+      const log = execSync(`git log --oneline -${limit} --format="%H|%s|%at|%an"`, {
+        cwd: this.projectDir, encoding: 'utf-8', stdio: SILENT_GIT_STDIO,
+      }).trim()
       return log.split('\n').map(line => {
         const [sha, message, timestamp, author] = line.split('|')
         return { sha, message, timestamp: parseInt(timestamp, 10) * 1000, author }

@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/workflow/verify.ps1 
 ## Default Verification Matrix
 
 - quick loop: `npm run build`, `npm run lint`, `npm test`
-- release loop: add `npm run typecheck`, `git diff --check`, and `npm pack --dry-run`
+- release loop: run `npm run release:check` when available; otherwise add `npm run typecheck`, `npm run smoke:setup`, `npm audit --omit=dev`, `git diff --check`, and `npm pack --dry-run`
 - product smoke: enable a real probe in `.scale/product-smoke.json` instead of treating a health endpoint as completion proof
 
 ## Branch Policy
@@ -47,6 +47,6 @@ Before a package release or demo handoff:
 
 1. Run `bash scripts/preflight/all.sh` or the PowerShell equivalent.
 2. Run `scale preflight --preflight-profile full --json`.
-3. Run `npm pack --dry-run`.
-4. Run `git diff --check`.
+3. Run `npm run release:check` when the package exposes it, or run the equivalent build/test/smoke/audit/pack commands explicitly.
+4. Run `git diff --check` if it is not already included in the release command.
 5. Confirm runtime evidence and review artifacts for M/L/CRITICAL work.

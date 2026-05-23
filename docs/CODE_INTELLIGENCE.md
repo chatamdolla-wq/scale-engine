@@ -21,6 +21,21 @@ npm i -g @colbymchenry/codegraph
 codegraph init -i
 ```
 
+Governed SCALE setup:
+
+```bash
+scale setup --pack knowledge
+scale codegraph status --json
+```
+
+For Graphify, prefer isolated tool installation:
+
+```bash
+uv tool install graphifyy
+graphify install --platform codex
+graphify query "auth service" --graph graphify-out/graph.json
+```
+
 Create the optional provider configuration:
 
 ```bash
@@ -76,7 +91,7 @@ Default shape:
       "manifest": "graphify-out/graph.json",
       "capabilities": ["symbols", "callers", "callees", "impact", "context", "summary", "module-map"],
       "source": "https://github.com/safishamsi/graphify",
-      "installHint": "pip install graphifyy && graphify install"
+      "installHint": "uv tool install graphifyy && graphify install --platform codex"
     }
   ],
   "fallback": {
@@ -149,7 +164,8 @@ When a graph provider answers, the module is reported as measured evidence. When
 
 - SCALE must run when no code graph provider is installed.
 - Missing providers must produce explicit fallback, not silent success.
-- External tools are detected but not installed automatically.
+- External tools are installed only through explicit user intent such as `scale setup --pack knowledge --yes` or `scale bootstrap deps --pack knowledge --apply`.
 - When CodeGraph is installed and the project is initialized, SCALE should prefer the upstream JSON query/context surfaces before falling back to raw file scans.
+- Graphify is treated as an artifact provider. CLI installation is not enough; `graphify-out/graph.json` must exist before graph-backed knowledge recall can use it.
 - Source files are read only through a bounded fallback scan.
 - Large generated graph outputs should stay outside default prompt context; use summaries and file paths.

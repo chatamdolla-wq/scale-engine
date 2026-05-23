@@ -22,7 +22,7 @@ W9-W12:   进化期 - MCP + Evolution + Eval + 真实联调
 
 `scale-engine` now treats MOE-style workspaces as an explicit project topology instead of an implicit cleanup edge case.
 
-- `.scale/workspace.json` records root, submodule, nested repository, and external repository relationships.
+- `.scale/workspace.json` records root, sibling/external repository, and intentional submodule relationships; MOE defaults avoid nested independent Git repositories under the root checkout.
 - `scale init --governance-pack moe-workspace` generates MOE governance docs and starter topology.
 - `scale workspace map --write --topology moe` creates a topology file for existing complex workspaces.
 - `scale workspace finish --json` uses the topology to block unsafe cleanup when child repositories are dirty or unpushed.

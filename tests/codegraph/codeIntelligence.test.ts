@@ -30,7 +30,7 @@ function mockCodegraphCli() {
         : Buffer.from('C:\\tools\\codegraph.exe')
     }
 
-    if (command === 'codegraph' && Array.isArray(args) && args[0] === 'query') {
+    if (String(command).replace(/\\/g, '/').endsWith('/codegraph.exe') && Array.isArray(args) && args[0] === 'query') {
       return JSON.stringify([
         {
           node: {
@@ -44,7 +44,7 @@ function mockCodegraphCli() {
       ])
     }
 
-    if (command === 'codegraph' && Array.isArray(args) && args[0] === 'context') {
+    if (String(command).replace(/\\/g, '/').endsWith('/codegraph.exe') && Array.isArray(args) && args[0] === 'context') {
       return JSON.stringify({
         summary: 'Found 2 relevant code symbols across 2 files.',
         entryPoints: [

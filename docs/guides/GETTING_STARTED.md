@@ -34,6 +34,27 @@ make verify PROFILE=default
 git diff --check
 ```
 
+如果改动影响安装、第三方能力、skills、记忆或知识库入口，还要跑安装烟测：
+
+```bash
+make setup-smoke
+npm run smoke:setup
+```
+
+准备发版本仓库时，直接跑完整发布门禁：
+
+```bash
+npm run release:check
+```
+
+如果全量测试卡住或需要定位顺序相关问题，再用 `npm run test:serial` 做排障；不要把它当成默认发布门禁。
+
+如果失败和本机 shell、PATH、Python、Bun、Cargo 或第三方 CLI 有关，先跑：
+
+```bash
+scale doctor env --json
+```
+
 ## 你应该看到什么
 
 - `.scale/workspace.json` 明确了 `dev -> master` 的仓库分支策略。

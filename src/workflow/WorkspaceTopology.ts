@@ -12,6 +12,8 @@ export interface WorkspaceRepositoryConfig {
   services?: string[]
   branchPattern?: string
   remote?: string
+  dependsOn?: string[]
+  pointerFile?: string
 }
 
 export interface WorkspaceBranchPolicy {
@@ -116,13 +118,34 @@ export function workspaceTopologyTemplate(options: WorkspaceTopologyTemplateOpti
     },
   ]
 
-  if (topology !== 'single') {
+  if (topology === 'monorepo') {
     repositories.push({
       name: 'example-service',
       path: 'services/example',
-      role: topology === 'monorepo' ? 'service' : 'nested-repo',
+      role: 'service',
       required: false,
       services: ['example'],
+    })
+  } else if (topology === 'moe' || topology === 'polyrepo') {
+    repositories.push({
+      name: 'example-service',
+      path: '../example-service',
+      role: 'external',
+      required: false,
+      services: ['example'],
+      branchPattern: 'codex/*',
+      remote: 'origin',
+      dependsOn: [],
+      pointerFile: 'repos/example-service.ref',
+    })
+  } else if (topology === 'submodule-workspace') {
+    repositories.push({
+      name: 'example-service',
+      path: 'services/example',
+      role: 'submodule',
+      required: false,
+      services: ['example'],
+      remote: 'origin',
     })
   }
 
@@ -141,12 +164,21 @@ export function workspaceTopologyPath(projectDir = process.cwd(), scaleDir = '.s
   return join(root, 'workspace.json')
 }
 
+export function resolveRepositoryPath(projectDir: string, repo: WorkspaceRepositoryConfig): string {
+  return isAbsolute(repo.path) ? repo.path : resolve(projectDir, repo.path)
+}
+
 function normalizeWorkspaceTopology(
   raw: WorkspaceTopologyConfig,
   meta: { configured: boolean; configPath: string; warnings?: string[] },
 ): ResolvedWorkspaceTopology {
   const topology = normalizeTopology(raw.topology)
   const repositories = normalizeRepositories(raw.repositories)
+
+  const warnings = [
+    ...(meta.warnings ?? []),
+    ...topologyWarnings(topology, repositories),
+  ]
 
   return {
     version: raw.version ?? 1,
@@ -162,7 +194,7 @@ function normalizeWorkspaceTopology(
     },
     configured: meta.configured,
     configPath: meta.configPath,
-    warnings: meta.warnings ?? [],
+    warnings,
   }
 }
 
@@ -221,4 +253,11 @@ function defaultBranchPolicy(): Required<WorkspaceBranchPolicy> {
 
 function normalizeRelative(path: string): string {
   return path.replace(/\\/g, '/')
+}
+
+function topologyWarnings(topology: WorkspaceTopologyKind, repositories: WorkspaceRepositoryConfig[]): string[] {
+  if (topology !== 'moe' && topology !== 'polyrepo') return []
+  return repositories
+    .filter(repo => repo.path !== '.' && !isAbsolute(repo.path) && !repo.path.startsWith('../'))
+    .map(repo => `${topology} repository "${repo.name}" uses path "${repo.path}" under the root checkout; prefer a sibling or absolute path to avoid nested git conflicts.`)
 }
