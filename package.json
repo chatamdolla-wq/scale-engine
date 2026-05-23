@@ -91,7 +91,7 @@
     "@typescript-eslint/parser": "^8.59.3",
     "eslint": "^9.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.5.0",
+    "typescript": "^5.9.3",
     "vitest": "^2.0.0"
   },
   "engines": {
