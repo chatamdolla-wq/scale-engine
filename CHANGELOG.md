@@ -1,3 +1,23 @@
+## 0.38.0 - 2026-05-23
+
+### Governed Bootstrap and Routing
+
+- Added governed dependency bootstrap packs for `ui`, `external-cli`, `memory`, and `knowledge`, including apply mode, post-check summaries, and rollback hints.
+- UI routing now defaults to `awesome-design-md` for brand and visual language plus `ui-ux-pro-max` for UX/accessibility review, with `frontend-design` kept as a recommended companion skill.
+
+### RTK, Memory, and Knowledge Integration
+
+- Added RTK-backed command wrapping and tool governance so CLI capability checks and orchestrated shell runs can use RTK consistently.
+- Added external-first memory provider routing with `gbrain` as the default provider, plus governed provider switching and status reporting.
+- Added `GraphifyKnowledgeBase`, code intelligence provider metadata for `colbymchenry/codegraph`, and default knowledge graph configuration built around `graphify-out/graph.json`.
+
+### Doctor and Quickstart
+
+- `scale doctor` now reports profile-aware bootstrap guidance, governed memory and knowledge status, and correctly recognizes repository shell hooks plus nested qoder-style hook commands.
+- `quickstart` knowledge detection now uses the governed tool/code-intelligence bootstrap path instead of legacy `pip show graphifyy` probing.
+
+---
+
 ## 0.37.0 - 2026-05-22
 
 ### Commit Discipline
