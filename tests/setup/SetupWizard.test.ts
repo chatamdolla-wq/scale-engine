@@ -12,7 +12,7 @@ describe('setup wizard', () => {
       scaleDir: '.scale-test',
       interactive: true,
       lang: 'en',
-      input: Readable.from(['\n', '\n', 'n\n']),
+      input: Readable.from(['\n', '\n', '\n']),
       output: new Writable({
         write(chunk, _encoding, callback) {
           prompts.push(String(chunk))
@@ -43,9 +43,33 @@ describe('setup wizard', () => {
     expect(report.prompts).toEqual(expect.arrayContaining([
       expect.stringContaining('memory provider'),
       expect.stringContaining('memory routing mode'),
-      expect.stringContaining('Install all ready dependencies'),
+      expect.stringContaining('Ready to install'),
     ]))
     expect(prompts.join('')).toContain('gbrain')
+  })
+
+  it('lets interactive users choose packs and selected install items', async () => {
+    const report = await runSetupWizard({
+      projectDir: process.cwd(),
+      scaleDir: '.scale-test',
+      interactive: true,
+      promptPacks: true,
+      lang: 'zh',
+      input: Readable.from(['4\n', '1\n']),
+      output: new Writable({
+        write(_chunk, _encoding, callback) {
+          callback()
+        },
+      }),
+      bootstrap: async options => makeUiBootstrapReport(Boolean(options.apply), options.packIds ?? [], options.onlyIds ?? []),
+    })
+
+    expect(report.interactiveChoices).toMatchObject({
+      packIds: ['ui'],
+      installIds: ['awesome-design-md'],
+    })
+    expect(report.applied).toBe(true)
+    expect(report.final.items.map(item => item.id)).toEqual(['awesome-design-md'])
   })
 })
 
@@ -81,6 +105,64 @@ function makeBootstrapReport(apply: boolean): DependencyBootstrapReport {
       needsInit: 0,
       versionDrift: 0,
       installedNow: 0,
+      failed: 0,
+    },
+    postActions: [],
+    postChecks: [],
+    postCheckSummary: { total: 0, passed: 0, warned: 0, failed: 0 },
+    postCheckCommands: [],
+    rollbackHints: [],
+    recommendations: [],
+  }
+}
+
+function makeUiBootstrapReport(apply: boolean, packIds: string[], onlyIds: string[]): DependencyBootstrapReport {
+  const items = [
+    {
+      id: 'awesome-design-md',
+      name: 'awesome-design-md',
+      kind: 'skill' as const,
+      packs: ['ui' as const],
+      source: 'https://github.com/VoltAgent/awesome-design-md',
+      installed: false,
+      status: apply ? 'installed-now' as const : 'ready' as const,
+      installSupported: true,
+      installCommand: 'install skill adapter',
+      detectedBy: 'missing',
+      prerequisites: [],
+    },
+    {
+      id: 'ui-ux-pro-max',
+      name: 'ui-ux-pro-max',
+      kind: 'skill' as const,
+      packs: ['ui' as const],
+      source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
+      installed: false,
+      status: 'ready' as const,
+      installSupported: true,
+      installCommand: 'install skill adapter',
+      detectedBy: 'missing',
+      prerequisites: [],
+    },
+  ].filter(item => onlyIds.length === 0 || onlyIds.includes(item.id))
+  return {
+    ok: true,
+    complete: apply,
+    projectDir: process.cwd(),
+    scaleDir: '.scale-test',
+    packIds,
+    includeIds: [],
+    apply,
+    runtimeChecks: [],
+    items,
+    summary: {
+      total: items.length,
+      installed: 0,
+      ready: items.filter(item => item.status === 'ready').length,
+      manualReview: 0,
+      needsInit: 0,
+      versionDrift: 0,
+      installedNow: items.filter(item => item.status === 'installed-now').length,
       failed: 0,
     },
     postActions: [],

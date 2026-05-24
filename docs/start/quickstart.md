@@ -32,27 +32,48 @@ cd scale-demo
 scale init --governance-pack standard
 ```
 
-初始化会生成 `.scale/`、`docs/`、`scripts/` 以及对应 Agent 入口文件。已有项目升级不要盲目重跑 `init`，优先使用：
+初始化会生成 `.scale/`、`docs/`、`scripts/` 以及对应 Agent 入口文件。已有项目升级不要盲目重复 `init`，优先使用升级向导：
+
+```bash
+scale upgrade --dir .
+```
+
+向导会生成升级计划、写入 HTML 报告，并在安全时询问是否应用。CI 或高级用户仍可使用分步命令：
 
 ```bash
 scale upgrade check --dir . --lang zh
 scale upgrade plan --dir . --html --lang zh
+scale upgrade apply --dir . --confirm --lang zh
 ```
 
 ## 3. 交互式安装第三方能力
 
-默认输出语言是中文。需要英文时加 `--lang en`，也可以设置 `SCALE_LANG=en`。
+默认语言是中文。需要英文时加 `--lang en`，也可以设置 `SCALE_LANG=en`。
 
-推荐先只查看计划：
+直接进入交互式安装：
+
+```bash
+scale setup
+```
+
+交互式安装会询问：
+
+- 语言：默认中文。
+- 安装包：标准、前端/UI、AI OS、完整、自定义。
+- 记忆供应商：默认 `gbrain`，也可切换到 `scale-local`。
+- 记忆路由模式：默认 `external-first`。
+- 是否执行安装：可跳过、全量安装、或只安装选中的第三方项。
+
+只查看计划：
 
 ```bash
 scale setup --pack full
 ```
 
-确认后安装：
+确认后执行安装：
 
 ```bash
-scale setup --pack full --yes
+scale setup --pack full --apply --yes
 ```
 
 机器可读输出：
@@ -61,35 +82,42 @@ scale setup --pack full --yes
 scale setup --pack full --json
 ```
 
-`setup` 和 `bootstrap deps` 都会输出 `runtimeChecks`。如果机器缺少 `python`、`bun`、`cargo`、`uv/pipx`、`node/npm/npx`，会先显示缺失项和修复建议，再决定是否执行 `--yes` 或 `--apply`，避免安装中途卡住。
+`setup` 和 `bootstrap deps` 都会输出 `runtimeChecks`。如果机器缺少 `python`、`bun`、`cargo`、`uv/pipx`、`node/npm/npx`，会先显示缺失项和修复建议，再决定是否执行 `--apply`，避免安装中途卡住。
 
-记忆供应商可以在安装入口直接切换，不需要手改 `.scale/memory-providers.json`：
+记忆供应商可在安装入口直接切换，不需要手改 `.scale/memory-providers.json`：
 
 ```bash
 scale setup --pack memory --memory-provider scale-local --json
 scale setup --pack memory --memory-provider gbrain --memory-mode external-first --json
 ```
 
-第三方能力的职责边界：
+## 4. UI Skills 默认策略
+
+| 能力 | 默认定位 | 安装方式 | 关键验证 |
+| --- | --- | --- | --- |
+| `awesome-design-md` | 品牌、视觉语言、`DESIGN.md` 来源 | `scale setup --pack ui --include awesome-design-md --apply` | 生成 `~/.agents/skills/awesome-design-md/SKILL.md`，同步 `~/.scale/vendor/awesome-design-md` |
+| `ui-ux-pro-max` | UX、状态、可访问性、响应式验收 | `scale setup --pack ui --include ui-ux-pro-max --apply` | 生成 `~/.agents/skills/ui-ux-pro-max/SKILL.md`，同步 `~/.scale/vendor/ui-ux-pro-max` |
+| `frontend-design` | 可选实现陪跑，不再是 UI 默认必装项 | `scale setup --pack ui --include frontend-design --apply` | 需要时显式安装 |
+
+安装器优先使用 `git clone --depth 1` 同步上游仓库；如果没有 Git 但有 npx，会退回 `npx degit`。缺少两者时不会硬跑失败，会在安装计划里标记为需要人工处理并给出下一步。
+
+## 5. 其他第三方能力边界
 
 | 能力 | 默认定位 | 关键验证 |
 | --- | --- | --- |
-| `awesome-design-md` | 品牌、视觉语言、`DESIGN.md` 来源 | 是否同步上游 DESIGN.md catalog |
-| `ui-ux-pro-max` | UX、状态、可访问性、响应式验收 | 是否通过官方 `uipro-cli` 安装 |
-| `frontend-design` | 可选实现灵感，不再是 UI 默认必装项 | 需要时显式 `--include frontend-design` |
 | `rtk` | CLI proxy/token 节省能力 | `rtk gain` 和 `rtk init -g --codex` |
-| `gbrain` | 默认记忆供应商 | 检查 brain 是否已配置且连接/schema 可用，未初始化会提示 `gbrain init --pglite` |
+| `gbrain` | 默认记忆供应商 | 检查 brain 是否已配置且连接/schema 可用；未初始化会提示 `gbrain init --pglite` |
 | `graphify` | 知识图谱产物供应商 | `graphify install --platform codex` 和 `graphify-out/graph.json` |
 | `codegraph` | 代码结构索引供应商 | `codegraph init -i` 和 `.codegraph/` |
 
-低层命令仍可直接使用：
+底层命令仍可直接使用：
 
 ```bash
 scale bootstrap deps --profile advanced --governance-pack frontend-app --lang zh
 scale bootstrap deps --profile advanced --governance-pack frontend-app --apply --lang zh
 ```
 
-## 4. 验证闭环
+## 6. 验证闭环
 
 ```bash
 scale doctor
@@ -114,11 +142,11 @@ npm run smoke:graphify -- --large-project /path/to/large-project
 
 验证语义：
 
-- `smoke:gbrain` 会先确认 gbrain 已配置且召回关键健康检查可用，通过后写入一个临时记忆页，再用独立 CLI 进程 `get/query/search` 回放，证明不是本地 mock。
+- `smoke:gbrain` 会先确认 gbrain 已配置且关键健康检查可用，通过后写入一个临时记忆页，再用独立 CLI 进程 `get/query/search` 回放，证明不是本地 mock。
 - `smoke:graphify` 默认对真实项目执行 `graphify update <project> --no-cluster`，走 AST/Python 无模型路径，检查 `graph.json`，再执行 `graphify query`；只有显式 `--semantic-extract` 才允许语义模型提取。
-- `graphify-out/` 是生成产物，不应该提交到 Git；长期知识沉淀应进入经过评审的 `memory/`、docs 或规则文件。
+- `graphify-out/` 是生成产物，不应该提交到 Git；长期知识沉淀应进入经过评审的 `memory/`、`docs` 或规则文件。
 
-## 5. 建立任务上下文
+## 7. 建立任务上下文
 
 ```bash
 scale context init --name "Scale Demo"
@@ -139,7 +167,7 @@ scale memory settle --task-id 2026-05-18-oauth-hardening --session-id 2026-05-18
 
 `memory settle` 默认只生成学习候选，不会自动把一次会话判断提升成长线规则。存在失败证据时，候选会要求先解决失败，避免把未闭环问题沉淀成经验。
 
-## 6. MOE/多仓工作区
+## 8. MOE/多仓工作区
 
 多仓项目使用：
 
@@ -151,31 +179,12 @@ MOE 默认把子工程配置为兄弟仓库或绝对路径，不建议把独立 
 
 ```json
 {
-  "topology": "moe",
-  "repositories": [
-    { "name": "root", "path": ".", "role": "root", "required": true },
-    { "name": "api", "path": "../api", "role": "external", "required": true, "remote": "origin" }
-  ]
+  "workspace": {
+    "type": "moe",
+    "repositories": [
+      { "name": "api", "path": "../api", "role": "service" },
+      { "name": "web", "path": "../web", "role": "frontend" }
+    ]
+  }
 }
-```
-
-这样可以避免子工程 Git 状态、分支、提交和主工程互相污染。
-
-## 7. 安装烟测
-
-仓库开发和发版前可以一键验证安装入口：
-
-```bash
-npm run smoke:setup
-npm run smoke:providers
-make setup-smoke
-```
-
-`smoke:setup` 只验证安装计划、双语输出、运行时依赖诊断、记忆供应商切换和 CodeGraph/Graphify 状态路径，不会执行真实第三方安装。
-`smoke:providers` 会执行真实供应商回放；未配置 gbrain 或 graphify 时输出 `blocked` 和修复命令，只有 `smoke:gbrain`/`smoke:graphify` 或显式 `--require-*` 才会失败退出。
-
-遇到跨系统命令兼容、PATH 或运行时依赖问题时，先导出环境诊断：
-
-```bash
-scale doctor env --json
 ```

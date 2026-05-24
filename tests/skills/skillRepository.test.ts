@@ -89,18 +89,20 @@ describe('SkillRepository', () => {
     ]))
   })
 
-  it('requires manual review checks for npx skill installs', () => {
+  it('requires manual review checks for managed external skill installs', () => {
     const report = evaluateSkillInstallSafety({
       sourceUrl: 'https://github.com/VoltAgent/awesome-design-md',
-      installCommand: 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
+      installCommand: 'scale setup --pack ui --include awesome-design-md --apply',
     })
 
     expect(report.blocked).toBe(false)
     expect(report.requiredChecks).toEqual(expect.arrayContaining([
       'review-skill-frontmatter',
       'inspect-scripts-directory',
-      'npm-audit-signatures',
+      'verify-license-and-source',
+      'verify-attribution-and-notice',
       'pin-source-revision',
+      'review-repository-activity',
     ]))
   })
 

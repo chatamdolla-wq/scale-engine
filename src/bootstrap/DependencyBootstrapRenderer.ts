@@ -12,7 +12,7 @@ function renderChinese(report: DependencyBootstrapReport): string {
     `  项目: ${report.projectDir}`,
     `  依赖包: ${report.packIds.join(', ')}`,
     `  执行安装: ${report.apply ? '是' : '否'}`,
-    `  完整就绪: ${report.complete ? '是' : '否'}`,
+    `  已完整就绪: ${report.complete ? '是' : '否'}`,
   ]
   appendRuntimeChecks(lines, report.runtimeChecks, 'zh')
   for (const item of report.items) {
@@ -78,9 +78,7 @@ function appendRuntimeChecks(lines: string[], checks: DependencyBootstrapRuntime
         ? `; 检测到: ${check.detectedCommand}${check.version ? ` (${check.version})` : ''}`
         : `; detected: ${check.detectedCommand}${check.version ? ` (${check.version})` : ''}`
       : ''
-    lines.push(lang === 'zh'
-      ? `    [${status}] ${check.label} -> ${target}${detected}`
-      : `    [${status}] ${check.label} -> ${target}${detected}`)
+    lines.push(`    [${status}] ${check.label} -> ${target}${detected}`)
     lines.push(lang === 'zh' ? `      说明: ${check.reason}` : `      reason: ${check.reason}`)
     if (check.status !== 'ok' && check.installHint) {
       lines.push(lang === 'zh' ? `      修复: ${check.installHint}` : `      fix: ${check.installHint}`)

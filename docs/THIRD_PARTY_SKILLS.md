@@ -18,8 +18,8 @@ This document records external skill projects that SCALE may learn from, recomme
 | Planning with Files | MIT | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | Adapt concepts for file-backed plans, findings, progress logs, active-plan routing, and plan attestation. | Not vendored. |
 | agentmemory | Apache-2.0 | [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Optional external memory provider via REST or MCP for teams that need cross-agent persistent memory beyond local SCALE Memory Brain. | Not vendored. |
 | GBrain | MIT | [garrytan/gbrain](https://github.com/garrytan/gbrain) | Default memory provider route for graph-backed cross-session recall. SCALE verifies that a brain is configured and recall-critical health checks pass; CLI existence alone is not enough. | Not vendored. |
-| awesome-design-md | MIT | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | DESIGN.md catalog for brand, visual language, typography, and design-system direction. SCALE syncs it as an external catalog, not as copied source. | Not vendored by default. |
-| ui-ux-pro-max | Upstream project license | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | UX, UI state, accessibility, responsive, and acceptance-review skill. SCALE uses the official `uipro-cli` path. | Not vendored by default. |
+| awesome-design-md | MIT | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | DESIGN.md catalog for brand, visual language, typography, and design-system direction. `scale setup --pack ui --apply` syncs upstream under `~/.scale/vendor/awesome-design-md` and creates `~/.agents/skills/awesome-design-md/SKILL.md`. | Installed only with explicit setup/apply. |
+| ui-ux-pro-max | Upstream project license | [nextlevelbuilder/ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) | UX, UI state, accessibility, responsive, and acceptance-review skill. `scale setup --pack ui --apply` syncs upstream under `~/.scale/vendor/ui-ux-pro-max` and creates `~/.agents/skills/ui-ux-pro-max/SKILL.md`. | Installed only with explicit setup/apply. |
 | RTK | Upstream project license | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Governed CLI proxy for shell-output compression and token savings. SCALE checks `rtk gain` and hook initialization. | External CLI only. |
 | Graphify | Upstream project license | [safishamsi/graphify](https://github.com/safishamsi/graphify) | Knowledge graph artifact provider. SCALE expects `graphify-out/graph.json` and Codex hook/skill freshness before relying on it. | Generated artifacts are project-local. |
 | CodeGraph | Upstream project license | [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | Code structure provider for symbol/context exploration. SCALE expects a project `.codegraph/` index. | External CLI/index only. |
@@ -67,11 +67,11 @@ Use the governed installer instead of asking users to discover every upstream co
 
 ```bash
 scale setup --pack full
-scale setup --pack full --yes
+scale setup --pack full --apply --yes
 scale setup --pack full --json
 ```
 
-Default language is Chinese. Use `--lang en` or `SCALE_LANG=en` for English output.
+Default language is Chinese. Running `scale setup` without `--json` starts the interactive wizard: language, dependency pack, memory provider, memory route, and install scope. Use `--lang en` or `SCALE_LANG=en` for English output.
 
 `setup` and `bootstrap deps` now expose report-level `runtimeChecks` before any install command runs. Missing `python`, `bun`, `cargo`, `uv/pipx`, or `node/npm/npx` is shown with a targeted install hint, so users can fix the environment before `--yes`/`--apply`.
 
@@ -90,6 +90,14 @@ make setup-smoke
 ```
 
 The smoke is intentionally non-destructive: it validates bilingual output, `runtimeChecks`, memory-provider routing writes in a temp `.scale`, and CodeGraph/Graphify status discovery without running third-party installers.
+
+For a real installer smoke in an isolated home directory, verify both the skill adapter and the upstream vendor checkout:
+
+```bash
+scale setup --pack ui --include awesome-design-md --apply --yes
+test -f ~/.agents/skills/awesome-design-md/SKILL.md
+test -d ~/.scale/vendor/awesome-design-md
+```
 
 For OS-specific failures, run:
 

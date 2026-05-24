@@ -34,6 +34,25 @@ function parseJson<T>(stdout: string): T {
 }
 
 describe('upgrade CLI', () => {
+  it('runs the default upgrade wizard without requiring check/plan/apply subcommands', async () => {
+    const scaleDir = makeDir('scale-upgrade-wizard-cli-')
+    const projectDir = makeDir('scale-upgrade-wizard-project-')
+    const init = await runScale(['init', '--dir', projectDir, '--governance-pack', 'project-scaffold', '--json'], scaleDir, projectDir)
+    expect(init.exitCode).toBe(0)
+
+    const wizard = await runScale(['upgrade', '--dir', projectDir, '--json'], scaleDir, projectDir)
+    expect(wizard.exitCode).toBe(0)
+    const report = parseJson<{
+      ok: boolean
+      htmlPath?: string
+      plan: { applyMode: string; steps: unknown[] }
+    }>(wizard.stdout)
+    expect(report.ok).toBe(true)
+    expect(report.htmlPath).toContain('upgrade-plan.html')
+    expect(report.plan.applyMode).toBe('safe')
+    expect(report.plan.steps.length).toBeGreaterThan(0)
+  }, 45000)
+
   it('prints machine-readable upgrade check and plan reports', async () => {
     const scaleDir = makeDir('scale-upgrade-cli-')
     const projectDir = makeDir('scale-upgrade-project-')

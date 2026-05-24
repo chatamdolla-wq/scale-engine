@@ -70,8 +70,10 @@ describe('bootstrap CLI', () => {
     expect(report.postCheckSummary).toMatchObject({ total: 0, passed: 0, warned: 0, failed: 0 })
     expect(report.items.map(item => item.id)).toEqual(['awesome-design-md', 'ui-ux-pro-max'])
     expect(report.items.every(item => item.status === 'ready')).toBe(true)
-    expect(report.items.find(item => item.id === 'awesome-design-md')?.installCommand).toContain('npx degit VoltAgent/awesome-design-md')
-    expect(report.items.find(item => item.id === 'ui-ux-pro-max')?.installCommand).toBe('npx uipro-cli init --ai codex')
+    expect(report.items.find(item => item.id === 'awesome-design-md')?.installCommand).toContain('install skill adapter')
+    expect(report.items.find(item => item.id === 'awesome-design-md')?.installCommand).toContain('VoltAgent/awesome-design-md')
+    expect(report.items.find(item => item.id === 'ui-ux-pro-max')?.installCommand).toContain('install skill adapter')
+    expect(report.items.find(item => item.id === 'ui-ux-pro-max')?.installCommand).toContain('nextlevelbuilder/ui-ux-pro-max-skill')
     expect(report.postCheckCommands).toEqual(expect.arrayContaining([
       'scale tool doctor --tools awesome-design-md,ui-ux-pro-max --json',
       'scale skill doctor --json',

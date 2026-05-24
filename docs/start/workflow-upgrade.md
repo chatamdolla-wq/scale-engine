@@ -51,7 +51,14 @@ scale init --governance-pack frontend-app
 
 ## 更新已有工作流
 
-按这个顺序运行：
+默认使用升级向导：
+
+```bash
+scale upgrade --dir .
+scale preflight --dir . --service all --preflight-profile quick
+```
+
+向导会生成计划和 HTML 报告；如果计划可安全应用，会在交互式终端询问是否立即应用。需要 CI 或精确控制时，再使用分步命令：
 
 ```bash
 scale upgrade check --dir .

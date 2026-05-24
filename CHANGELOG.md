@@ -1,3 +1,19 @@
+## 0.40.1 - 2026-05-24
+
+### Setup and Upgrade Experience
+
+- Added a Chinese-first interactive `scale setup` flow for choosing dependency packs, memory provider routing, and selected third-party installs.
+- Added real managed installers for `awesome-design-md` and `ui-ux-pro-max`, syncing upstream sources into `~/.scale/vendor` and writing local skill adapters under `~/.agents/skills`.
+- Added a default `scale upgrade` wizard that generates an upgrade plan and keeps `check/plan/apply/rollback` available for CI and advanced workflows.
+
+### Documentation and Validation
+
+- Reworked quickstart and workflow-upgrade docs around setup/upgrade wizards instead of command-only flows.
+- Unified skill doctor, tool registry, and third-party skill docs on the governed `scale setup --pack ui --include ... --apply` installation path.
+- Added tests and smoke coverage for interactive setup, real UI skill installation, and the default upgrade wizard.
+
+---
+
 ## 0.40.0 - 2026-05-24
 
 ### AI OS Runtime

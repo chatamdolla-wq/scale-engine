@@ -3,6 +3,7 @@
 // 所有 Hook 调用入口: session/gate/create/list/transition/context
 
 import { defineCommand, runMain } from 'citty'
+import { createInterface } from 'node:readline'
 import { EventBus } from '../core/eventBus.js'
 import { SQLiteArtifactStore } from '../artifact/sqliteStore.js'
 import { FSM } from '../artifact/fsm.js'
@@ -3084,6 +3085,7 @@ const setup = defineCommand({
       scaleDir: SCALE_DIR,
       packIds: explicitPacks.length > 0 ? uniqueStrings([...recommendedPacks, ...explicitPacks]) : recommendedPacks,
       includeIds: parseCommaList(args.include),
+      promptPacks: explicitPacks.length === 0 && recommendedPacks.length === 0 && !args.include,
       apply: isTruthyFlag(args.apply),
       yes: isTruthyFlag(args.yes),
       interactive: isTruthyFlag(args.interactive) && !isTruthyFlag(args.json),
@@ -3095,27 +3097,30 @@ const setup = defineCommand({
       allowExternalWrite: isTruthyFlag(args['allow-external-write']) ? true : undefined,
       promptLanguage: isTruthyFlag(args.interactive) && !args.lang,
     })
+    if (!args.json) {
+      console.log(lang === 'zh' ? '\nSCALE 交互式安装' : '\nSCALE Interactive Setup')
+      console.log(lang === 'zh'
+        ? `  已执行安装: ${report.applied ? '是' : '否'}`
+        : `  Applied: ${report.applied}`)
+      if (report.memoryProviderSwitch) {
+        const switched = report.memoryProviderSwitch!
+        console.log(lang === 'zh' ? '  记忆供应商:' : '  Memory provider:')
+        console.log(`    provider=${switched.provider}; mode=${switched.mode}; config=${switched.path}`)
+        console.log(`    order=${switched.previousOrder.join(' -> ')} => ${switched.nextOrder.join(' -> ')}`)
+        if (switched.providerStatus) {
+          console.log(`    status=${switched.providerStatus!.available ? 'available' : 'not-ready'}; reason=${switched.providerStatus!.reason}`)
+        }
+        for (const warning of switched.warnings) console.log(lang === 'zh' ? `    [警告] ${warning}` : `    [WARN] ${warning}`)
+      }
+      console.log(renderDependencyBootstrapReport(report.final, lang))
+      if (!report.ok) process.exitCode = 1
+      return
+    }
     if (args.json) {
       console.log(JSON.stringify(report, null, 2))
       if (!report.ok) process.exitCode = 1
       return
     }
-    console.log(lang === 'zh' ? '\nSCALE 交互式安装' : '\nSCALE Interactive Setup')
-    console.log(lang === 'zh'
-      ? `  已执行安装: ${report.applied ? '是' : '否'}`
-      : `  Applied: ${report.applied}`)
-    if (report.memoryProviderSwitch) {
-      const switched = report.memoryProviderSwitch
-      console.log(lang === 'zh' ? '  记忆供应商:' : '  Memory provider:')
-      console.log(`    provider=${switched.provider}; mode=${switched.mode}; config=${switched.path}`)
-      console.log(`    order=${switched.previousOrder.join(' -> ')} => ${switched.nextOrder.join(' -> ')}`)
-      if (switched.providerStatus) {
-        console.log(`    status=${switched.providerStatus.available ? 'available' : 'not-ready'}; reason=${switched.providerStatus.reason}`)
-      }
-      for (const warning of switched.warnings) console.log(lang === 'zh' ? `    [警告] ${warning}` : `    [WARN] ${warning}`)
-    }
-    console.log(renderDependencyBootstrapReport(report.final, lang))
-    if (!report.ok) process.exitCode = 1
   },
 })
 
@@ -3843,9 +3848,122 @@ const upgradeRollback = defineCommand({
 })
 
 const upgrade = defineCommand({
-  meta: { name: 'upgrade', description: 'SCALE 工作流、模板、skills、MCP、CLI 工具的安全升级规划 / Safe update planning for workflow assets' },
+  meta: { name: 'upgrade', description: 'SCALE 工作流、模板、skills、MCP、CLI 工具的安全升级向导 / Safe update wizard for workflow assets' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    'target-version': { type: 'string', description: '目标 SCALE Engine 版本，默认使用当前 CLI 版本 / Target SCALE Engine version' },
+    apply: { type: 'boolean', default: false, description: '直接应用安全升级计划 / Apply safe upgrade plan' },
+    yes: { type: 'boolean', default: false, description: '非交互确认 / Confirm without prompting' },
+    html: { type: 'boolean', default: true, description: '写入 HTML 升级计划 / Write HTML plan' },
+    interactive: { type: 'boolean', default: true, description: '启用升级向导交互 / Enable upgrade wizard prompts' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
+  },
   subCommands: { check: upgradeCheck, plan: upgradePlan, apply: upgradeApply, rollback: upgradeRollback },
+  async run({ args }) {
+    if (isUpgradeSubcommandInvocation(process.argv)) return
+    const lang = normalizeLangArg(args.lang)
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const scaleDir = resolveScaleDirForProject(projectDir)
+    const targetScaleVersion = args['target-version'] ? String(args['target-version']) : undefined
+    const plan = createUpgradePlanReport({ projectDir, scaleDir, targetScaleVersion })
+    const htmlPath = args.html ? writeUpgradePlanHtml(plan, undefined, lang) : undefined
+    const canApply = plan.applyMode === 'safe' && plan.blockers.length === 0
+    const interactive = isTruthyFlag(args.interactive) && !args.json && Boolean(process.stdin.isTTY) && !isTruthyFlag(args.yes)
+    let apply = isTruthyFlag(args.apply) || isTruthyFlag(args.yes)
+    let cancelled = false
+
+    if (interactive && canApply && !apply) {
+      const answer = await askUpgradeWizardQuestion(lang === 'zh'
+        ? '发现可安全应用的升级计划。现在应用吗？1=仅生成计划 2=应用 3=取消，默认 1: '
+        : 'Safe upgrade plan found. Apply now? 1=plan only 2=apply 3=cancel, default 1: ')
+      const normalized = answer.trim().toLowerCase()
+      apply = normalized === '2' || normalized === 'apply' || normalized === 'yes' || normalized === 'y'
+      cancelled = normalized === '3' || normalized === 'cancel' || normalized === 'c'
+    }
+
+    const applyResult = apply && !cancelled
+      ? applyUpgradePlan({ projectDir, scaleDir, confirm: true })
+      : undefined
+    const ok = !cancelled && (!applyResult || applyResult.ok)
+    const report = { ok, cancelled, htmlPath, plan, applyResult }
+
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      if (!ok) process.exitCode = 1
+      return
+    }
+
+    renderUpgradeWizardReport(report, lang)
+    if (!ok) process.exitCode = 1
+  },
 })
+
+async function askUpgradeWizardQuestion(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    return await new Promise(resolve => rl.question(question, resolve))
+  } finally {
+    rl.close()
+  }
+}
+
+function isUpgradeSubcommandInvocation(argv: string[]): boolean {
+  const upgradeIndex = argv.findIndex((value, index) => index > 1 && value === 'upgrade')
+  if (upgradeIndex < 0) return false
+  const positional = argv.slice(upgradeIndex + 1).find(value => !value.startsWith('-') && !value.includes('='))
+  return positional === 'check' || positional === 'plan' || positional === 'apply' || positional === 'rollback'
+}
+
+function renderUpgradeWizardReport(report: {
+  ok: boolean
+  cancelled: boolean
+  htmlPath?: string
+  plan: ReturnType<typeof createUpgradePlanReport>
+  applyResult?: ReturnType<typeof applyUpgradePlan>
+}, lang: 'zh' | 'en'): void {
+  const plan = report.plan
+  if (lang === 'zh') {
+    console.log('\nSCALE 升级向导')
+    console.log(`  项目: ${plan.projectDir}`)
+    console.log(`  状态: ${plan.status}`)
+    console.log(`  应用模式: ${plan.applyMode}`)
+    console.log(`  阻塞项: ${plan.blockers.length}`)
+    console.log(`  步骤数: ${plan.steps.length}`)
+    if (report.htmlPath) console.log(`  HTML 计划: ${report.htmlPath}`)
+    if (report.cancelled) console.log('  结果: 已取消')
+    else if (report.applyResult) {
+      console.log(`  结果: ${report.applyResult.applied ? '已应用' : '未应用'}`)
+      console.log(`  原因: ${formatUpgradeApplyReason(report.applyResult.reason, lang)}`)
+      for (const path of report.applyResult.changedFiles) console.log(`  已变更: ${path}`)
+    } else {
+      console.log('  结果: 已生成计划，未应用变更')
+    }
+    console.log('  下一步:')
+    for (const command of plan.check.recommendedCommands.slice(0, 5)) console.log(`    ${formatUpgradeCommand(command, lang)}`)
+    if (plan.blockers.length > 0) console.log('    先解决阻塞项后再执行 scale upgrade apply --confirm')
+    return
+  }
+
+  console.log('\nSCALE Upgrade Wizard')
+  console.log(`  Project: ${plan.projectDir}`)
+  console.log(`  Status: ${plan.status}`)
+  console.log(`  Apply mode: ${plan.applyMode}`)
+  console.log(`  Blockers: ${plan.blockers.length}`)
+  console.log(`  Steps: ${plan.steps.length}`)
+  if (report.htmlPath) console.log(`  HTML plan: ${report.htmlPath}`)
+  if (report.cancelled) console.log('  Result: cancelled')
+  else if (report.applyResult) {
+    console.log(`  Result: ${report.applyResult.applied ? 'applied' : 'not applied'}`)
+    console.log(`  Reason: ${report.applyResult.reason}`)
+    for (const path of report.applyResult.changedFiles) console.log(`  changed: ${path}`)
+  } else {
+    console.log('  Result: plan generated; no changes applied')
+  }
+  console.log('  Next:')
+  for (const command of plan.check.recommendedCommands.slice(0, 5)) console.log(`    ${formatUpgradeCommand(command, lang)}`)
+  if (plan.blockers.length > 0) console.log('    Resolve blockers before running scale upgrade apply --confirm')
+}
 
 function formatUpgradeBlockerMessage(code: string, fallback: string, lang: 'zh' | 'en'): string {
   if (lang !== 'zh') return fallback
@@ -6388,4 +6506,16 @@ const main = defineCommand({
   },
 })
 
+normalizeUpgradeRootOptionValues(process.argv)
 runMain(main)
+
+function normalizeUpgradeRootOptionValues(argv: string[]): void {
+  const upgradeIndex = argv.findIndex((value, index) => index > 1 && value === 'upgrade')
+  if (upgradeIndex < 0) return
+  for (let index = upgradeIndex + 1; index < argv.length - 1; index += 1) {
+    if (!['--dir', '--target-version', '--lang'].includes(argv[index])) continue
+    const value = argv[index + 1]
+    if (!value || value.startsWith('--')) continue
+    argv.splice(index, 2, `${argv[index]}=${value}`)
+  }
+}

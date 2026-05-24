@@ -29,7 +29,7 @@ const TOOL_ORCHESTRATION_SKILL_CATALOG: WorkflowSkillCatalogEntry[] = [
     name: 'Awesome Design.md',
     description: 'DESIGN.md brand and product design system references',
     source: 'https://github.com/VoltAgent/awesome-design-md',
-    installCommand: 'npx skills add https://github.com/VoltAgent/awesome-design-md --skill awesome-design-md',
+    installCommand: 'scale setup --pack ui --include awesome-design-md --apply',
     trust: 'ecosystem',
     definition: {
       id: 'awesome-design-md',
@@ -48,7 +48,7 @@ const TOOL_ORCHESTRATION_SKILL_CATALOG: WorkflowSkillCatalogEntry[] = [
     name: 'UI/UX Pro Max',
     description: 'UX guidelines and design intelligence database',
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
-    installCommand: 'npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill ui-ux-pro-max',
+    installCommand: 'scale setup --pack ui --include ui-ux-pro-max --apply',
     trust: 'ecosystem',
     definition: {
       id: 'ui-ux-pro-max',

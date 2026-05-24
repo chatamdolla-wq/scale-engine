@@ -19,6 +19,7 @@ export interface SetupWizardOptions {
   scaleDir?: string
   packIds?: string[]
   includeIds?: string[]
+  promptPacks?: boolean
   apply?: boolean
   yes?: boolean
   interactive?: boolean
@@ -37,8 +38,10 @@ export interface SetupWizardOptions {
 
 export interface SetupWizardInteractiveChoices {
   lang?: ScaleLanguage
+  packIds?: string[]
   memoryProvider?: string
   memoryMode?: MemoryProviderRoutingConfig['mode']
+  installIds?: string[]
 }
 
 interface PromptSession {
@@ -65,26 +68,19 @@ export async function runSetupWizard(options: SetupWizardOptions = {}): Promise<
   const projectDir = resolve(options.projectDir ?? process.cwd())
   let lang = options.lang ?? 'zh'
   const bootstrap = options.bootstrap ?? bootstrapDependencies
-  const planOptions: DependencyBootstrapOptions = {
-    projectDir,
-    scaleDir: options.scaleDir,
-    packIds: options.packIds,
-    includeIds: options.includeIds,
-    apply: false,
-  }
-  const plan = await bootstrap(planOptions)
   const prompts: string[] = []
   const interactiveChoices: SetupWizardInteractiveChoices = {}
   let shouldApply = Boolean(options.apply || options.yes)
   const interactive = Boolean(options.interactive)
   let memoryProvider = options.memoryProvider
   let memoryMode = options.memoryMode
+  let packIds = options.packIds
+  let planOptions: DependencyBootstrapOptions
+  let plan: DependencyBootstrapReport
 
   let promptSession: PromptSession | undefined
   try {
-    if (interactive) {
-      promptSession = createPromptSession(options.input ?? defaultInput, options.output ?? defaultOutput)
-    }
+    if (interactive) promptSession = createPromptSession(options.input ?? defaultInput, options.output ?? defaultOutput)
 
     if (promptSession && options.promptLanguage) {
       const question = languageQuestion(lang)
@@ -92,6 +88,21 @@ export async function runSetupWizard(options: SetupWizardOptions = {}): Promise<
       lang = normalizeLanguageChoice(await askLine(promptSession, question), lang)
       interactiveChoices.lang = lang
     }
+
+    if (promptSession && options.promptPacks) {
+      const question = packQuestion(lang)
+      prompts.push(question.trim())
+      packIds = normalizePackChoice(await askLine(promptSession, question))
+      interactiveChoices.packIds = packIds
+    }
+  planOptions = {
+    projectDir,
+    scaleDir: options.scaleDir,
+    packIds,
+    includeIds: options.includeIds,
+    apply: false,
+  }
+  plan = await bootstrap(planOptions)
 
     if (promptSession && !memoryProvider && shouldPromptMemoryProvider(plan)) {
       const question = memoryProviderQuestion(lang)
@@ -111,19 +122,20 @@ export async function runSetupWizard(options: SetupWizardOptions = {}): Promise<
       interactiveChoices.memoryMode = memoryMode
     }
 
-    if (!shouldApply && promptSession && plan.items.some(item => item.status === 'ready')) {
-      const question = lang === 'zh'
-        ? '是否现在安装所有可安装依赖？输入 y 确认，直接回车跳过: '
-        : 'Install all ready dependencies now? Type y to confirm, press Enter to skip: '
+    const readyIds = plan.items.filter(item => item.status === 'ready').map(item => item.id)
+    if (!shouldApply && promptSession && readyIds.length > 0) {
+      const question = installQuestion(lang, readyIds)
       prompts.push(question.trim())
-      shouldApply = await askYesNo(promptSession, question)
+      const installChoice = normalizeInstallChoice(await askLine(promptSession, question), readyIds)
+      shouldApply = installChoice.apply
+      if (installChoice.ids.length > 0) interactiveChoices.installIds = installChoice.ids
     }
   } finally {
     promptSession?.rl.close()
   }
 
   const final = shouldApply
-    ? await bootstrap({ ...planOptions, apply: true })
+    ? await bootstrap({ ...planOptions, onlyIds: interactiveChoices.installIds, apply: true })
     : plan
   const memoryProviderSwitch = memoryProvider && memoryProvider !== 'skip'
     ? (options.switchMemoryProvider ?? useMemoryProvider)({
@@ -162,6 +174,12 @@ function languageQuestion(lang: ScaleLanguage): string {
     : 'Choose setup language zh/en, default en: '
 }
 
+function packQuestion(lang: ScaleLanguage): string {
+  return lang === 'zh'
+    ? '选择安装包 1=推荐标准(external-cli,memory,knowledge,ui) 2=最小(external-cli) 3=全部 4=只安装UI 5=只安装记忆 6=只安装知识，默认 1: '
+    : 'Choose packs 1=standard(external-cli,memory,knowledge,ui) 2=minimal(external-cli) 3=full 4=ui 5=memory 6=knowledge, default 1: '
+}
+
 function memoryProviderQuestion(lang: ScaleLanguage): string {
   return lang === 'zh'
     ? '选择记忆供应商 gbrain/scale-local/agentmemory/skip，默认 gbrain: '
@@ -174,11 +192,37 @@ function memoryModeQuestion(lang: ScaleLanguage): string {
     : 'Choose memory routing mode external-first/auto/local-only, default external-first: '
 }
 
+function installQuestion(lang: ScaleLanguage, readyIds: string[]): string {
+  const list = readyIds.map((id, index) => `${index + 1}=${id}`).join(', ')
+  return lang === 'zh'
+    ? `发现可安装项：${list}。输入 all 安装全部，输入编号/ID 逗号分隔只安装部分，直接回车跳过: `
+    : `Ready to install: ${list}. Type all for all, comma-separated numbers/IDs for selected items, or press Enter to skip: `
+}
+
 function normalizeLanguageChoice(value: string, fallback: ScaleLanguage): ScaleLanguage {
   const normalized = value.trim().toLowerCase()
   if (normalized === 'en' || normalized === 'english') return 'en'
   if (normalized === 'zh' || normalized === 'cn' || normalized === 'chinese' || normalized === '中文') return 'zh'
   return fallback
+}
+
+function normalizePackChoice(value: string): string[] {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === '1' || normalized === 'standard' || normalized === '推荐' || normalized === '标准') {
+    return ['external-cli', 'memory', 'knowledge', 'ui']
+  }
+  if (normalized === '2' || normalized === 'minimal' || normalized === 'min' || normalized === '最小') return ['external-cli']
+  if (normalized === '3' || normalized === 'full' || normalized === 'all' || normalized === '全部') return ['full']
+  if (normalized === '4' || normalized === 'ui') return ['ui']
+  if (normalized === '5' || normalized === 'memory' || normalized === '记忆') return ['memory']
+  if (normalized === '6' || normalized === 'knowledge' || normalized === '知识') return ['knowledge']
+  const selected = normalized
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => item === 'external' || item === 'cli' ? 'external-cli' : item)
+    .filter(item => ['external-cli', 'memory', 'knowledge', 'ui', 'full'].includes(item))
+  return selected.length > 0 ? selected : ['external-cli', 'memory', 'knowledge', 'ui']
 }
 
 function normalizeMemoryProviderChoice(value: string): string {
@@ -207,9 +251,23 @@ function createPromptSession(input: NodeJS.ReadableStream, output: NodeJS.Writab
   }
 }
 
-async function askYesNo(promptSession: PromptSession, question: string): Promise<boolean> {
-  const answer = (await askLine(promptSession, question)).trim().toLowerCase()
-  return answer === 'y' || answer === 'yes' || answer === '是' || answer === '确认'
+function normalizeInstallChoice(value: string, readyIds: string[]): { apply: boolean; ids: string[] } {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return { apply: false, ids: [] }
+  if (normalized === 'all' || normalized === 'a' || normalized === 'y' || normalized === 'yes' || normalized === '全部') {
+    return { apply: true, ids: [] }
+  }
+  const ids = normalized
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => {
+      const index = Number.parseInt(item, 10)
+      if (Number.isFinite(index) && index > 0) return readyIds[index - 1]
+      return readyIds.find(id => id.toLowerCase() === item)
+    })
+    .filter((item): item is string => Boolean(item))
+  return { apply: ids.length > 0, ids: [...new Set(ids)] }
 }
 
 async function askLine(promptSession: PromptSession, question: string): Promise<string> {

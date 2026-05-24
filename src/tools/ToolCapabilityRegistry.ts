@@ -71,7 +71,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     skillId: 'awesome-design-md',
     requiredFor: ['ui'],
     source: 'https://github.com/VoltAgent/awesome-design-md',
-    installHint: 'scale setup --pack ui --include awesome-design-md',
+    installHint: 'scale setup --pack ui --include awesome-design-md --apply',
     extraPaths: ({ homeDir }) => [join(homeDir, '.scale', 'vendor', 'awesome-design-md', 'README.md')],
   },
   {
@@ -81,7 +81,7 @@ export const TOOL_CAPABILITY_CATALOG: ToolCatalogEntry[] = [
     skillId: 'ui-ux-pro-max',
     requiredFor: ['ui'],
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
-    installHint: 'npx uipro-cli init --ai codex',
+    installHint: 'scale setup --pack ui --include ui-ux-pro-max --apply',
   },
   {
     id: 'frontend-design',

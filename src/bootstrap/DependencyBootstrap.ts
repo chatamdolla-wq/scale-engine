@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execa, execaSync } from 'execa'
@@ -87,6 +87,7 @@ export interface DependencyBootstrapOptions {
   scaleDir?: string
   packIds?: string[]
   includeIds?: string[]
+  onlyIds?: string[]
   apply?: boolean
 }
 
@@ -129,15 +130,21 @@ type DependencyBootstrapDefinition = {
   prerequisites: string[]
   manualReason: string
   installCommand: (ctx: BootstrapInstallContext) => string | null
+  install?: (ctx: BootstrapInstallContext) => Promise<{ ok: boolean; output?: string; error?: string }>
   healthCheck?: (ctx: BootstrapInstallContext) => DependencyBootstrapHealth
 }
 
 const UI_SKILL_INSTALLS = {
   'awesome-design-md': (ctx: BootstrapInstallContext) => {
-    const installDir = quotePath(join(ctx.homeDir, '.scale', 'vendor', 'awesome-design-md'))
-    return `npx degit VoltAgent/awesome-design-md ${installDir}`
+    const skillDir = quotePath(join(ctx.homeDir, '.agents', 'skills', 'awesome-design-md'))
+    const vendorDir = quotePath(join(ctx.homeDir, '.scale', 'vendor', 'awesome-design-md'))
+    return `install skill adapter ${skillDir} from VoltAgent/awesome-design-md into ${vendorDir}`
   },
-  'ui-ux-pro-max': 'npx uipro-cli init --ai codex',
+  'ui-ux-pro-max': (ctx: BootstrapInstallContext) => {
+    const skillDir = quotePath(join(ctx.homeDir, '.agents', 'skills', 'ui-ux-pro-max'))
+    const vendorDir = quotePath(join(ctx.homeDir, '.scale', 'vendor', 'ui-ux-pro-max'))
+    return `install skill adapter ${skillDir} from nextlevelbuilder/ui-ux-pro-max-skill into ${vendorDir}`
+  },
   'frontend-design': 'npx skills add anthropics/skills --skill frontend-design',
 } as const
 
@@ -160,10 +167,20 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     packs: ['ui'],
     source: 'https://github.com/VoltAgent/awesome-design-md',
     detectSkillId: 'awesome-design-md',
-    detectPaths: ctx => [join(ctx.homeDir, '.scale', 'vendor', 'awesome-design-md', 'README.md')],
-    prerequisites: ['npx'],
-    manualReason: 'Requires npm/npx to sync the upstream DESIGN.md catalog that drives brand and visual-language decisions.',
-    installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['awesome-design-md'](ctx) : null,
+    prerequisites: ['git|npx'],
+    manualReason: 'Requires Git or npm/npx to sync the upstream DESIGN.md catalog and create a local SCALE skill adapter.',
+    installCommand: ctx => requirementSatisfied('git|npx', ctx.commandExists) ? UI_SKILL_INSTALLS['awesome-design-md'](ctx) : null,
+    install: ctx => installSkillAdapter(ctx, {
+      id: 'awesome-design-md',
+      sourceUrl: 'https://github.com/VoltAgent/awesome-design-md.git',
+      repoSpecifier: 'VoltAgent/awesome-design-md',
+      description: 'Brand, visual language, and DESIGN.md source skill for SCALE UI work.',
+      instructions: [
+        'Use this skill before UI implementation when brand direction, visual language, DESIGN.md, color, typography, layout mood, or product identity must be defined.',
+        'Read the upstream vendor repository under ~/.scale/vendor/awesome-design-md, then create or update the project DESIGN.md with concrete visual decisions.',
+        'Do not use it as the accessibility or responsive QA gate; route those checks to ui-ux-pro-max.',
+      ],
+    }),
   },
   {
     id: 'ui-ux-pro-max',
@@ -172,9 +189,20 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     packs: ['ui'],
     source: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill',
     detectSkillId: 'ui-ux-pro-max',
-    prerequisites: ['npx'],
-    manualReason: 'Requires npm/npx so the official uipro-cli installer can configure the UX, state, accessibility, and responsive-review skill.',
-    installCommand: ctx => ctx.commandExists('npx') ? UI_SKILL_INSTALLS['ui-ux-pro-max'] : null,
+    prerequisites: ['git|npx'],
+    manualReason: 'Requires Git or npm/npx to sync the upstream UX skill and create a local SCALE skill adapter.',
+    installCommand: ctx => requirementSatisfied('git|npx', ctx.commandExists) ? UI_SKILL_INSTALLS['ui-ux-pro-max'](ctx) : null,
+    install: ctx => installSkillAdapter(ctx, {
+      id: 'ui-ux-pro-max',
+      sourceUrl: 'https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git',
+      repoSpecifier: 'nextlevelbuilder/ui-ux-pro-max-skill',
+      description: 'UX flow, UI state, accessibility, and responsive acceptance skill for SCALE UI work.',
+      instructions: [
+        'Use this skill after visual direction is selected to review UX flow, state coverage, empty/error/loading behavior, keyboard access, accessibility, and responsive acceptance.',
+        'Read the upstream vendor repository under ~/.scale/vendor/ui-ux-pro-max for the current checklist and apply it as an acceptance gate.',
+        'Do not replace awesome-design-md for brand or visual-language decisions.',
+      ],
+    }),
   },
   {
     id: 'frontend-design',
@@ -243,7 +271,8 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
   const homeDir = homedir()
   const packIds = normalizePackIds(options.packIds)
   const includeIds = unique((options.includeIds ?? []).map(value => value.trim()).filter(Boolean))
-  const definitions = selectDefinitions(packIds, includeIds)
+  const onlyIds = unique((options.onlyIds ?? []).map(value => value.trim()).filter(Boolean))
+  const definitions = selectDefinitions(packIds, includeIds, onlyIds)
   const context: BootstrapInstallContext = {
     projectDir,
     homeDir,
@@ -255,10 +284,12 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
   if (options.apply) {
     for (const item of reports.filter(entry => entry.status === 'ready')) {
       if (!item.installCommand) continue
-      const result = await runInstallCommand(item.installCommand)
+      const definition = definitions.find(entry => entry.id === item.id)
+      const result = definition?.install
+        ? await definition.install(context)
+        : await runInstallCommand(item.installCommand)
       item.output = result.output
       item.error = result.error
-      const definition = definitions.find(entry => entry.id === item.id)
       const rechecked = definition ? inspectDefinition(definition, context) : item
       item.installed = rechecked.installed
       item.detectedBy = rechecked.detectedBy
@@ -887,6 +918,87 @@ async function runInstallCommand(shellCommand: string): Promise<{ ok: boolean; o
   }
 }
 
+async function installSkillAdapter(
+  context: BootstrapInstallContext,
+  input: {
+    id: string
+    sourceUrl: string
+    repoSpecifier: string
+    description: string
+    instructions: string[]
+  },
+): Promise<{ ok: boolean; output?: string; error?: string }> {
+  const vendorDir = join(context.homeDir, '.scale', 'vendor', input.id)
+  const skillDir = join(context.homeDir, '.agents', 'skills', input.id)
+  const outputs: string[] = []
+  const errors: string[] = []
+
+  mkdirSync(join(context.homeDir, '.scale', 'vendor'), { recursive: true })
+  mkdirSync(skillDir, { recursive: true })
+
+  if (!existsSync(vendorDir) || isEmptyDirectory(vendorDir)) {
+    if (context.commandExists('git')) {
+      const clone = await execa('git', ['clone', '--depth', '1', input.sourceUrl, vendorDir], { reject: false })
+      outputs.push(clone.stdout ?? '')
+      errors.push(clone.stderr ?? '')
+      if ((clone.exitCode ?? 1) !== 0) return { ok: false, output: outputs.join('\n'), error: errors.join('\n') }
+    } else if (context.commandExists('npx')) {
+      const degit = await execa('npx', ['degit', input.repoSpecifier, vendorDir], { reject: false })
+      outputs.push(degit.stdout ?? '')
+      errors.push(degit.stderr ?? '')
+      if ((degit.exitCode ?? 1) !== 0) return { ok: false, output: outputs.join('\n'), error: errors.join('\n') }
+    } else {
+      return { ok: false, error: 'Git or npx is required to install third-party skills.' }
+    }
+  } else if (existsSync(join(vendorDir, '.git')) && context.commandExists('git')) {
+    const pull = await execa('git', ['-C', vendorDir, 'pull', '--ff-only'], { reject: false })
+    outputs.push(pull.stdout ?? '')
+    errors.push(pull.stderr ?? '')
+    if ((pull.exitCode ?? 1) !== 0) return { ok: false, output: outputs.join('\n'), error: errors.join('\n') }
+  } else {
+    outputs.push(`Reused existing vendor directory: ${vendorDir}`)
+  }
+
+  writeFileSync(join(skillDir, 'SKILL.md'), renderSkillAdapter(input, vendorDir), 'utf-8')
+  outputs.push(`Wrote skill adapter: ${join(skillDir, 'SKILL.md')}`)
+  return { ok: true, output: outputs.filter(Boolean).join('\n'), error: errors.filter(Boolean).join('\n') }
+}
+
+function isEmptyDirectory(path: string): boolean {
+  return existsSync(path) && readdirSync(path).length === 0
+}
+
+function renderSkillAdapter(input: {
+  id: string
+  sourceUrl: string
+  description: string
+  instructions: string[]
+}, vendorDir: string): string {
+  const lines = [
+    '---',
+    `name: ${input.id}`,
+    `description: ${input.description}`,
+    '---',
+    '',
+    `# ${input.id}`,
+    '',
+    `Source: ${input.sourceUrl}`,
+    `Vendor path: ${vendorDir}`,
+    '',
+    '## When To Use',
+    '',
+    ...input.instructions.map(item => `- ${item}`),
+    '',
+    '## Operating Rules',
+    '',
+    '- Prefer concrete project artifacts over generic advice.',
+    '- If the vendor directory is missing or outdated, run `scale setup --pack ui --apply` again.',
+    '- Keep generated project outputs, such as DESIGN.md, inside the target project rather than this skill directory.',
+    '',
+  ]
+  return `${lines.join('\n')}\n`
+}
+
 export function applyDependencyBootstrapPostActions(
   projectDir: string,
   scaleDir: string,
@@ -917,11 +1029,17 @@ export function applyDependencyBootstrapPostActions(
   return actions
 }
 
-function selectDefinitions(packIds: DependencyBootstrapPackId[], includeIds: string[]): DependencyBootstrapDefinition[] {
+function selectDefinitions(
+  packIds: DependencyBootstrapPackId[],
+  includeIds: string[],
+  onlyIds: string[] = [],
+): DependencyBootstrapDefinition[] {
   const selectedPacks = new Set(packIds.includes('full') ? ['ui', 'memory', 'knowledge', 'external-cli'] : packIds)
   const selectedIds = new Set(includeIds)
+  const only = new Set(onlyIds)
   return DEPENDENCY_BOOTSTRAP_DEFINITIONS.filter(definition =>
-    definition.packs.some(pack => selectedPacks.has(pack)) || selectedIds.has(definition.id))
+    (only.size === 0 || only.has(definition.id)) &&
+    (definition.packs.some(pack => selectedPacks.has(pack)) || selectedIds.has(definition.id)))
 }
 
 function buildPostCheckCommands(packIds: DependencyBootstrapPackId[], items: DependencyBootstrapItemReport[]): string[] {
