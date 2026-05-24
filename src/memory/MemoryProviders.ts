@@ -1,7 +1,8 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { MemoryBrain, type MemoryNode } from './MemoryBrain.js'
-import { externalCommandExists, runExternalCommandSync } from '../core/ExternalCommand.js'
+import { externalCommandExists, resolveExternalCommandPath, runExternalCommandSync } from '../core/ExternalCommand.js'
 
 export type MemoryProviderKind = 'scale-local' | 'agentmemory' | 'gbrain' | 'generic-http'
 export type MemoryProviderCapability = 'keyword-recall' | 'semantic-recall' | 'graph-recall' | 'session-memory' | 'mcp' | 'write-memory'
@@ -111,6 +112,14 @@ export interface MemoryProviderUseReport {
   nextOrder: string[]
   providerStatus?: MemoryProviderStatus
   warnings: string[]
+}
+
+export interface GbrainCliHealth {
+  available: boolean
+  degraded: boolean
+  reason: string
+  status?: string
+  healthScore?: number
 }
 
 export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
@@ -491,7 +500,7 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
     }
   }
   if (provider.kind === 'gbrain' && commandExists('gbrain')) {
-    const health = gbrainCliHealth()
+    const health = inspectGbrainCliHealth()
     if (health.available) {
       return {
         ...providerStatusBase(provider, routing),
@@ -523,24 +532,132 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
   }
 }
 
-function gbrainCliHealth(): { available: boolean; reason: string } {
+export function inspectGbrainCliHealth(): GbrainCliHealth {
   try {
-    runExternalCommandSync('gbrain', ['doctor', '--json'], {
+    const stdout = runExternalCommandSync('gbrain', ['doctor', '--json'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 10_000,
     })
-    return { available: true, reason: 'gbrain doctor passed; graph-backed recall is available' }
+    const parsed = parseGbrainDoctorReport(String(stdout))
+    if (parsed && gbrainCoreRecallReady(parsed)) {
+      return gbrainCoreReadyHealth(parsed)
+    }
+    return { available: true, degraded: false, reason: 'gbrain doctor passed; graph-backed recall is available' }
   } catch (error) {
     const err = error as Error & { stdout?: string | Buffer; stderr?: string | Buffer }
     const output = `${String(err.stdout ?? '')}\n${String(err.stderr ?? err.message ?? '')}`
+    const parsed = parseGbrainDoctorReport(output)
+    if (parsed && gbrainCoreRecallReady(parsed)) {
+      return gbrainCoreReadyHealth(parsed)
+    }
     return {
       available: false,
+      degraded: false,
       reason: /no brain configured/i.test(output)
         ? 'gbrain CLI is installed but no brain is configured; run `gbrain init --pglite` before autonomous recall'
         : `gbrain CLI is installed but doctor failed: ${firstLine(output)}`,
     }
   }
+}
+
+function gbrainCoreReadyHealth(report: GbrainDoctorReport): GbrainCliHealth {
+  const status = typeof report.status === 'string' ? report.status : undefined
+  const healthScore = typeof report.health_score === 'number' ? report.health_score : undefined
+  const failedChecks = gbrainDoctorChecks(report)
+    .filter(check => check.status === 'fail')
+    .map(check => check.name)
+    .filter(Boolean)
+  if (status === 'healthy' || failedChecks.length === 0) {
+    return {
+      available: true,
+      degraded: false,
+      reason: 'gbrain doctor passed; graph-backed recall is available',
+      status,
+      healthScore,
+    }
+  }
+  return {
+    available: true,
+    degraded: true,
+    reason: `gbrain brain is reachable; non-recall doctor issue(s): ${failedChecks.slice(0, 3).join(', ')}`,
+    status,
+    healthScore,
+  }
+}
+
+interface GbrainDoctorReport {
+  status?: unknown
+  health_score?: unknown
+  checks?: unknown
+}
+
+interface GbrainDoctorCheck {
+  name: string
+  status: string
+  message?: string
+}
+
+function parseGbrainDoctorReport(output: string): GbrainDoctorReport | null {
+  const json = extractFirstJsonObject(output)
+  if (!json) return null
+  try {
+    const parsed = JSON.parse(json) as unknown
+    return isRecord(parsed) ? parsed as GbrainDoctorReport : null
+  } catch {
+    return null
+  }
+}
+
+function extractFirstJsonObject(output: string): string | null {
+  const start = output.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < output.length; index += 1) {
+    const char = output[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) return output.slice(start, index + 1)
+    }
+  }
+  return null
+}
+
+function gbrainCoreRecallReady(report: GbrainDoctorReport): boolean {
+  const connection = gbrainDoctorCheckStatus(report, 'connection')
+  const schema = gbrainDoctorCheckStatus(report, 'schema_version')
+  const brainScore = gbrainDoctorCheckStatus(report, 'brain_score')
+  return connection === 'ok' && (schema === 'ok' || brainScore === 'ok')
+}
+
+function gbrainDoctorCheckStatus(report: GbrainDoctorReport, name: string): string | undefined {
+  return gbrainDoctorChecks(report).find(check => check.name === name)?.status
+}
+
+function gbrainDoctorChecks(report: GbrainDoctorReport): GbrainDoctorCheck[] {
+  if (!Array.isArray(report.checks)) return []
+  return report.checks.filter(isRecord).map(check => ({
+    name: String(check.name ?? ''),
+    status: String(check.status ?? ''),
+    message: typeof check.message === 'string' ? check.message : undefined,
+  })).filter(check => check.name)
 }
 
 function providerStatusBase(provider: MemoryProviderConfig, routing: MemoryProviderRoutingConfig): Omit<MemoryProviderStatus, 'available' | 'reason'> {
@@ -576,18 +693,72 @@ function recallGbrainCli(
   input: MemoryProviderRecallInput,
   limit: number,
 ): MemoryProviderRecallItem[] {
-  const stdout = runExternalCommandSync('gbrain', ['query', input.query], {
-    encoding: 'utf-8',
-    timeout: 2_500,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...process.env,
-      GBRAIN_OUTPUT_MODE: process.env.GBRAIN_OUTPUT_MODE ?? 'json',
-    },
-  })
-  return parseGbrainResults(String(stdout))
+  const result = runGbrainCli(['query', input.query], 8_000)
+  const parsed = parseGbrainResults(result.stdout)
+  if (parsed.length === 0 && result.exitCode !== 0 && !result.timedOut) {
+    throw new Error(firstLine(result.stderr) || `gbrain query failed with exit code ${result.exitCode}`)
+  }
+  return parsed
     .slice(0, limit)
     .map((item, index) => externalToRecall('gbrain', item, index))
+}
+
+function runGbrainCli(args: string[], timeout: number): { stdout: string; stderr: string; exitCode: number; timedOut: boolean } {
+  const direct = resolveWindowsGbrainInvocation(args)
+  if (direct) {
+    const result = spawnSync(direct.command, direct.args, {
+      encoding: 'utf-8',
+      timeout,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      env: {
+        ...process.env,
+        GBRAIN_OUTPUT_MODE: process.env.GBRAIN_OUTPUT_MODE ?? 'json',
+      },
+    })
+    return {
+      stdout: String(result.stdout ?? ''),
+      stderr: `${String(result.stderr ?? '')}${result.error ? `\n${result.error.message}` : ''}`,
+      exitCode: typeof result.status === 'number' ? result.status : 1,
+      timedOut: /ETIMEDOUT/i.test(String(result.error?.message ?? '')),
+    }
+  }
+  try {
+    const stdout = runExternalCommandSync('gbrain', args, {
+      encoding: 'utf-8',
+      timeout,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        GBRAIN_OUTPUT_MODE: process.env.GBRAIN_OUTPUT_MODE ?? 'json',
+      },
+    })
+    return { stdout: String(stdout), stderr: '', exitCode: 0, timedOut: false }
+  } catch (error) {
+    const err = error as Error & { stdout?: string | Buffer | null; stderr?: string | Buffer | null; status?: number | null }
+    return {
+      stdout: String(err.stdout ?? ''),
+      stderr: `${String(err.stderr ?? '')}${err.message ? `\n${err.message}` : ''}`,
+      exitCode: typeof err.status === 'number' ? err.status : 1,
+      timedOut: /ETIMEDOUT/i.test(String(err.message ?? '')),
+    }
+  }
+}
+
+function resolveWindowsGbrainInvocation(args: string[]): { command: string; args: string[] } | null {
+  if (process.platform !== 'win32') return null
+  const gbrainShim = resolveExternalCommandPath('gbrain')
+  if (!gbrainShim || !/\.cmd$/i.test(gbrainShim) || !existsSync(gbrainShim)) return null
+  try {
+    const content = readFileSync(gbrainShim, 'utf8')
+    const cliPath = content.match(/"([^"]*gbrain[^"]*src[\\/]cli\.ts)"/i)?.[1]
+    const bunShim = resolveExternalCommandPath('bun')
+    const bunExe = bunShim ? join(dirname(bunShim), 'node_modules', 'bun', 'bin', 'bun.exe') : ''
+    if (cliPath && bunExe && existsSync(bunExe)) return { command: bunExe, args: [cliPath, ...args] }
+  } catch {
+    return null
+  }
+  return null
 }
 
 function parseGbrainResults(stdout: string): Array<Record<string, unknown>> {
@@ -612,6 +783,17 @@ function parseGbrainTextResults(stdout: string): Array<Record<string, unknown>> 
     if (ranked) {
       if (current) records.push(current)
       current = { title: ranked[2], summary: ranked[2] }
+      continue
+    }
+    const scored = line.match(/^\[(\d+(?:\.\d+)?)\]\s+(.+?)(?:\s+--\s+(.*))?$/)
+    if (scored) {
+      if (current) records.push(current)
+      current = {
+        title: scored[2],
+        summary: scored[3] ?? scored[2],
+        score: Number(scored[1]),
+        confidence: Number(scored[1]),
+      }
       continue
     }
     if (line.startsWith('- ') || line.startsWith('• ')) {

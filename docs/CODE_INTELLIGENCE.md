@@ -43,7 +43,7 @@ npm run smoke:graphify -- --large-project /path/to/large-project
 node scripts/workflow/provider-rehearsal.mjs --skip-gbrain --require-graphify --large-project /path/to/large-project
 ```
 
-The rehearsal executes `graphify extract` against the supplied project, locates the generated `graph.json`, parses graph stats, and runs `graphify query`. Use `--out <dir>` when you want to keep the generated graph for inspection. Do not commit generated `graphify-out/` artifacts by default; commit only reviewed knowledge summaries, docs, or rules derived from the graph.
+The rehearsal executes `graphify update <project> --no-cluster` by default so graph generation stays AST/Python based and does not call a model. It locates the generated `graph.json`, parses graph stats, and runs `graphify query`. Use `--semantic-extract` only when semantic LLM extraction is explicitly allowed. Do not commit generated `graphify-out/` artifacts by default; commit only reviewed knowledge summaries, docs, or rules derived from the graph.
 
 Create the optional provider configuration:
 

@@ -11,6 +11,7 @@ const options = parseArgs(process.argv.slice(2))
 const runId = `provider-rehearsal-${Date.now()}-${Math.random().toString(16).slice(2)}`
 const workRoot = options.outDir ? resolve(options.outDir) : join(tmpdir(), runId)
 const results = []
+const RTK_BYPASS_COMMANDS = new Set(['gbrain'])
 
 mkdirSync(workRoot, { recursive: true })
 
@@ -26,15 +27,19 @@ try {
 }
 
 function runGbrainReplay() {
-  const doctor = runCommand('gbrain-doctor', 'gbrain', ['doctor', '--json'], { timeoutMs: 30_000 })
-  if (doctor.exitCode !== 0) {
+  const healthCheck = runCommand('gbrain-health', 'gbrain', ['list', '-n', '1'], { timeoutMs: 60_000 })
+  const health = evaluateGbrainList(healthCheck)
+  if (!health.available) {
     return capability('gbrain', options.requireGbrain ? 'failed' : 'blocked', {
-      reason: failureLine(`${doctor.stdout}\n${doctor.stderr}`) || 'gbrain doctor failed',
+      reason: health.reason || failureLine(`${healthCheck.stdout}\n${healthCheck.stderr}`) || 'gbrain health check failed',
       required: options.requireGbrain,
-      commands: [doctor],
+      health,
+      commands: [healthCheck],
       nextCommands: [
+        'gbrain init --pglite --no-embedding',
         'gbrain init --supabase',
         'gbrain init --url <remote-gbrain-url>',
+        'gbrain list -n 1',
         'gbrain doctor --json',
         'npm run smoke:gbrain',
       ],
@@ -43,37 +48,48 @@ function runGbrainReplay() {
 
   const slug = `scale-rehearsal-${Date.now()}-${Math.random().toString(16).slice(2)}`
   const sentinel = `scale-engine-gbrain-replay-${Date.now()}-${Math.random().toString(16).slice(2)}`
-  const body = [
-    `# ${slug}`,
-    '',
-    `Sentinel: ${sentinel}`,
-    '',
-    'This page verifies that SCALE can write memory in one process and read/query it in later processes.',
-  ].join('\n')
+  const body = `# ${slug}. Sentinel: ${sentinel}. This page verifies that SCALE can write memory in one process and read/query it in later processes.`
 
-  const put = runCommand('gbrain-put', 'gbrain', ['put', slug], { input: body, timeoutMs: 60_000 })
-  const get = runCommand('gbrain-get', 'gbrain', ['get', slug], { timeoutMs: 60_000 })
-  const query = runCommand('gbrain-query', 'gbrain', ['query', sentinel], { timeoutMs: 60_000 })
-  const search = query.exitCode === 0 ? undefined : runCommand('gbrain-search', 'gbrain', ['search', sentinel], { timeoutMs: 60_000 })
+  const put = runCommand('gbrain-put', 'gbrain', ['put', slug, '--content', body], { timeoutMs: 60_000 })
+  const get = runCommand('gbrain-get', 'gbrain', ['get', slug], { timeoutMs: 8_000 })
+  const query = runCommand('gbrain-query', 'gbrain', ['query', sentinel], { timeoutMs: 8_000 })
+  const queryOutput = `${query.stdout}\n${query.stderr}`
+  const search = query.exitCode === 0 && (queryOutput.includes(sentinel) || queryOutput.includes(slug))
+    ? undefined
+    : runCommand('gbrain-search', 'gbrain', ['search', sentinel], { timeoutMs: 8_000 })
   const cleanup = options.keepGbrainPage ? undefined : runCommand('gbrain-delete', 'gbrain', ['delete', slug], { timeoutMs: 60_000 })
 
-  const recallOutput = `${query.stdout}\n${query.stderr}\n${search?.stdout ?? ''}\n${search?.stderr ?? ''}`
-  const replayPassed = put.exitCode === 0
-    && get.exitCode === 0
-    && get.stdout.includes(sentinel)
-    && (query.exitCode === 0 || search?.exitCode === 0)
+  const recallOutput = `${queryOutput}\n${search?.stdout ?? ''}\n${search?.stderr ?? ''}`
+  const getPassed = (get.exitCode === 0 || get.timedOut) && get.stdout.includes(sentinel)
+  const recallPassed = (query.exitCode === 0 || query.timedOut || search?.exitCode === 0 || search?.timedOut)
     && (recallOutput.includes(sentinel) || recallOutput.includes(slug))
+  const replayPassed = put.exitCode === 0
+    && getPassed
+    && recallPassed
 
   return capability('gbrain', replayPassed ? 'passed' : 'failed', {
     reason: replayPassed
-      ? 'remote gbrain write/get/query replay passed across separate CLI processes'
+      ? 'gbrain write/get/query replay passed across separate CLI processes'
       : 'gbrain was configured, but write/get/query replay did not prove recall',
     required: options.requireGbrain,
+    health,
     sentinel,
     slug,
-    commands: [doctor, put, get, query, search, cleanup].filter(Boolean),
+    commands: [healthCheck, put, get, query, search, cleanup].filter(Boolean),
     nextCommands: replayPassed ? [] : ['gbrain doctor --json', `gbrain get ${slug}`, `gbrain query ${sentinel}`],
   })
+}
+
+function evaluateGbrainList(command) {
+  const output = `${command.stdout}\n${command.stderr}`
+  if (/no brain configured/i.test(output)) {
+    return { available: false, degraded: false, reason: 'gbrain CLI is installed but no brain is configured' }
+  }
+  return {
+    available: command.exitCode === 0,
+    degraded: false,
+    reason: command.exitCode === 0 ? 'gbrain list passed; brain is reachable' : failureLine(output),
+  }
 }
 
 function runGraphifyRehearsal() {
@@ -91,24 +107,32 @@ function runGraphifyRehearsal() {
     })
   }
 
-  const graphOut = resolve(workRoot, 'graphify-out')
-  mkdirSync(graphOut, { recursive: true })
-  const extractArgs = ['extract', resolve(options.largeProject), '--out', graphOut]
-  if (options.graphifyBackend) extractArgs.push('--backend', options.graphifyBackend)
+  const projectPath = resolve(options.largeProject)
+  const graphOut = options.semanticExtract ? resolve(workRoot, 'graphify-out') : join(projectPath, 'graphify-out')
+  if (options.semanticExtract) mkdirSync(graphOut, { recursive: true })
+  const extractCommand = options.semanticExtract ? 'extract' : 'update'
+  const extractArgs = options.semanticExtract
+    ? ['extract', projectPath, '--out', graphOut]
+    : ['update', projectPath]
+  if (!options.semanticExtract) removeGeneratedGraphJson(graphOut)
+  if (options.semanticExtract && options.graphifyBackend) extractArgs.push('--backend', options.graphifyBackend)
   if (options.noCluster) extractArgs.push('--no-cluster')
-  if (options.globalExtract) extractArgs.push('--global')
+  if (options.semanticExtract && options.globalExtract) extractArgs.push('--global')
 
-  const extract = runCommand('graphify-extract', 'graphify', extractArgs, { timeoutMs: options.timeoutMs })
+  const extract = runCommand(`graphify-${extractCommand}`, 'graphify', extractArgs, {
+    timeoutMs: options.timeoutMs,
+    env: graphifyNoModelEnv(),
+  })
   if (extract.exitCode !== 0) {
     return capability('graphify', options.requireGraphify ? 'failed' : 'blocked', {
-      reason: failureLine(`${extract.stdout}\n${extract.stderr}`) || 'graphify extract failed',
+      reason: failureLine(`${extract.stdout}\n${extract.stderr}`) || `graphify ${extractCommand} failed`,
       required: options.requireGraphify,
       commands: [help, extract],
       nextCommands: [
         'graphify install --platform codex',
         'graphify hook status',
-        'Set one LLM key: GEMINI_API_KEY, GOOGLE_API_KEY, MOONSHOT_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY',
-        `graphify extract ${quoteArg(resolve(options.largeProject))} --out ${quoteArg(graphOut)} --no-cluster`,
+        `graphify update ${quoteArg(projectPath)} --no-cluster`,
+        'Use --semantic-extract only when semantic LLM extraction is explicitly allowed.',
       ],
     })
   }
@@ -116,7 +140,7 @@ function runGraphifyRehearsal() {
   const graphPath = findGraphJson(graphOut)
   if (!graphPath) {
     return capability('graphify', options.requireGraphify ? 'failed' : 'blocked', {
-      reason: `graphify extract completed but graph.json was not found under ${graphOut}`,
+      reason: `graphify ${extractCommand} completed but graph.json was not found under ${graphOut}`,
       required: options.requireGraphify,
       commands: [help, extract],
       nextCommands: [`Get-ChildItem -Recurse ${quoteArg(graphOut)}`],
@@ -129,19 +153,26 @@ function runGraphifyRehearsal() {
     options.graphifyQuestion,
     '--graph',
     graphPath,
-  ], { timeoutMs: 120_000 })
-  const benchmark = runCommand('graphify-benchmark', 'graphify', ['benchmark', graphPath], { timeoutMs: 120_000 })
+  ], { timeoutMs: 120_000, env: graphifyNoModelEnv() })
+  const benchmark = runCommand('graphify-benchmark', 'graphify', ['benchmark', graphPath], {
+    timeoutMs: 120_000,
+    env: graphifyNoModelEnv(),
+  })
   const globalAdd = options.globalAdd
-    ? runCommand('graphify-global-add', 'graphify', ['global', 'add', graphPath, '--as', options.globalTag], { timeoutMs: 120_000 })
+    ? runCommand('graphify-global-add', 'graphify', ['global', 'add', graphPath, '--as', options.globalTag], {
+        timeoutMs: 120_000,
+        env: graphifyNoModelEnv(),
+      })
     : undefined
 
   const passed = stats.ok && query.exitCode === 0
   return capability('graphify', passed ? 'passed' : options.requireGraphify ? 'failed' : 'blocked', {
     reason: passed
-      ? 'graphify extracted a real project graph and answered a graph query'
+      ? `graphify ${extractCommand} built a real project graph and answered a graph query`
       : 'graphify generated an artifact but graph stats or query validation failed',
     required: options.requireGraphify,
-    project: resolve(options.largeProject),
+    project: projectPath,
+    mode: options.semanticExtract ? 'semantic-extract' : 'ast-update-no-llm',
     graphPath,
     stats,
     commands: [help, extract, query, benchmark, globalAdd].filter(Boolean),
@@ -237,7 +268,7 @@ function runCommand(name, command, args, opts = {}) {
   if (options.verbose) process.stderr.write(`[RUN] ${commandLine}\n`)
   const result = spawnStructured(invocation.command, invocation.args, {
     cwd: repoRoot,
-    env: process.env,
+    env: opts.env ?? process.env,
     input: opts.input,
     encoding: 'utf8',
     timeout: opts.timeoutMs ?? options.timeoutMs,
@@ -246,11 +277,13 @@ function runCommand(name, command, args, opts = {}) {
   const stdout = String(result.stdout ?? '')
   const stderr = String(result.stderr ?? '') + (result.error ? `\n${result.error.message}` : '')
   const exitCode = typeof result.status === 'number' ? result.status : 1
+  const timedOut = /ETIMEDOUT/i.test(String(result.error?.message ?? ''))
   const entry = {
     name,
     command: commandLine,
     wrappedByRtk: invocation.wrapped,
     exitCode,
+    timedOut,
     startedAt,
     endedAt: new Date().toISOString(),
     stdoutTail: tail(stdout),
@@ -260,16 +293,49 @@ function runCommand(name, command, args, opts = {}) {
   return { ...entry, stdout, stderr }
 }
 
+function graphifyNoModelEnv() {
+  const env = { ...process.env }
+  for (const key of [
+    'GEMINI_API_KEY',
+    'GOOGLE_API_KEY',
+    'MOONSHOT_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'OPENAI_API_KEY',
+    'DEEPSEEK_API_KEY',
+    'KIMI_API_KEY',
+  ]) {
+    delete env[key]
+  }
+  return env
+}
+
+function removeGeneratedGraphJson(graphOut) {
+  const outputDir = resolve(graphOut)
+  if (outputDir.split(/[\\/]/).at(-1) !== 'graphify-out') {
+    throw new Error(`Refusing to clean graphify output outside a graphify-out directory: ${outputDir}`)
+  }
+  rmSync(join(outputDir, 'graph.json'), { force: true })
+}
+
 function wrapWithRtk(command, args) {
+  if (RTK_BYPASS_COMMANDS.has(command)) return { command, args, wrapped: false }
   if (!options.useRtk || command === 'rtk' || !commandExists('rtk')) return { command, args, wrapped: false }
   return { command: 'rtk', args: [command, ...args], wrapped: true }
 }
 
 function spawnStructured(command, args, options) {
+  const direct = resolveDirectWindowsInvocation(command, args)
+  if (direct) {
+    return spawnSync(direct.command, direct.args, {
+      ...options,
+      shell: false,
+      windowsHide: true,
+    })
+  }
   const resolved = resolveWindowsCommandShim(resolveCommandPath(command) ?? command)
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolved)) {
-    const comspec = process.env.ComSpec || 'cmd.exe'
-    return spawnSync(comspec, ['/d', '/c', 'call', resolved, ...args], {
+    const commandLine = ['&', powershellQuote(resolved), ...args.map(powershellQuote)].join(' ')
+    return spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', commandLine], {
       ...options,
       shell: false,
       windowsHide: true,
@@ -280,6 +346,24 @@ function spawnStructured(command, args, options) {
     shell: false,
     windowsHide: true,
   })
+}
+
+function resolveDirectWindowsInvocation(command, args) {
+  if (process.platform !== 'win32' || command !== 'gbrain') return null
+  const gbrainShim = resolveCommandPath('gbrain')
+  if (!gbrainShim || !/\.cmd$/i.test(gbrainShim) || !existsSync(gbrainShim)) return null
+  try {
+    const content = readFileSync(gbrainShim, 'utf8')
+    const cliPath = content.match(/"([^"]*gbrain[^"]*src[\\/]cli\.ts)"/i)?.[1]
+    const bunShim = resolveCommandPath('bun')
+    const bunExe = bunShim ? join(dirname(bunShim), 'node_modules', 'bun', 'bin', 'bun.exe') : ''
+    if (cliPath && bunExe && existsSync(bunExe)) {
+      return { command: bunExe, args: [cliPath, ...args] }
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 function resolveWindowsCommandShim(command) {
@@ -322,6 +406,7 @@ function parseArgs(args) {
     verbose: false,
     useRtk: true,
     noCluster: true,
+    semanticExtract: false,
     globalExtract: false,
     globalAdd: false,
     globalTag: 'scale-engine-rehearsal',
@@ -344,6 +429,7 @@ function parseArgs(args) {
     else if (arg === '--verbose') parsed.verbose = true
     else if (arg === '--no-rtk') parsed.useRtk = false
     else if (arg === '--cluster') parsed.noCluster = false
+    else if (arg === '--semantic-extract') parsed.semanticExtract = true
     else if (arg === '--global') parsed.globalExtract = true
     else if (arg === '--global-add') parsed.globalAdd = true
     else if (arg === '--global-tag') parsed.globalTag = requireValue(args, ++index, arg)
@@ -389,9 +475,10 @@ Options:
   --out PATH             Output directory for temporary graphify artifacts
   --keep-output          Keep temporary output when --out is not supplied
   --keep-gbrain-page     Do not delete the temporary gbrain page
-  --graphify-backend ID  Pass --backend to graphify extract
-  --graphify-question Q  Query to ask graphify after extraction
-  --global               Pass --global to graphify extract
+  --semantic-extract     Use graphify extract, which may call an LLM; default is graphify update with no LLM
+  --graphify-backend ID  Pass --backend to graphify extract only with --semantic-extract
+  --graphify-question Q  Query to ask graphify after graph generation
+  --global               Pass --global to graphify extract only with --semantic-extract
   --global-add           Add generated graph to graphify global store
   --global-tag TAG       Tag for --global-add, default scale-engine-rehearsal
   --write-report         Write JSON report to .scale/reports
@@ -418,6 +505,10 @@ function quoteArg(value) {
   const raw = String(value)
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(raw)) return raw
   return `"${raw.replace(/(["\\$`])/g, '\\$1')}"`
+}
+
+function powershellQuote(value) {
+  return `'${String(value).replace(/'/g, "''")}'`
 }
 
 function tail(value, max = 4000) {

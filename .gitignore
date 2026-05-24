@@ -6,6 +6,10 @@ docs/promote-article-*.html
 .scale/knowledge.db*
 .scale/events/
 .scale/evidence/
+.scale/ai-os/
+.scale/memory/
+graphify-out/
+**/graphify-out/
 .scale/reports/
 .scale/resource-reports/
 .scale/backups/

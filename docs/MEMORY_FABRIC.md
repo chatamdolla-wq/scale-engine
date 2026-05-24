@@ -129,7 +129,7 @@ scale ai-os plan --task "Fix OAuth callback Redis state" --files src/auth/oauth.
 
 Provider rules:
 
-- `gbrain` is the default external-first provider. SCALE now treats CLI existence as insufficient: `scale memory provider status --json` requires `gbrain doctor --json` to pass before marking it available. If the CLI exists but no brain is configured, the status remains unavailable and points to `gbrain init --pglite`.
+- `gbrain` is the default external-first provider. SCALE treats CLI existence as insufficient: `scale memory provider status --json` requires a configured brain with working connection/schema checks before marking it available. Full `gbrain doctor --json` warnings that are unrelated to recall, such as local skill resolver issues, are reported as degraded health but do not block read-only recall. If the CLI exists but no brain is configured, the status remains unavailable and points to `gbrain init --pglite`.
 - The preferred remote production path is the official thin-client flow: run `gbrain serve --http` on the host, then configure the local CLI with `gbrain init --mcp-only` so SCALE can keep calling `gbrain query` through the thin client instead of inventing a separate ad-hoc REST contract.
 - `agentmemory` remains optional and can be added as a second provider when teams want cross-agent shared memory.
 - `memory provider use <id>` is the fast path for switching the default route without hand-editing `.scale/memory-providers.json`.

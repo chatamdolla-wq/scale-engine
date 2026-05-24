@@ -78,7 +78,7 @@ scale setup --pack memory --memory-provider gbrain --memory-mode external-first 
 | `ui-ux-pro-max` | UX、状态、可访问性、响应式验收 | 是否通过官方 `uipro-cli` 安装 |
 | `frontend-design` | 可选实现灵感，不再是 UI 默认必装项 | 需要时显式 `--include frontend-design` |
 | `rtk` | CLI proxy/token 节省能力 | `rtk gain` 和 `rtk init -g --codex` |
-| `gbrain` | 默认记忆供应商 | `gbrain doctor --json`，未初始化会提示 `gbrain init --pglite` |
+| `gbrain` | 默认记忆供应商 | 检查 brain 是否已配置且连接/schema 可用，未初始化会提示 `gbrain init --pglite` |
 | `graphify` | 知识图谱产物供应商 | `graphify install --platform codex` 和 `graphify-out/graph.json` |
 | `codegraph` | 代码结构索引供应商 | `codegraph init -i` 和 `.codegraph/` |
 
@@ -114,8 +114,8 @@ npm run smoke:graphify -- --large-project /path/to/large-project
 
 验证语义：
 
-- `smoke:gbrain` 会先执行真实 `gbrain doctor --json`，通过后写入一个临时记忆页，再用独立 CLI 进程 `get/query/search` 回放，证明不是本地 mock。
-- `smoke:graphify` 会对真实项目执行 `graphify extract ... --out <temp>/graphify-out --no-cluster`，检查 `graph.json`，再执行 `graphify query`。
+- `smoke:gbrain` 会先确认 gbrain 已配置且召回关键健康检查可用，通过后写入一个临时记忆页，再用独立 CLI 进程 `get/query/search` 回放，证明不是本地 mock。
+- `smoke:graphify` 默认对真实项目执行 `graphify update <project> --no-cluster`，走 AST/Python 无模型路径，检查 `graph.json`，再执行 `graphify query`；只有显式 `--semantic-extract` 才允许语义模型提取。
 - `graphify-out/` 是生成产物，不应该提交到 Git；长期知识沉淀应进入经过评审的 `memory/`、docs 或规则文件。
 
 ## 5. 建立任务上下文

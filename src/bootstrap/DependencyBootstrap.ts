@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { execa, execaSync } from 'execa'
 import { inspectCodeIntelligence, writeCodeIntelligenceConfig } from '../codegraph/CodeIntelligence.js'
 import { externalCommandExists } from '../core/ExternalCommand.js'
-import { inspectMemoryProviders, useMemoryProvider, writeMemoryProvidersConfig } from '../memory/MemoryProviders.js'
+import { inspectGbrainCliHealth, inspectMemoryProviders, useMemoryProvider, writeMemoryProvidersConfig } from '../memory/MemoryProviders.js'
 import { wrapShellCommandWithRtk } from '../tools/RtkRuntime.js'
 import { inspectToolCapabilities } from '../tools/ToolCapabilityRegistry.js'
 
@@ -781,15 +781,22 @@ function checkRtkHealth(): DependencyBootstrapHealth {
 }
 
 function checkGbrainHealth(): DependencyBootstrapHealth {
-  const doctor = runHealthCommand('gbrain', ['doctor', '--json'], 10_000)
-  if (doctor.ok) return { status: 'ok', reason: 'gbrain doctor passed; provider can be used for default memory routing.' }
-  const output = `${doctor.stdout}\n${doctor.stderr}`
+  const health = inspectGbrainCliHealth()
+  if (health.available) {
+    return {
+      status: health.degraded ? 'warn' : 'ok',
+      bootstrapStatus: health.degraded ? 'manual-review' : undefined,
+      reason: health.degraded
+        ? `${health.reason}; provider can still be used for read-only recall.`
+        : 'gbrain doctor passed; provider can be used for default memory routing.',
+    }
+  }
   return {
     status: 'warn',
     bootstrapStatus: 'needs-init',
-    reason: /no brain configured/i.test(output)
+    reason: /no brain configured/i.test(health.reason)
       ? 'gbrain CLI is installed but no brain is configured yet; cross-session recall will fail until initialized.'
-      : `gbrain CLI is installed but doctor failed: ${firstLine(output)}`,
+      : health.reason,
     nextCommands: ['gbrain init --pglite', 'gbrain doctor --json', 'scale memory provider status --json'],
   }
 }

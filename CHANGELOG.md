@@ -1,3 +1,24 @@
+## 0.40.0 - 2026-05-24
+
+### AI OS Runtime
+
+- Added the MapleOS HTTP bridge surface for external AI OS integration.
+- Hardened gbrain as the default memory provider with recall-ready degraded health handling, Windows CLI resolution, timeout-after-output parsing, and provider status coverage.
+- Isolated AI OS CLI tests from real external memory providers by using test-scoped provider configuration.
+
+### Knowledge Graph
+
+- Switched graphify provider rehearsal to the no-model Python AST path (`graphify update --no-cluster`) by default.
+- Added graph cleanup before graphify rehearsals so repeated runs do not accumulate duplicate generated edges.
+- Documented graphify/codegraph behavior and generated-artifact boundaries for real-project knowledge graph use.
+
+### Verification
+
+- Added memory provider tests for gbrain health routing, unavailable brain handling, provider status, and timeout-tolerant recall parsing.
+- Expanded provider rehearsal documentation and quickstart guidance for gbrain and graphify workflows.
+
+---
+
 ## 0.39.0 - 2026-05-24
 
 ### Prompt Optimization

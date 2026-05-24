@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { SCALE_ENGINE_VERSION } from '../../src/version.js'
+import { defaultMemoryProvidersConfig } from '../../src/memory/MemoryProviders.js'
 
 let dirs: string[] = []
 
@@ -19,6 +20,7 @@ function makeDir(prefix: string): string {
 }
 
 async function runScale(args: string[], scaleDir: string, projectDir: string) {
+  writeTestMemoryProviderConfig(scaleDir)
   return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
     env: {
       ...process.env,
@@ -28,6 +30,15 @@ async function runScale(args: string[], scaleDir: string, projectDir: string) {
     },
     reject: false,
   })
+}
+
+function writeTestMemoryProviderConfig(scaleDir: string): void {
+  const config = defaultMemoryProvidersConfig()
+  config.providers = config.providers.map(provider => ({
+    ...provider,
+    enabled: provider.kind === 'scale-local',
+  }))
+  writeFileSync(join(scaleDir, 'memory-providers.json'), JSON.stringify(config, null, 2), 'utf-8')
 }
 
 function parseJson<T>(stdout: string): T {
