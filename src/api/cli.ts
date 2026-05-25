@@ -89,6 +89,9 @@ import { qaCommand } from '../cli/qaCommands.js'
 import { autofixCommand } from '../cli/autofixCommands.js'
 import { costReportCommand, costOptimizeCommand } from '../cli/costCommands.js'
 import { reviewCommand as crossReviewCommand } from '../review/reviewCommands.js'
+import { shieldCommand } from '../cli/shieldCommands.js'
+import { orchCommand } from '../cli/orchCommands.js'
+import { cortexCommand } from '../cli/cortexCommands.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import {
   getBootstrapPlanForProfile,
@@ -6777,6 +6780,9 @@ const main = defineCommand({
     'cost-report': costReportCommand,
     'cost-optimize': costOptimizeCommand,
     'cross-review': crossReviewCommand,
+    shield: shieldCommand,
+    orch: orchCommand,
+    cortex: cortexCommand,
   },
 })
 
