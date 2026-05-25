@@ -58,6 +58,25 @@ npm run release:check
 scale doctor env --json
 ```
 
+## SCALE 2.0 引擎开发
+
+三引擎开发时的常用命令：
+
+```bash
+# Shield: 编译策略 → hook 脚本
+scale shield compile
+scale shield test
+
+# Orchestrator: 启动编排 daemon (开发调试)
+scale orch start
+scale orch status
+scale orch stop
+
+# Cortex: 从失败日志提取学习
+scale cortex extract
+scale cortex inject --minimal
+```
+
 ## 你应该看到什么
 
 - `.scale/workspace.json` 明确了 `dev -> master` 的仓库分支策略。

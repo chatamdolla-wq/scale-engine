@@ -24,6 +24,9 @@
 
 | 文档 | 说明 |
 | --- | --- |
+| [SHIELD.md](SHIELD.md) | **Scale Shield** — 退出码钩子拦截引擎，YAML 策略编译，40+ 危险命令阻断 |
+| [ORCHESTRATOR.md](ORCHESTRATOR.md) | **Scale Orchestrator** — 声明式编排守护进程，git worktree 隔离，协调循环 |
+| [CORTEX.md](CORTEX.md) | **Scale Cortex** — 证据驱动持续进化，Instincts 提取，SessionStart 注入，治理 ROI |
 | [RESOURCE_GOVERNANCE.md](RESOURCE_GOVERNANCE.md) | 文档、报告、媒体、脚本、临时产物的生命周期治理 |
 | [ENGINEERING_STANDARDS.md](ENGINEERING_STANDARDS.md) | 日志、安全、ORM、框架、测试、部署等工程规范 |
 | [BACKGROUND_HUNTER.md](BACKGROUND_HUNTER.md) | Background Hunter 只读主动巡检、诊断交接和 ignore baseline |

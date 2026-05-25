@@ -23,6 +23,25 @@ scale score task --changed --json
 scale prompt optimize --input "raw coding request" --json
 ```
 
+### SCALE 2.0 引擎命令
+
+```bash
+# Scale Shield — 钩子拦截
+scale shield compile          # 编译策略 + 安装 hook
+scale shield status           # 验证 hook 注册 + .scale/ 完整性
+scale shield test             # 运行 allow/block 测试
+
+# Scale Orchestrator — 编排守护进程
+scale orch start              # 启动 daemon
+scale orch status             # 查看状态 + workspace 列表
+
+# Scale Cortex — 持续进化
+scale cortex evolve           # 完整进化周期
+scale cortex extract          # 提取 Instincts
+scale cortex inject --minimal # 预览 SessionStart 注入
+scale cortex metrics --days 30 # 治理 ROI 报告
+```
+
 PowerShell:
 
 ```powershell

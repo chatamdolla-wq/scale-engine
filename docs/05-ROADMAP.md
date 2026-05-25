@@ -454,6 +454,24 @@ W12 末: v0.1 全功能验收 ★★★★★
 
 ---
 
+## v0.42.0 — SCALE 2.0 三引擎架构 ✅
+
+**已交付 (2026-05-25)**
+
+三引擎架构对齐业界前沿项目核心模式：
+
+| 引擎 | 对标 | 交付物 |
+|------|------|--------|
+| **Scale Shield** | agent-hooks-in-depth 退出码阻断 | PolicyCompiler, ShieldProtocol (exit 0/2), ProtectedPaths (40+ 命令), `.hook-state/` 跨 hook 共享, CLI: `scale shield compile/status/test` |
+| **Scale Orchestrator** | Symphony WORKFLOW.md 声明式编排 | SCALE_POLICY.md 解析器, OrchestratorDaemon, WorkspaceManager (git worktree), ReconciliationLoop, TrackerAdapter (GitHub/Mock), CLI: `scale orch start/stop/status/log` |
+| **Scale Cortex** | ECC Instincts 持续学习 | InstinctExtractor (0.3-0.9 置信度), InstinctStore (YAML 存储), ReflexionEngine (本地 LLM 反思), SessionInjector (SessionStart 注入), GovernanceMetrics (ROI), 4 harness adapters, CLI: `scale cortex extract/inject/metrics/evolve` |
+
+**验证状态**: TypeScript 零错误, 8/8 新模块测试通过, 23 文件 +4574 行提交, 已发布 GitHub + Gitee。
+
+---
+
+## 之后
+
 ## v0.2 与之后
 
 v0.1 ready 后再考虑：

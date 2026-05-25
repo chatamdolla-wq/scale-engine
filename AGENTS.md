@@ -35,6 +35,26 @@ make workflow-aios-adopt
 make setup-smoke
 ```
 
+## SCALE 2.0 三引擎命令
+
+```bash
+# Scale Shield — 钩子拦截引擎
+scale shield compile          # 编译 .scale/policy.yaml → hook 脚本
+scale shield status           # 验证 hook 注册 + .scale/ 完整性
+scale shield test             # 运行 18 个 allow/block 测试用例
+
+# Scale Orchestrator — 声明式编排守护进程
+scale orch start              # 启动 orchestration daemon
+scale orch stop               # 停止 daemon
+scale orch status             # 查看 daemon 状态 + workspace 列表
+
+# Scale Cortex — 证据驱动持续进化
+scale cortex evolve           # 完整进化周期: 观察→反思→提取→保存
+scale cortex extract          # 从观察日志中提取 Instincts
+scale cortex inject --minimal # 预览 SessionStart 注入内容
+scale cortex metrics --days 30 # 治理 ROI 报告
+```
+
 PowerShell:
 
 ```powershell

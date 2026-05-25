@@ -64,6 +64,23 @@ scale preflight --profile china-local
 | `go-service-matrix` | Go 多服务 |
 | `moe-workspace` | 多仓库工作空间 |
 
+## SCALE 2.0 三引擎快速体验
+
+```bash
+# Scale Shield — 编译策略并安装 hook 拦截
+scale shield compile
+scale shield status
+
+# Scale Cortex — 从治理日志中提取学习本能
+scale cortex extract --min-confidence 0.5
+scale cortex inject --minimal
+scale cortex metrics --days 30
+
+# Scale Orchestrator — 启动声明式编排守护进程
+scale orch start
+scale orch status
+```
+
 ## 下一步
 
 ```bash

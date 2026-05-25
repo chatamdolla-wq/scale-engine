@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.38.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.42.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.38.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.42.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
 [![RepoStars](https://repostars.dev/api/embed?repo=hongmaple0820%2Fscale-engine&theme=copper)](https://repostars.dev/?repos=hongmaple0820%2Fscale-engine&theme=copper)
@@ -114,6 +114,34 @@ scale doctor env --json
 | **Role Skills** | 6 个角色化审查视角（eng-manager、security-reviewer、qa-lead 等） |
 | **Memory Intelligence** | 6 信号质量评分，跨 provider 冲突检测，新鲜度衰减 |
 | **Governance ROI** | 端到端治理 ROI 度量 — token 成本 vs 质量 vs 门禁摩擦 |
+| **Scale Shield** | 退出码钩子拦截引擎 — YAML 策略 → hook 脚本编译，40+ 危险命令阻断，退出码协议 |
+| **Scale Orchestrator** | 声明式编排守护进程 — SCALE_POLICY.md 策略驱动，git worktree 隔离，协调循环 |
+| **Scale Cortex** | 证据驱动持续进化 — 本能提取 (Instincts 0.3-0.9)，SessionStart 注入，跨 harness 适配器 |
+
+## SCALE 2.0 三引擎架构
+
+SCALE 2.0 引入三层引擎，对齐业界前沿项目的核心模式：
+
+| 引擎 | 对标项目 | 核心能力 |
+|------|---------|---------|
+| **Scale Shield** | agent-hooks-in-depth | 退出码阻断 (exit 0/2)、stdin/stdout JSON 协议、40+ 危险命令拦截、`.scale/` 完整性保护 |
+| **Scale Orchestrator** | Symphony WORKFLOW.md | 声明式策略驱动、git worktree 隔离、协调循环、多轮 Worker |
+| **Scale Cortex** | ECC Instincts | 观察→模式→本能提取 (置信度 0.3-0.9)、SessionStart 注入、跨 harness (Claude/Codex/Cursor/Gemini) |
+
+```bash
+# Shield: 编译策略并安装 hook
+scale shield compile
+scale shield status
+
+# Orchestrator: 启动声明式编排守护进程
+scale orch start
+scale orch status
+
+# Cortex: 从失败中学习
+scale cortex evolve
+scale cortex metrics --days 30
+scale cortex inject --minimal
+```
 
 ## AI OS Runtime
 

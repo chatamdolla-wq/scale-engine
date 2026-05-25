@@ -35,7 +35,86 @@
 
 ---
 
-## 二、六层架构详解
+## 二、SCALE 2.0 三引擎架构
+
+v0.42.0 引入三引擎架构，在六层基础之上增加三个专用引擎，各司其职：
+
+```
+┌─────────────────────────────────────────────────┐
+│                  Scale Cortex                     │
+│         (证据驱动持续进化 / 跨 harness)            │
+│   Instincts → SessionStart 注入 → 治理 ROI        │
+├─────────────────────────────────────────────────┤
+│               Scale Orchestrator                  │
+│        (声明式编排 / git worktree 隔离)            │
+│   SCALE_POLICY.md → Daemon → Reconciliation Loop  │
+├─────────────────────────────────────────────────┤
+│                 Scale Shield                      │
+│          (退出码钩子拦截 / 零信任阻断)             │
+│   YAML 策略 → Hook 脚本 → exit 0/2 协议           │
+└─────────────────────────────────────────────────┘
+```
+
+### Engine 1: Scale Shield — 钩子确定性拦截
+
+**对标**: agent-hooks-in-depth 退出码阻断模式
+
+**职责**: 在任何 AI 工具调用前执行确定性拦截。不可绕过，不可协商。
+
+**核心机制**:
+- **退出码协议**: exit 0 = 允许, exit 2 = 阻断 (带 stderr 原因)
+- **stdin/stdout JSON**: `{session_id, cwd, tool_name, tool_input}` → `{decision, reason}`
+- **策略编译器**: `.scale/policy.yaml` (人类可读) → 运行时 hook 脚本 (注入到 Claude/Codex/Cursor settings.json)
+- **受保护断言**: `.scale/` 目录完整性、门禁通过链、命令阻断表 (40+ 危险命令)
+- **跨 Hook 状态共享**: `.hook-state/` 目录，文件系统为管道
+
+**涉及模块**: `src/shield/PolicyCompiler.ts`, `src/shield/ShieldProtocol.ts`, `src/shield/ProtectedPaths.ts`
+
+### Engine 2: Scale Orchestrator — 声明式编排守护进程
+
+**对标**: Symphony WORKFLOW.md 协调循环模式
+
+**职责**: 声明式策略驱动的自治多仓库工作循环。
+
+**核心机制**:
+- **声明式策略**: `SCALE_POLICY.md` (YAML frontmatter + Markdown body)，6-key schema (tracker/polling/workspace/hooks/agent/codex)
+- **协调循环**: Poll(IssueTracker) → Filter(active candidates) → Isolate(git worktree) → Dispatch(agent) → Reconcile(state) → Notify
+- **Git Worktree 隔离**: 3 安全不变量 (workspace⊆root, sanitized name, agent cwd⊆workspace)
+- **状态机**: Unclaimed → Claimed → Running → RetryQueued → Released
+- **启动恢复**: 无持久化 orchestrator 状态，从 tracker 重新拉取
+
+**涉及模块**: `src/orchestrator/OrchestratorDaemon.ts`, `src/orchestrator/PolicyLoader.ts`, `src/orchestrator/WorkspaceManager.ts`, `src/orchestrator/ReconciliationLoop.ts`, `src/orchestrator/TrackerAdapter.ts`
+
+### Engine 3: Scale Cortex — 证据驱动持续进化
+
+**对标**: ECC Instincts 持续学习模式
+
+**职责**: 从每一次失败中学习，持续进化治理规则。
+
+**核心机制**:
+- **Instinct 提取管线**: Observation Log → Pattern Detection → Instinct Creation
+- **置信度评分**: 0.3 tentative (首次), 0.5 moderate (2+次), 0.7 strong (5+次, 自动注入), 0.9 near-certain (10+次)
+- **SessionStart 注入**: 高置信度 Instincts + 前次会话摘要 (含过时回放保护)
+- **跨 Harness 适配器**: Claude Code / Codex / Cursor / Gemini CLI 统一 stdin 格式
+- **治理 ROI 度量**: 门禁通过率、Instinct 命中率、成本节省、自动修复成功率
+
+**涉及模块**: `src/cortex/InstinctExtractor.ts`, `src/cortex/InstinctStore.ts`, `src/cortex/ReflexionEngine.ts`, `src/cortex/SessionInjector.ts`, `src/cortex/GovernanceMetrics.ts`, `src/cortex/adapters/`
+
+### 三引擎集成
+
+```
+Scale Shield (实时阻断)
+    ↓ 证据推送
+Scale Cortex (学习改进)
+    ↓ 本能注入
+Scale Orchestrator (自治循环)
+    ↓ 状态回流
+Scale Shield (策略更新)
+```
+
+---
+
+## 三、六层架构详解
 
 ### L1 — Context Layer（上下文层）
 
@@ -186,7 +265,7 @@ HookGenerator      (从 Rule 自动生成 Hook 脚本)
 
 ---
 
-## 三、控制流（一个完整请求的生命周期）
+## 四、控制流（一个完整请求的生命周期）
 
 以"用户让 Claude Code 写一个新 API"为例：
 
@@ -224,7 +303,7 @@ HookGenerator      (从 Rule 自动生成 Hook 脚本)
 
 ---
 
-## 四、依赖关系（避免循环依赖）
+## 五、依赖关系（避免循环依赖）
 
 ```
 api/         -> orchestration, memory, observability, guardrails, context
@@ -241,7 +320,7 @@ core/        -> (没有依赖)
 
 ---
 
-## 五、关键非功能需求
+## 六、关键非功能需求
 
 | NFR | 目标 | 措施 |
 |-----|------|------|
@@ -255,7 +334,7 @@ core/        -> (没有依赖)
 
 ---
 
-## 六、设计权衡（明确取舍）
+## 七、设计权衡（明确取舍）
 
 | 选择 | 取 | 舍 |
 |-----|----|----|

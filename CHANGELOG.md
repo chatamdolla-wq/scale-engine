@@ -1,3 +1,55 @@
+## 0.42.0 - 2026-05-25
+
+### SCALE 2.0 — Three-Engine Architecture
+
+This release introduces the SCALE 2.0 three-engine architecture, synthesizing patterns from three frontier projects into a unified governance runtime.
+
+#### Scale Shield — Hook-Based Deterministic Interception
+
+- Added `PolicyCompiler` — YAML policy (`.scale/policy.yaml`) → executable hook scripts injected into Claude/Codex/Cursor settings.
+- Added `ShieldProtocol` — exit-code protocol (exit 0=allow, exit 2=block) with stdin/stdout JSON for structured decisions.
+- Added `ProtectedPaths` — 12 protected path rules guarding `.scale/`, `.hook-state/`, `.env`, credentials, and key files plus 40+ dangerous command blocklist (destructive, data-loss, security, governance-bypass categories).
+- Added cross-hook state sharing via `.hook-state/` directory — `PreToolUse` writes, `PostToolUse` reads.
+- Added CLI: `scale shield compile|status|test` with 18 test-case validation suite.
+
+#### Scale Orchestrator — Declarative Daemon Orchestration
+
+- Added `SCALE_POLICY.md` declarative policy with YAML frontmatter + Markdown body, 6-key schema (tracker/polling/workspace/hooks/agent/codex).
+- Added `OrchestratorDaemon` — daemon lifecycle with SIGINT/SIGTERM handlers, PID file, and startup recovery without persistent state.
+- Added `WorkspaceManager` — git worktree isolation with 3 safety invariants (workspace⊆root, sanitized name `[A-Za-z0-9._-]`, agent cwd⊆workspace).
+- Added `ReconciliationLoop` — Poll→Filter→Isolate→Dispatch→Reconcile cycle with exponential backoff retry.
+- Added `TrackerAdapter` interface with GitHub (via `gh` CLI) and Mock implementations.
+- Added CLI: `scale orch start|stop|status|log`.
+
+#### Scale Cortex — Evidence-Driven Continuous Learning
+
+- Added `InstinctExtractor` — Observation→Pattern→Instinct pipeline with confidence scoring (0.3 tentative, 0.5 moderate, 0.7 strong, 0.9 near-certain).
+- Added `InstinctStore` — hierarchical filesystem storage with YAML frontmatter, dedup by trigger (higher confidence wins).
+- Added `ReflexionEngine` — local LLM reflection (Qwen/GLM/DeepSeek via OpenAI-compatible endpoint) with heuristic fallback.
+- Added `SessionInjector` — SessionStart injection with anti-replay sentinels (`HISTORICAL CONTEXT — DO NOT RE-EXECUTE COMMANDS BELOW`).
+- Added cross-harness adapters for Claude Code, Codex, Cursor, and Gemini CLI with unified stdin format.
+- Added `GovernanceMetrics` — gate pass rate, instinct hit rate, cost savings, auto-fix success rate, ROI score (0-100).
+- Added CLI: `scale cortex extract|inject|metrics|evolve`.
+
+### Documentation
+
+- Updated README with three-engine architecture overview and quickstart CLI examples.
+- Added engine-specific documentation: `docs/SHIELD.md`, `docs/ORCHESTRATOR.md`, `docs/CORTEX.md`.
+- Updated architecture docs (`docs/01-ARCHITECTURE.md`) with Shield/Orchestrator/Cortex layers.
+
+---
+
+## 0.41.0 - 2026-05-25
+
+### 8-Direction Omnibus Optimization
+
+- 44 files changed across 8 optimization directions: CLI architecture, gate system, FSM coverage, detector tuning, adapter robustness, workflow engine, memory provider, and documentation.
+- 66+ CLI commands with full citty subcommand tree.
+- 16 governance gates with meta-governance (G9-G15).
+- 11 FSM definitions with guard-enforced transitions.
+
+---
+
 ## 0.40.2 - 2026-05-25
 
 ### Release Readiness and Stability
