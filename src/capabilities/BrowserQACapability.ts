@@ -3,6 +3,7 @@
 // 设计参考：docs/03-CORE-MODULES.md §3.5 + Playwright MCP 工具
 
 import type { IEventBus } from '../core/eventBus.js'
+import { logger } from '../core/logger.js'
 
 /**
  * 用户流程定义
@@ -35,6 +36,17 @@ export interface QAResult {
   screenshots: string[] // Paths to saved screenshots
   accessibilityIssues?: AccessibilityIssue[]
   performanceMetrics?: PerformanceMetrics
+  error?: string
+  steps?: StepResult[]
+}
+
+/**
+ * Individual step result for Playwright-based QA runs
+ */
+export interface StepResult {
+  type: string
+  passed: boolean
+  durationMs: number
   error?: string
 }
 
@@ -254,6 +266,99 @@ export class BrowserQACapability {
     })
 
     return results
+  }
+
+  /**
+   * Try running a user flow with direct Playwright. Falls back to MCP on failure.
+   */
+  async runWithPlaywright(flow: UserFlow): Promise<QAResult> {
+    try {
+      // @ts-ignore — optional dependency
+      await import('playwright')
+    } catch {
+      logger.warn('Playwright not installed - falling back to MCP browser')
+      return this.runE2ETest(this.baseUrl, flow)
+    }
+    // @ts-ignore — optional dependency
+    const playwright = await import('playwright')
+
+    const result: QAResult = {
+      passed: true,
+      flowName: flow.name,
+      steps: [],
+      consoleErrors: [],
+      consoleWarnings: [],
+      screenshots: [],
+      durationMs: 0,
+    }
+    const start = Date.now()
+
+    const browser = await playwright.chromium.launch({ headless: true })
+    const context = await browser.newContext()
+    const page = await context.newPage()
+
+    // Collect console errors
+    page.on('console', (msg: { type: () => string; text: () => string }) => {
+      if (msg.type() === 'error') result.consoleErrors.push({ type: 'error', text: msg.text() })
+      if (msg.type() === 'warning') result.consoleWarnings.push({ type: 'warning', text: msg.text() })
+    })
+
+    try {
+      for (const step of flow.steps) {
+        const stepResult: StepResult = { type: step.action, passed: false, durationMs: 0 }
+        const stepStart = Date.now()
+        try {
+          switch (step.action) {
+            case 'navigate':
+              await page.goto(step.value ?? this.baseUrl, { waitUntil: 'domcontentloaded' })
+              stepResult.passed = true
+              break
+            case 'click':
+              await page.click(step.target ?? '')
+              stepResult.passed = true
+              break
+            case 'fill':
+              await page.fill(step.target ?? '', step.value ?? '')
+              stepResult.passed = true
+              break
+            case 'hover':
+              await page.hover(step.target ?? '')
+              stepResult.passed = true
+              break
+            case 'wait':
+              await page.waitForSelector(step.target ?? step.value ?? '', { timeout: step.timeout ?? 10000 })
+              stepResult.passed = true
+              break
+            case 'screenshot':
+              const screenshotPath = `${this.screenshotsDir}/screenshot-${Date.now()}.png`
+              await page.screenshot({ path: screenshotPath, fullPage: false })
+              result.screenshots.push(screenshotPath)
+              stepResult.passed = true
+              break
+            case 'snapshot':
+              // Snapshots are handled by Playwright accessibility tree
+              stepResult.passed = true
+              break
+          }
+        } catch (err) {
+          stepResult.error = (err as Error).message
+          result.passed = false
+        }
+        stepResult.durationMs = Date.now() - stepStart
+        result.steps!.push(stepResult)
+      }
+
+      // Accessibility check
+      try {
+        const accessibility = await page.accessibility.snapshot()
+        if (!accessibility) result.consoleWarnings.push({ type: 'warning', text: 'No accessibility tree found' })
+      } catch {}
+    } finally {
+      await browser.close()
+    }
+
+    result.durationMs = Date.now() - start
+    return result
   }
 
   /**

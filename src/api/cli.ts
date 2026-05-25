@@ -83,6 +83,12 @@ import { preflightGateStages } from '../workflow/GateCatalog.js'
 import { gatesCommand } from '../cli/gateStatusCommands.js'
 import { scoreCommand } from '../cli/scoreCommands.js'
 import { promptCommand } from '../cli/promptCommands.js'
+import { quickstartCommand } from '../cli/quickstartCommands.js'
+import { tuiCommand } from '../cli/tuiCommands.js'
+import { qaCommand } from '../cli/qaCommands.js'
+import { autofixCommand } from '../cli/autofixCommands.js'
+import { costReportCommand, costOptimizeCommand } from '../cli/costCommands.js'
+import { reviewCommand as crossReviewCommand } from '../review/reviewCommands.js'
 import { writeGovernanceTemplates, type GovernanceMode } from '../workflow/GovernanceTemplates.js'
 import {
   getBootstrapPlanForProfile,
@@ -6764,6 +6770,13 @@ const main = defineCommand({
     'create-prd': createPRD,
     'out-of-scope': outOfScope,
     config,
+    quickstart: quickstartCommand,
+    tui: tuiCommand,
+    qa: qaCommand,
+    'auto-fix': autofixCommand,
+    'cost-report': costReportCommand,
+    'cost-optimize': costOptimizeCommand,
+    'cross-review': crossReviewCommand,
   },
 })
 

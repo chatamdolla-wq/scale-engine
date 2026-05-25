@@ -11,6 +11,7 @@ export type GovernancePackId =
   | 'go-service-matrix'
   | 'node-library'
   | 'frontend-app'
+  | 'solo-dev'
 
 export interface GovernanceGeneratedFile {
   path: string
@@ -138,6 +139,21 @@ const PACKS: GovernanceTemplatePack[] = [
     description: 'Frontend app governance with UI and visual evidence requirements.',
     modeDefaults,
     generatedFiles: [],
+  },
+  {
+    id: 'solo-dev',
+    version: 1,
+    description: 'Lightweight governance for solo developers — warns instead of blocking, minimal overhead.',
+    modeDefaults: {
+      minimal: { artifactGate: 'off' as const, skillRoutingMode: 'off' as const },
+      standard: { artifactGate: 'warn' as const, skillRoutingMode: 'warn' as const },
+      critical: { artifactGate: 'warn' as const, skillRoutingMode: 'warn' as const },
+    },
+    defaultServices: [],
+    generatedFiles: [
+      { path: '.scale/config.yaml', kind: 'config' as const, owned: true, content: '' },
+      { path: '.scale/workspace.json', kind: 'config' as const, owned: true, content: '' },
+    ],
   },
 ]
 

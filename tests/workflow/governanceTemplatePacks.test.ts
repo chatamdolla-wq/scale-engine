@@ -12,6 +12,7 @@ describe('governance template packs', () => {
       'go-service-matrix',
       'node-library',
       'frontend-app',
+      'solo-dev',
     ])
   })
 

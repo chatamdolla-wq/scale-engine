@@ -563,6 +563,9 @@ export type EventType =
   | 'self-improve.hook.generated'
   | 'self-improve.reset'
   | 'rule.hit'
+  // AutoFix Engine (v0.37.0)
+  | 'autofix.attempt'
+  | 'autofix.complete'
 
 export interface Event<TPayload = unknown> {
   id: EventId

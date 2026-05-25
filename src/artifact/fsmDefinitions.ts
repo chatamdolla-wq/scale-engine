@@ -68,6 +68,9 @@ export const SpecFSM: FSMDefinition = {
     { from: 'REVISING', action: 'finalize', to: 'FROZEN' },
     { from: 'FROZEN', action: 'supersede', to: 'OBSOLETED' },
     { from: 'REVISING', action: 'supersede', to: 'OBSOLETED' },
+    // Fallback: evidence failure after freeze → re-enter review
+    { from: 'FROZEN', action: 'evidence_fails', to: 'REVISING' },
+    { from: 'OBSOLETED', action: 'reopen', to: 'DRAFT' },
   ],
 }
 
@@ -76,7 +79,7 @@ export const SpecFSM: FSMDefinition = {
 // ============================================================================
 export const PlanFSM: FSMDefinition = {
   type: 'Plan',
-  states: ['DRAFT', 'APPROVED', 'IMPLEMENTING', 'DONE', 'REVISING', 'SUPERSEDED'] as const,
+  states: ['DRAFT', 'APPROVED', 'IMPLEMENTING', 'DONE', 'IN_REVISION', 'REVISING', 'SUPERSEDED'] as const,
   initial: 'DRAFT',
   terminal: ['SUPERSEDED'] as const,
   transitions: [
@@ -99,6 +102,12 @@ export const PlanFSM: FSMDefinition = {
     { from: 'REVISING', action: 'review', to: 'APPROVED' },
     { from: 'DRAFT', action: 'supersede', to: 'SUPERSEDED' },
     { from: 'DONE', action: 'supersede', to: 'SUPERSEDED' },
+    // Fallback edges: evidence failure → rollback
+    { from: 'IMPLEMENTING', action: 'evidence_fails', to: 'APPROVED' },
+    // Reopen support
+    { from: 'DONE', action: 'reopen', to: 'IN_REVISION' },
+    { from: 'IN_REVISION', action: 'review', to: 'APPROVED' },
+    { from: 'IN_REVISION', action: 'supersede', to: 'SUPERSEDED' },
   ],
 }
 
@@ -124,7 +133,7 @@ export const TestPlanFSM: FSMDefinition = {
 // ============================================================================
 export const TaskFSM: FSMDefinition = {
   type: 'Task',
-  states: ['PENDING', 'READY', 'RUNNING', 'PAUSED', 'COMPLETED', 'FAILED', 'CANCELLED'] as const,
+  states: ['PENDING', 'READY', 'RUNNING', 'PAUSED', 'COMPLETED', 'IN_REVISION', 'FAILED', 'CANCELLED'] as const,
   initial: 'PENDING',
   terminal: ['COMPLETED', 'FAILED', 'CANCELLED'] as const,
   transitions: [
@@ -174,6 +183,9 @@ export const TaskFSM: FSMDefinition = {
     { from: 'PAUSED', action: 'resume', to: 'RUNNING' },
     { from: 'PAUSED', action: 'cancel', to: 'CANCELLED' },
     { from: 'FAILED', action: 'retry', to: 'READY' },
+    { from: 'COMPLETED', action: 'reopen', to: 'IN_REVISION' },
+    { from: 'IN_REVISION', action: 'start', to: 'RUNNING' },
+    { from: 'IN_REVISION', action: 'cancel', to: 'CANCELLED' },
   ],
 }
 
@@ -190,6 +202,7 @@ export const ChangeFSM: FSMDefinition = {
     { from: 'COMMITTED', action: 'verify', to: 'VERIFIED' },
     { from: 'COMMITTED', action: 'revert', to: 'REVERTED' },
     { from: 'VERIFIED', action: 'revert', to: 'REVERTED' },
+    { from: 'VERIFIED', action: 'evidence_fails', to: 'COMMITTED' },
   ],
 }
 

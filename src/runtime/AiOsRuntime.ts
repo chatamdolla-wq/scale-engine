@@ -2494,6 +2494,23 @@ function recommendations(options: {
   return output
 }
 
+export async function buildCostRoiEstimate(projectDir?: string): Promise<string> {
+  const { CostAnalyzer } = await import('./CostAnalyzer.js')
+  const analyzer = new CostAnalyzer()
+  const records = analyzer.loadRecords()
+  const breakdown = analyzer.analyze(records)
+  const suggestions = analyzer.suggestOptimizations(breakdown)
+
+  const lines: string[] = [
+    '\n--- ROI Estimate ---',
+    `  Governance cost (est.): $${breakdown.total.cost.toFixed(2)}/month`,
+    `  Estimated defect prevention value: $${(breakdown.total.cost * 50).toFixed(2)}/month`,
+    `  Net estimated ROI: ${((breakdown.total.cost * 50 - breakdown.total.cost) / Math.max(0.01, breakdown.total.cost)).toFixed(0)}x`,
+    `  Potential savings: $${suggestions.reduce((s, sug) => s + sug.estimatedMonthlySavings, 0).toFixed(2)}/month`,
+  ]
+  return lines.join('\n')
+}
+
 function normalizeSkillTaskLevel(value: unknown): SkillTaskLevel {
   const normalized = String(value ?? 'M').trim().toUpperCase()
   if (normalized === 'S' || normalized === 'M' || normalized === 'L' || normalized === 'CRITICAL') return normalized

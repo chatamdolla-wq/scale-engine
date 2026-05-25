@@ -94,12 +94,31 @@ export const PROFILES: Record<string, ConfigProfile> = {
       models: { routing: 'advanced' },
     },
   },
+  'china-local': {
+    id: 'china-local',
+    name: 'China Local',
+    description: 'Optimized for local model deployment in China (Qwen/GLM/DeepSeek compatible). Reduced guardrails for local model contexts.',
+    sections: ['basic', 'guardrails', 'models'],
+    defaults: {
+      scenario: 'standard',
+      guardrails: {
+        enabled: true,
+        detectors: ['dangerous-command', 'role-permission', 'brute-retry', 'premature-done'],
+        autoLint: true,
+        beforeStop: false,
+      },
+      knowledge: { enabled: false, vectorSearch: false },
+      evolution: { enabled: false, autoApprove: false },
+      models: { routing: 'advanced' },
+    },
+  },
 }
 
 const PROFILE_BOOTSTRAP_PACKS: Record<string, DependencyBootstrapPackId[]> = {
   minimal: ['external-cli'],
   standard: ['external-cli'],
   advanced: ['external-cli', 'memory', 'knowledge'],
+  'china-local': ['external-cli'],
 }
 
 const GOVERNANCE_PACK_BOOTSTRAP_PACKS: Record<string, DependencyBootstrapPackId[]> = {
@@ -240,6 +259,12 @@ export function generateConfigForProfile(
     lines.push(`  defaults:`)
     if (d.models.routing === 'simple') {
       lines.push(`    all: claude-sonnet-4-5`)
+    } else if (profileId === 'china-local') {
+      lines.push(`    explore: qwen-2.5-72b`)
+      lines.push(`    plan: deepseek-v3`)
+      lines.push(`    implement: qwen-2.5-72b`)
+      lines.push(`    verify: qwen-2.5-7b`)
+      lines.push(`    architect: glm-4-plus`)
     } else {
       lines.push(`    explore: claude-haiku`)
       lines.push(`    plan: claude-sonnet-4-5`)

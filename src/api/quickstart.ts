@@ -1,7 +1,7 @@
 // SCALE Engine — Quick Start / One-Click Install
 // 自动检测平台、配置物理约束、可选安装知识图谱
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import type { AgentPlatform } from '../artifact/types.js'
@@ -15,6 +15,98 @@ export interface PlatformDetectionResult {
   platform: AgentPlatform | null
   confidence: number
   suggestions: string[]
+}
+
+// Auto-detect the best governance pack based on project files
+export function autoDetectGovernancePack(projectDir: string): string {
+  const pkgPath = join(projectDir, 'package.json')
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      const scripts = Object.keys(pkg.scripts ?? {})
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+
+      // Check for frontend frameworks
+      if (deps.react || deps.next || deps.vue || deps['@angular/core'] ||
+          (pkg.scripts?.build ?? '').includes('vite') || (pkg.scripts?.build ?? '').includes('webpack')) {
+        return 'frontend-app'
+      }
+      // Check for library
+      if (pkg.main || pkg.module || pkg.exports) {
+        return 'node-library'
+      }
+    } catch {}
+  }
+  if (existsSync(join(projectDir, 'go.mod'))) return 'go-service-matrix'
+  if (existsSync(join(projectDir, 'pyproject.toml')) || existsSync(join(projectDir, 'requirements.txt'))) return 'standard'
+  // Check for monorepo
+  if (existsSync(join(projectDir, 'lerna.json')) || existsSync(join(projectDir, 'nx.json')) ||
+      existsSync(join(projectDir, 'turbo.json'))) {
+    const pkgPath = join(projectDir, 'package.json')
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+        if (pkg.workspaces) return 'moe-workspace'
+      } catch {}
+    }
+    return 'project-scaffold'
+  }
+  return 'standard'
+}
+
+export interface ProjectClassification {
+  language: 'node' | 'go' | 'python' | 'unknown'
+  framework?: string
+  isMonorepo: boolean
+  isLibrary: boolean
+  recommendedPack: string
+  recommendedProfile: 'minimal' | 'standard' | 'critical'
+  suggestedService?: string
+}
+
+// Auto-classify project structure
+export function classifyProject(projectDir: string): ProjectClassification {
+  const result: ProjectClassification = {
+    language: 'unknown',
+    isMonorepo: false,
+    isLibrary: false,
+    recommendedPack: 'standard',
+    recommendedProfile: 'standard',
+  }
+
+  const pkgPath = join(projectDir, 'package.json')
+  if (existsSync(pkgPath)) {
+    result.language = 'node'
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+
+      if (pkg.workspaces || existsSync(join(projectDir, 'lerna.json')) || existsSync(join(projectDir, 'nx.json'))) {
+        result.isMonorepo = true
+        result.recommendedPack = 'moe-workspace'
+      }
+
+      if (deps.react) { result.framework = 'react'; result.recommendedPack = 'frontend-app' }
+      else if (deps.next) { result.framework = 'next'; result.recommendedPack = 'frontend-app' }
+      else if (deps.vue) { result.framework = 'vue'; result.recommendedPack = 'frontend-app' }
+      else if (deps.express || deps.fastify || deps.koa) { result.framework = 'express'; result.recommendedPack = 'node-library' }
+
+      if (!result.framework && (pkg.main || pkg.module || pkg.exports)) {
+        result.isLibrary = true
+        result.recommendedPack = 'node-library'
+      }
+
+      const scripts = pkg.scripts ?? {}
+      const hasTest = Object.keys(scripts).some(k => k.includes('test'))
+      const hasLint = Object.keys(scripts).some(k => k.includes('lint'))
+      if (!hasTest || !hasLint) result.recommendedProfile = 'minimal'
+    } catch {}
+  }
+
+  if (existsSync(join(projectDir, 'go.mod'))) { result.language = 'go'; result.recommendedPack = 'go-service-matrix' }
+  if (existsSync(join(projectDir, 'pyproject.toml'))) { result.language = 'python'; result.recommendedPack = 'standard' }
+
+  return result
 }
 
 export function detectPlatform(projectDir: string = '.'): PlatformDetectionResult {

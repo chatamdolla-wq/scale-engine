@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import type { VerificationCommandConfig } from './VerificationCommands.js'
+import { type VerificationProtocol } from './VerificationSchema.js'
 
 export type VerificationCommandName = 'build' | 'lint' | 'test' | 'coverage' | 'smoke'
 export type VerificationArtifactGateMode = 'off' | 'warn' | 'block'
@@ -266,4 +267,71 @@ function normalizeArtifactGateLevels(value: unknown): VerificationArtifactGateLe
     level === 'M' || level === 'L' || level === 'CRITICAL',
   )
   return levels.length > 0 ? levels : DEFAULT_VERIFICATION_POLICY.artifactGateLevels ?? ['M', 'L', 'CRITICAL']
+}
+
+/** Export a resolved verification profile to the open protocol format */
+export function exportProfileToOpenFormat(profile: ResolvedVerificationProfile): VerificationProtocol {
+  const config = profile.config
+  const policy = profile.policy
+
+  // Use the mode field if present; default to 'standard' for the protocol
+  const rawMode = policy.mode
+  const protocolMode: 'minimal' | 'standard' | 'critical' =
+    rawMode === 'minimal' || rawMode === 'critical' ? rawMode : 'standard'
+
+  return {
+    $schema: 'https://scale-engine.dev/verification-protocol-v1.schema.json',
+    version: '1.0.0',
+    project: {
+      name: process.env['npm_package_name'] ?? 'unknown',
+      language: 'node',
+    },
+    profiles: {
+      [profile.profileName ?? 'default']: {
+        description: `${profile.profileName ?? 'default'} verification profile`,
+        services: {
+          root: {
+            type: 'node',
+            commands: {
+              build: config.build ?? '',
+              lint: config.lint ?? '',
+              test: config.test ?? '',
+              coverage: config.coverage ?? '',
+            },
+            policy: {
+              mode: protocolMode,
+              artifactGate: policy.artifactGate ?? 'block',
+              engineeringStandardsGate: policy.engineeringStandardsGate ?? 'warn',
+              productSmokeGate: policy.productSmokeGate ?? 'warn',
+            },
+          },
+        },
+      },
+    },
+  }
+}
+
+/** Import configuration from the open protocol format */
+export function importProfileFromOpenFormat(
+  protocol: VerificationProtocol,
+): { config: Partial<VerificationCommandConfig>; policy: Partial<VerificationPolicy> } {
+  const profileEntry = Object.values(protocol.profiles)[0]
+  if (!profileEntry) throw new Error('No profile found in protocol')
+  const service = Object.values(profileEntry.services)[0]
+  if (!service) throw new Error('No service found in profile')
+
+  return {
+    config: {
+      build: service.commands['build'],
+      lint: service.commands['lint'],
+      test: service.commands['test'],
+      coverage: service.commands['coverage'],
+    },
+    policy: {
+      mode: service.policy.mode,
+      artifactGate: service.policy.artifactGate,
+      engineeringStandardsGate: service.policy.engineeringStandardsGate,
+      productSmokeGate: service.policy.productSmokeGate,
+    },
+  }
 }

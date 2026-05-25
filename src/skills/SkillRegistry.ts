@@ -8,7 +8,7 @@ import { logger } from '../core/logger.js'
 // Types
 // ============================================================================
 
-export type SkillDomain = 'context' | 'planning' | 'execution' | 'verification' | 'evolution' | 'deployment'
+export type SkillDomain = 'context' | 'planning' | 'execution' | 'verification' | 'evolution' | 'deployment' | 'domain'
 export type SkillExecutionType = 'cli-command' | 'agent-delegate' | 'mcp-tool' | 'skill-file' | 'builtin-function'
 export type SkillTriggerType = 'taskType' | 'phase' | 'detectorTriggered' | 'complexity' | 'keyword' | 'manual' | 'artifactType' | 'artifactStatus'
 
@@ -217,6 +217,28 @@ export class SkillRegistry implements ISkillRegistry {
   }
 
   registerBatch(skills: SkillDefinition[]): void { for (const skill of skills) this.register(skill) }
+
+  /** Register a domain-specific skill (site-level selectors/flows) */
+  registerDomainSkill(domain: string, skill: { selectors: Record<string, string>; flows: Array<{ name: string; steps: unknown[] }> }): void {
+    const hash = Buffer.from(domain).toString('hex').slice(0, 16)
+    this.skills.set(`domain:${hash}`, {
+      id: `domain:${hash}`,
+      name: `Site skill for ${domain}`,
+      description: `Domain-specific selectors and flows for ${domain}`,
+      domain: 'domain',
+      triggers: [],
+      execution: {
+        type: 'builtin-function',
+        config: {
+          functionName: 'applyDomainSkill',
+          parameters: skill as unknown as Record<string, unknown>,
+        },
+      },
+      priority: 60,
+      installed: true,
+    })
+  }
+
   clear(): void { this.skills.clear(); this.eventBus.emit('skills.cleared', { clearedAt: Date.now() }) }
 
   async loadFromFrontmatter(dir: string): Promise<number> {

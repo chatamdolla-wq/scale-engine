@@ -1,3 +1,6 @@
+/** Hephaestus mode: build with quality gates at every step */
+export const HEPHAESTUS_MODE = true
+
 export interface TddCommandEvidence {
   command: string
   exitCode: number

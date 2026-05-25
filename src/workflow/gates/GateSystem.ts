@@ -14,6 +14,7 @@ import { compressCommandOutput, type CommandOutputCompressionResult } from '../.
 import { CommandRunLedger, type CommandRunEvidenceOptions } from '../../tools/CommandRunLedger.js'
 import { auditDependencies, type DependencyAuditMode, type DependencyAuditReport } from '../../guardrails/DependencyAuditor.js'
 import { runSafeCommand } from '../../tools/SafeCommandRunner.js'
+import { logger } from '../../core/logger.js'
 
 export interface IGate {
   stage: GateStage
@@ -217,6 +218,75 @@ export class GateSystem {
         durationMs: 0,
       }
     }
+    // Check cache for expensive gates before executing
+    const cacheableGates: GateStage[] = ['G4', 'G5', 'G6', 'G7']
+    if (cacheableGates.includes(stage)) {
+      try {
+        const { ScanCache } = await import('../../cache/ScanCache.js')
+        const scanCache = new ScanCache()
+        const changedFiles = await this.getChangedFiles()
+        const fileHashes = scanCache.hashFiles(changedFiles)
+        const cacheKey = scanCache.computeKey(fileHashes)
+        const cached = scanCache.get(stage, cacheKey)
+        if (cached) {
+          logger.info({ stage, cacheHit: true }, 'Gate result from cache')
+          return cached.result as GateResult
+        }
+
+        // Not cached — execute, then store
+        const start = Date.now()
+        try {
+          const result = await gate.execute()
+          result.durationMs = Date.now() - start
+          scanCache.set(stage, cacheKey, result, result.passed, result.durationMs ?? 0, fileHashes, 300)
+          this.results.set(stage, result)
+          this.persistEvidence(result)
+          this.recordCompletedGate(stage, result)
+          this.eventBus.emit('gate.executed', { stage, passed: result.passed })
+          if (!result.passed) {
+            this.eventBus.emit('gate.failed', {
+              stage,
+              status: result.status,
+              blockers: result.blockers,
+              evidence: result.evidence,
+              evidenceRecordId: result.evidenceRecordId,
+            })
+          }
+          return result
+        } catch (e) {
+          const result: GateResult = {
+            gate: stage,
+            status: 'FAILED',
+            passed: false,
+            evidence: `Gate execution failed: ${e}`,
+            evidenceItems: [
+              createEvidence({
+                kind: 'manual',
+                label: 'Gate execution',
+                passed: false,
+                detail: String(e),
+              }),
+            ],
+            blockers: [String(e)],
+            durationMs: Date.now() - start
+          }
+          this.results.set(stage, result)
+          this.persistEvidence(result)
+          this.eventBus.emit('gate.executed', { stage, passed: false })
+          this.eventBus.emit('gate.failed', {
+            stage,
+            status: result.status,
+            blockers: result.blockers,
+            evidence: result.evidence,
+            evidenceRecordId: result.evidenceRecordId,
+          })
+          return result
+        }
+      } catch {
+        // Cache infrastructure failed — fall through to direct execution
+      }
+    }
+
     const start = Date.now()
     try {
       const result = await gate.execute()
@@ -318,6 +388,16 @@ export class GateSystem {
 
   getAllResults(): Map<GateStage, GateResult> {
     return this.results
+  }
+
+  private async getChangedFiles(): Promise<string[]> {
+    const { execSync } = await import('node:child_process')
+    try {
+      const output = execSync('git diff --name-only HEAD', { encoding: 'utf-8', stdio: 'pipe' })
+      return output.trim().split('\n').filter(Boolean)
+    } catch {
+      return []
+    }
   }
 
   private registerDefaultGates(): void {

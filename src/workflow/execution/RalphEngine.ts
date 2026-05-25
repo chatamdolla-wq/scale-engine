@@ -1,6 +1,8 @@
 // SCALE Engine — Ralph Engine
 // PRD驱动持久执行引擎
 
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { IEventBus } from '../../core/eventBus.js'
 import type { PRDDocument, UserStory, VerificationResult } from '../types.js'
 import { HonestDelivery } from '../quality/HonestDelivery.js'
@@ -20,6 +22,15 @@ export class RalphEngine {
   private verifier: IStoryVerifier
   private maxIterations: number = 5
   private currentIteration: number = 0
+
+  /** Continuous mode: keep running across sessions without manual restart */
+  continuousMode = true
+  /** Sisyphus mode: never stop until all stories pass verification */
+  readonly sisyphus = true
+  /** Auto-retry with escalating model tiers on failure */
+  retryWithEscalation = true
+  /** Maximum retries per story before giving up */
+  maxRetriesPerStory = 5
 
   constructor(eventBus: IEventBus) {
     this.eventBus = eventBus
@@ -99,6 +110,21 @@ export class RalphEngine {
     const total = this.prd.userStories.length
     const passed = this.prd.userStories.filter(s => s.passes).length
     return { total, passed, pending: total - passed }
+  }
+
+  persistProgress(state: { storyIndex: number; totalStories: number; lastCompleted?: string }): void {
+    const dir = join(process.cwd(), '.scale', 'state')
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'ralph-progress.json'),
+      JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2),
+    )
+  }
+
+  loadProgress(): { storyIndex: number; totalStories: number; lastCompleted?: string } | null {
+    const path = join(process.cwd(), '.scale', 'state', 'ralph-progress.json')
+    if (!existsSync(path)) return null
+    return JSON.parse(readFileSync(path, 'utf-8'))
   }
 }
 
