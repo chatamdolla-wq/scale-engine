@@ -121,6 +121,7 @@ scale bootstrap deps --profile advanced --governance-pack frontend-app --apply -
 
 ```bash
 scale doctor
+scale setup --verify --pack full --json
 scale preflight --preflight-profile quick
 scale status
 scale assets scan --dir .

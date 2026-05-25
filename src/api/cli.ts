@@ -52,6 +52,7 @@ import { quickStart, detectPlatform, governanceNextSteps } from './quickstart.js
 import { bootstrapDependencies } from '../bootstrap/DependencyBootstrap.js'
 import { renderDependencyBootstrapReport } from '../bootstrap/DependencyBootstrapRenderer.js'
 import { runSetupWizard } from '../setup/SetupWizard.js'
+import { verifySetup } from '../setup/SetupVerification.js'
 import { normalizeLanguage, resolveCliLanguage } from '../i18n/Language.js'
 import { SkillDiscovery } from '../skills/SkillDiscovery.js'
 import { inspectRequiredWorkflowSkills, inspectWorkflowSkills } from '../skills/SkillDoctor.js'
@@ -157,8 +158,10 @@ import {
 } from '../workflow/WorkspaceLifecycle.js'
 import { inspectWorkspaceSafety } from '../workflow/WorkspaceSafety.js'
 import {
+  ModelUsageLedger,
   RuntimeEvidenceLedger,
   SessionLedger,
+  buildModelUsageInput,
   createAiOsAdoption,
   createAiOsBenchmark,
   createAiOsDashboard,
@@ -169,6 +172,7 @@ import {
   createAiOsStatus,
   doctorRuntimeEvidence,
   evaluateFinalReportReadiness,
+  type ModelUsageInput,
   type RuntimeEvidenceKind,
   type RuntimeEvidenceStatus,
   type RuntimeSessionStatus,
@@ -3050,7 +3054,6 @@ const bootstrap = defineCommand({
   subCommands: { deps: bootstrapDepsCommand },
 })
 
-// ============================================================================
 const setup = defineCommand({
   meta: { name: 'setup', description: 'Interactive SCALE setup for third-party skills, CLIs, memory, and knowledge providers' },
   args: {
@@ -3061,6 +3064,7 @@ const setup = defineCommand({
     include: { type: 'string', description: 'Additional dependency ids to include explicitly' },
     apply: { type: 'boolean', default: false, description: 'Run install commands for ready dependencies' },
     yes: { type: 'boolean', default: false, description: 'Confirm installation without prompting' },
+    verify: { type: 'boolean', default: false, description: 'Verify governed setup and dependency readiness instead of running the setup wizard' },
     interactive: { type: 'boolean', default: true, description: 'Prompt before installation when dependencies are ready' },
     lang: { type: 'string', description: 'Output language zh/en. Defaults to zh, then SCALE_LANG, then .scale/config.yaml locale.' },
     'memory-provider': { type: 'string', description: 'Switch memory provider during setup: gbrain, agentmemory, or scale-local' },
@@ -3073,13 +3077,22 @@ const setup = defineCommand({
   async run({ args }) {
     const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
     const lang = resolveCliLanguage({ lang: args.lang, projectDir, scaleDir: SCALE_DIR })
-    const explicitPacks = parseCommaList(args.pack)
-    const recommendedPacks = args.profile
-      ? getBootstrapPlanForProfile(
-        String(args.profile),
-        args['governance-pack'] ? String(args['governance-pack']) : undefined,
-      ).packs
-      : []
+    const { explicitPacks, recommendedPacks } = resolveSetupPacks(args)
+    if (isTruthyFlag(args.verify)) {
+      const verification = await verifySetup({
+        projectDir,
+        scaleDir: SCALE_DIR,
+        packIds: explicitPacks.length > 0 ? uniqueStrings([...recommendedPacks, ...explicitPacks]) : recommendedPacks,
+        includeIds: parseCommaList(args.include),
+      })
+      if (args.json) {
+        console.log(JSON.stringify(verification, null, 2))
+      } else {
+        renderSetupVerifyReport(verification, lang)
+      }
+      if (!verification.ok) process.exitCode = 1
+      return
+    }
     const report = await runSetupWizard({
       projectDir,
       scaleDir: SCALE_DIR,
@@ -3126,6 +3139,64 @@ const setup = defineCommand({
 
 // config command — Configuration profile management
 // ============================================================================
+
+function resolveSetupPacks(args: Record<string, unknown>): { explicitPacks: string[]; recommendedPacks: string[] } {
+  const explicitPacks = parseCommaList(args.pack)
+  const recommendedPacks = args.profile
+    ? getBootstrapPlanForProfile(
+      String(args.profile),
+      args['governance-pack'] ? String(args['governance-pack']) : undefined,
+    ).packs
+    : []
+  return { explicitPacks, recommendedPacks }
+}
+
+function renderSetupVerifyReport(report: Awaited<ReturnType<typeof verifySetup>>, lang: 'zh' | 'en'): void {
+  if (lang === 'zh') {
+    console.log('\nSCALE 安装验收')
+    console.log(`  项目: ${report.projectDir}`)
+    console.log(`  依赖包: ${report.packIds.join(', ') || 'full'}`)
+    console.log(`  结论: ${report.ok ? '通过' : '未通过'}`)
+    console.log(`  阻塞项: ${report.summary.blockingIssues.length}`)
+    console.log(`  受管能力: ${report.summary.installedTools}/${report.summary.totalTools}`)
+    console.log(`  记忆供应商: ${report.summary.availableMemoryProviders}`)
+    console.log(`  代码图谱供应商: ${report.summary.availableCodeProviders}`)
+    if (report.summary.blockingIssues.length > 0) {
+      console.log('  阻塞详情:')
+      for (const issue of report.summary.blockingIssues) console.log(`    - ${issue}`)
+    }
+    if (report.warnings.length > 0) {
+      console.log(`  警告${report.warnings.length > 12 ? ` (显示前 12 条，共 ${report.warnings.length} 条)` : ''}:`)
+      for (const warning of report.warnings.slice(0, 12)) console.log(`    - ${warning}`)
+    }
+    if (report.recommendations.length > 0) {
+      console.log('  下一步:')
+      for (const command of report.recommendations.slice(0, 12)) console.log(`    ${command}`)
+    }
+    return
+  }
+
+  console.log('\nSCALE Setup Verification')
+  console.log(`  Project: ${report.projectDir}`)
+  console.log(`  Packs: ${report.packIds.join(', ') || 'full'}`)
+  console.log(`  Result: ${report.ok ? 'passed' : 'failed'}`)
+  console.log(`  Blocking issues: ${report.summary.blockingIssues.length}`)
+  console.log(`  Governed capabilities: ${report.summary.installedTools}/${report.summary.totalTools}`)
+  console.log(`  Memory providers: ${report.summary.availableMemoryProviders}`)
+  console.log(`  Code providers: ${report.summary.availableCodeProviders}`)
+  if (report.summary.blockingIssues.length > 0) {
+    console.log('  Blockers:')
+    for (const issue of report.summary.blockingIssues) console.log(`    - ${issue}`)
+  }
+  if (report.warnings.length > 0) {
+    console.log(`  Warnings${report.warnings.length > 12 ? ` (showing first 12 of ${report.warnings.length})` : ''}:`)
+    for (const warning of report.warnings.slice(0, 12)) console.log(`    - ${warning}`)
+  }
+  if (report.recommendations.length > 0) {
+    console.log('  Next:')
+    for (const command of report.recommendations.slice(0, 12)) console.log(`    ${command}`)
+  }
+}
 
 const configProfile = defineCommand({
   meta: { name: 'profile', description: 'View or switch configuration profile' },
@@ -4751,6 +4822,173 @@ function normalizeRuntimeSessionStatus(value: unknown): RuntimeSessionStatus {
   throw new Error(`Invalid runtime session status "${normalized}"; expected active, completed, failed, or abandoned.`)
 }
 
+function parseNonNegativeNumberArg(value: unknown, name: string): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative number.`)
+  }
+  return parsed
+}
+
+function parseJsonArg(value: unknown, name: string): unknown {
+  try {
+    return JSON.parse(String(value ?? 'null'))
+  } catch {
+    throw new Error(`${name} must be valid JSON.`)
+  }
+}
+
+function parseMetadataJson(value: unknown, name = '--metadata-json'): Record<string, string | number | boolean> {
+  const parsed = parseJsonArg(value ?? '{}', name)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${name} must be a JSON object.`)
+  }
+  return parsed as Record<string, string | number | boolean>
+}
+
+function hasModelUsageArgs(args: Record<string, unknown>): boolean {
+  return [
+    'provider',
+    'model',
+    'usage-json',
+    'usage-file',
+    'input-tokens',
+    'output-tokens',
+    'cache-eligible-tokens',
+    'cache-creation-input-tokens',
+    'cache-read-input-tokens',
+    'cached-tokens',
+    'estimated-cost-usd',
+  ].some(key => args[key] !== undefined && args[key] !== '')
+}
+
+function buildModelUsageRecordInput(
+  args: Record<string, unknown>,
+  defaults: { provider?: string; taskId?: string; sessionId?: string } = {},
+): ModelUsageInput {
+  const usagePayload = args['usage-file']
+    ? parseJsonArg(readFileSync(resolve(PROJECT_DIR, String(args['usage-file'])), 'utf-8'), '--usage-file')
+    : args['usage-json']
+      ? parseJsonArg(args['usage-json'], '--usage-json')
+      : undefined
+  const provider = String(args.provider ?? defaults.provider ?? '').trim()
+  if (!provider) throw new Error('Model usage recording requires --provider.')
+  return buildModelUsageInput({
+    provider,
+    model: args.model ? String(args.model) : undefined,
+    taskId: args['task-id'] ? String(args['task-id']) : defaults.taskId,
+    sessionId: args['session-id'] ? String(args['session-id']) : defaults.sessionId,
+    inputTokens: parseNonNegativeNumberArg(args['input-tokens'], '--input-tokens'),
+    outputTokens: parseNonNegativeNumberArg(args['output-tokens'], '--output-tokens'),
+    cacheEligibleTokens: parseNonNegativeNumberArg(args['cache-eligible-tokens'], '--cache-eligible-tokens'),
+    cacheCreationInputTokens: parseNonNegativeNumberArg(args['cache-creation-input-tokens'], '--cache-creation-input-tokens'),
+    cacheReadInputTokens: parseNonNegativeNumberArg(args['cache-read-input-tokens'], '--cache-read-input-tokens'),
+    cachedTokens: parseNonNegativeNumberArg(args['cached-tokens'], '--cached-tokens'),
+    estimatedCostUsd: parseNonNegativeNumberArg(args['estimated-cost-usd'], '--estimated-cost-usd'),
+    metadata: args['metadata-json'] !== undefined ? parseMetadataJson(args['metadata-json']) : undefined,
+    timestamp: args.timestamp ? String(args.timestamp) : undefined,
+    usagePayload,
+  })
+}
+
+const tokenRecord = defineCommand({
+  meta: { name: 'record', description: 'Record real model usage from provider usage payloads or explicit token counts' },
+  args: {
+    provider: { type: 'string', required: true, description: 'Model provider: anthropic, openai, codex, etc.' },
+    model: { type: 'string', description: 'Optional model id' },
+    'task-id': { type: 'string', description: 'Task id linked to this model usage' },
+    'session-id': { type: 'string', description: 'Session id linked to this model usage' },
+    'usage-json': { type: 'string', description: 'Raw provider response or usage JSON to normalize into the usage ledger' },
+    'usage-file': { type: 'string', description: 'Path to a JSON file containing a raw provider response or usage payload' },
+    'input-tokens': { type: 'string', description: 'Explicit input token count; overrides usage JSON when provided' },
+    'output-tokens': { type: 'string', description: 'Explicit output token count; overrides usage JSON when provided' },
+    'cache-eligible-tokens': { type: 'string', description: 'Explicit cache-eligible token count' },
+    'cache-creation-input-tokens': { type: 'string', description: 'Explicit Anthropic cache creation token count' },
+    'cache-read-input-tokens': { type: 'string', description: 'Explicit Anthropic cache read token count' },
+    'cached-tokens': { type: 'string', description: 'Explicit OpenAI cached token count' },
+    'estimated-cost-usd': { type: 'string', description: 'Optional estimated cost in USD' },
+    timestamp: { type: 'string', description: 'Optional ISO timestamp' },
+    'metadata-json': { type: 'string', default: '{}', description: 'Additional JSON metadata' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const record = new ModelUsageLedger(SCALE_DIR).record(buildModelUsageRecordInput(args))
+    if (args.json) {
+      console.log(JSON.stringify(record, null, 2))
+      return
+    }
+    console.log(`Model usage recorded: ${record.id}`)
+    console.log(`  Provider: ${record.provider}`)
+    console.log(`  Model: ${record.model ?? 'unknown'}`)
+    console.log(`  Tokens: input ${record.inputTokens}, output ${record.outputTokens}, total ${record.totalTokens}`)
+    if (record.cacheSavingsTokens > 0) console.log(`  Cache savings: ${record.cacheSavingsTokens} tokens`)
+  },
+})
+
+const tokenReport = defineCommand({
+  meta: { name: 'report', description: 'Summarize recorded model usage by day, provider, model, and task' },
+  args: {
+    day: { type: 'string', description: 'Exact UTC day in YYYY-MM-DD format' },
+    since: { type: 'string', description: 'ISO timestamp lower bound' },
+    until: { type: 'string', description: 'ISO timestamp upper bound' },
+    'since-days': { type: 'string', default: '7d', description: 'Relative time window when day/since/until are omitted; use all to disable' },
+    provider: { type: 'string', description: 'Filter by provider' },
+    model: { type: 'string', description: 'Filter by model id' },
+    'task-id': { type: 'string', description: 'Filter by task id' },
+    'session-id': { type: 'string', description: 'Filter by session id' },
+    limit: { type: 'string', description: 'Maximum recent records to include in the report; defaults to 20' },
+    json: { type: 'boolean', default: false },
+  },
+  run({ args }) {
+    const limit = parsePositiveIntArg(args.limit, '--limit')
+    const sinceDays = args.day || args.since || args.until ? undefined : parseSinceDays(args['since-days']) ?? 7
+    const since = args.since
+      ? String(args.since)
+      : sinceDays
+        ? new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString()
+        : undefined
+    const report = new ModelUsageLedger(SCALE_DIR).report({
+      day: args.day ? String(args.day) : undefined,
+      since,
+      until: args.until ? String(args.until) : undefined,
+      provider: args.provider ? String(args.provider) : undefined,
+      model: args.model ? String(args.model) : undefined,
+      taskId: args['task-id'] ? String(args['task-id']) : undefined,
+      sessionId: args['session-id'] ? String(args['session-id']) : undefined,
+      limit,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log('SCALE Token Report')
+    if (report.filters.day) console.log(`  Day: ${report.filters.day}`)
+    else if (report.filters.since || report.filters.until) console.log(`  Window: ${report.filters.since ?? '-inf'} -> ${report.filters.until ?? 'now'}`)
+    console.log(`  Records: ${report.summary.totalRecords}`)
+    console.log(`  Tokens: input ${report.summary.totalInputTokens}, output ${report.summary.totalOutputTokens}, total ${report.summary.totalTokens}`)
+    console.log(`  Cache: eligible ${report.summary.cacheEligibleTokens}, create ${report.summary.cacheCreationInputTokens}, read ${report.summary.cacheReadInputTokens}, cached ${report.summary.cachedTokens}, saved ${report.summary.cacheSavingsTokens}`)
+    if (report.summary.estimatedCostUsd !== undefined) console.log(`  Estimated cost: $${report.summary.estimatedCostUsd.toFixed(6)}`)
+    for (const row of report.byProvider.slice(0, 5)) {
+      console.log(`  Provider ${row.key}: ${row.records} record(s), ${row.totalTokens} total tokens, ${row.cacheSavingsTokens} saved`)
+    }
+    for (const row of report.byModel.slice(0, 5)) {
+      console.log(`  Model ${row.key}: ${row.records} record(s), ${row.totalTokens} total tokens`)
+    }
+    for (const row of report.byTask.slice(0, 5)) {
+      console.log(`  Task ${row.key}: ${row.records} record(s), ${row.totalTokens} total tokens`)
+    }
+    for (const row of report.records.slice(0, 10)) {
+      console.log(`  Recent ${row.timestamp}: ${row.provider}/${row.model ?? 'unknown'} task=${row.taskId ?? '-'} total=${row.totalTokens}`)
+    }
+  },
+})
+
+const token = defineCommand({
+  meta: { name: 'token', description: 'Record and audit real model token usage' },
+  subCommands: { record: tokenRecord, report: tokenReport },
+})
+
 const runtimeStart = defineCommand({
   meta: { name: 'start', description: 'Start a runtime session ledger' },
   args: {
@@ -4818,6 +5056,18 @@ const runtimeRecord = defineCommand({
     'exit-code': { type: 'string', description: 'Exit code when applicable' },
     summary: { type: 'string', required: true, description: 'Short output summary' },
     artifacts: { type: 'string', description: 'Comma-separated artifact paths' },
+    provider: { type: 'string', description: 'Optional model provider when attaching model usage: anthropic, openai, codex, etc.' },
+    model: { type: 'string', description: 'Optional model id when attaching model usage' },
+    'usage-json': { type: 'string', description: 'Raw provider response or usage JSON to normalize into the usage ledger' },
+    'usage-file': { type: 'string', description: 'Path to a JSON file containing a raw provider response or usage payload' },
+    'input-tokens': { type: 'string', description: 'Explicit input token count; overrides usage JSON when provided' },
+    'output-tokens': { type: 'string', description: 'Explicit output token count; overrides usage JSON when provided' },
+    'cache-eligible-tokens': { type: 'string', description: 'Explicit cache-eligible token count' },
+    'cache-creation-input-tokens': { type: 'string', description: 'Explicit Anthropic cache creation token count' },
+    'cache-read-input-tokens': { type: 'string', description: 'Explicit Anthropic cache read token count' },
+    'cached-tokens': { type: 'string', description: 'Explicit OpenAI cached token count' },
+    'estimated-cost-usd': { type: 'string', description: 'Optional estimated cost in USD' },
+    timestamp: { type: 'string', description: 'Optional ISO timestamp for the usage record' },
     'metadata-json': { type: 'string', default: '{}', description: 'Additional JSON metadata' },
     json: { type: 'boolean', default: false },
   },
@@ -4861,13 +5111,23 @@ const runtimeRecord = defineCommand({
         },
       })
     }
+    const usageRecord = hasModelUsageArgs(args)
+      ? new ModelUsageLedger(SCALE_DIR).record(buildModelUsageRecordInput(args, {
+          taskId: record.taskId,
+          sessionId: record.sessionId,
+        }))
+      : undefined
     if (args.json) {
-      console.log(JSON.stringify(record, null, 2))
+      console.log(JSON.stringify(usageRecord ? { evidence: record, usage: usageRecord } : record, null, 2))
       return
     }
     console.log(`Runtime evidence recorded: ${record.id}`)
     console.log(`  Status: ${record.status}`)
     console.log(`  Kind: ${record.kind}`)
+    if (usageRecord) {
+      console.log(`  Model usage: ${usageRecord.provider}/${usageRecord.model ?? 'unknown'} ${usageRecord.totalTokens} total tokens`)
+      if (usageRecord.cacheSavingsTokens > 0) console.log(`  Cache savings: ${usageRecord.cacheSavingsTokens} tokens`)
+    }
     if (record.redactionApplied) console.log('  Redaction: applied')
   },
 })
@@ -6489,6 +6749,7 @@ const main = defineCommand({
     workflow,
     evidence,
     runtime,
+    token,
     memory,
     diagnose,
     hunt,

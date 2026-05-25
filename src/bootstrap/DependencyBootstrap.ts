@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execa, execaSync } from 'execa'
@@ -131,6 +131,7 @@ type DependencyBootstrapDefinition = {
   manualReason: string
   installCommand: (ctx: BootstrapInstallContext) => string | null
   install?: (ctx: BootstrapInstallContext) => Promise<{ ok: boolean; output?: string; error?: string }>
+  initializeCommands?: (ctx: BootstrapInstallContext) => string[]
   healthCheck?: (ctx: BootstrapInstallContext) => DependencyBootstrapHealth
 }
 
@@ -149,7 +150,10 @@ const UI_SKILL_INSTALLS = {
 } as const
 
 const RTK_INSTALL = 'cargo install --git https://github.com/rtk-ai/rtk'
+const RTK_INIT = 'rtk init -g --codex'
 const CODEGRAPH_INSTALL = 'npm install -g @colbymchenry/codegraph'
+const GRAPHIFY_CODEX_INSTALL = 'graphify install --platform codex'
+const GRAPHIFY_HOOK_INSTALL = 'graphify hook install'
 const GRAPHIFY_UV_INSTALL = 'uv tool install graphify && graphify install --platform codex'
 const GRAPHIFY_PIPX_INSTALL = 'pipx install graphify && graphify install --platform codex'
 const GRAPHIFY_PIP_INSTALL = 'pip install graphify && graphify install --platform codex'
@@ -225,6 +229,7 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['cargo'],
     manualReason: 'RTK currently installs from the official Rust toolchain path and needs Cargo on PATH.',
     installCommand: ctx => ctx.commandExists('cargo') ? RTK_INSTALL : null,
+    initializeCommands: () => [RTK_INIT],
     healthCheck: checkRtkHealth,
   },
   {
@@ -237,6 +242,7 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['bun'],
     manualReason: 'The official standalone GBrain install needs Bun and then a configured brain (`gbrain init --pglite`) before cross-session recall is usable.',
     installCommand: ctx => buildGbrainInstallCommand(ctx),
+    initializeCommands: () => ['gbrain init --pglite --no-embedding'],
     healthCheck: checkGbrainHealth,
   },
   {
@@ -249,6 +255,11 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['uv|pipx|pip|pip3|python|python3'],
     manualReason: 'Graphify requires Python 3.10+ and a supported installer; uv tool install is preferred to avoid polluting project virtualenvs.',
     installCommand: ctx => buildGraphifyInstallCommand(ctx),
+    initializeCommands: ctx => [
+      GRAPHIFY_CODEX_INSTALL,
+      GRAPHIFY_HOOK_INSTALL,
+      `graphify update ${quotePath(ctx.projectDir)} --no-cluster`,
+    ],
     healthCheck: checkGraphifyHealth,
   },
   {
@@ -261,6 +272,7 @@ const DEPENDENCY_BOOTSTRAP_DEFINITIONS: DependencyBootstrapDefinition[] = [
     prerequisites: ['npm'],
     manualReason: 'CodeGraph installs through npm and needs Node.js/npm available on PATH.',
     installCommand: ctx => ctx.commandExists('npm') ? CODEGRAPH_INSTALL : null,
+    initializeCommands: ctx => [codegraphInitCommand(ctx.projectDir)],
     healthCheck: checkCodeGraphHealth,
   },
 ]
@@ -287,7 +299,7 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
       const definition = definitions.find(entry => entry.id === item.id)
       const result = definition?.install
         ? await definition.install(context)
-        : await runInstallCommand(item.installCommand)
+        : await runInstallCommand(item.installCommand, context.projectDir)
       item.output = result.output
       item.error = result.error
       const rechecked = definition ? inspectDefinition(definition, context) : item
@@ -300,6 +312,7 @@ export async function bootstrapDependencies(options: DependencyBootstrapOptions 
       if (!result.ok && !item.error) item.error = `Installation command failed: ${item.installCommand}`
       if (!result.ok) item.installSupported = true
     }
+    await reconcileDependencyBootstrapItems(definitions, reports, context)
   }
 
   const postActions = options.apply ? applyDependencyBootstrapPostActions(projectDir, scaleDir, reports) : []
@@ -320,17 +333,23 @@ function buildReport(
   postActions: string[],
   postChecks: DependencyBootstrapPostCheckResult[],
 ): DependencyBootstrapReport {
+  const nonBlockingItems = new Set(items
+    .filter(item => isNonBlockingOptionalItem(item, postChecks))
+    .map(item => item.id))
   const summary = {
     total: items.length,
     installed: items.filter(item => item.status === 'installed').length,
     ready: items.filter(item => item.status === 'ready').length,
     manualReview: items.filter(item => item.status === 'manual-review').length,
-    needsInit: items.filter(item => item.status === 'needs-init').length,
+    needsInit: items.filter(item => item.status === 'needs-init' && !nonBlockingItems.has(item.id)).length,
     versionDrift: items.filter(item => item.status === 'version-drift').length,
     installedNow: items.filter(item => item.status === 'installed-now').length,
     failed: items.filter(item => item.status === 'failed').length,
   }
-  const complete = items.length > 0 && items.every(item => item.status === 'installed' || item.status === 'installed-now')
+  const complete = items.length > 0 && items.every(item =>
+    item.status === 'installed'
+    || item.status === 'installed-now'
+    || nonBlockingItems.has(item.id))
   const postCheckSummary = {
     total: postChecks.length,
     passed: postChecks.filter(item => item.status === 'passed').length,
@@ -643,6 +662,12 @@ export function runDependencyBootstrapPostChecks(input: {
   const toolIds = unique(input.items.map(item => item.id).filter(id =>
     ['awesome-design-md', 'ui-ux-pro-max', 'frontend-design', 'rtk', 'gbrain', 'codegraph', 'graphify'].includes(id)))
   const results: DependencyBootstrapPostCheckResult[] = []
+  const memoryReport = input.items.some(item => item.id === 'gbrain')
+    ? inspectMemory({ projectDir: input.projectDir, scaleDir: input.scaleDir })
+    : undefined
+  const gbrain = memoryReport?.providers.find(provider => provider.id === 'gbrain')
+  const memoryFallback = memoryReport?.providers.find(provider => provider.kind === 'scale-local' && provider.available)
+  const softBlockedGbrain = Boolean(gbrain && !gbrain.available && memoryFallback)
 
   if (toolIds.length > 0) {
     const toolReport = inspectTools({
@@ -651,24 +676,31 @@ export function runDependencyBootstrapPostChecks(input: {
       toolIds,
     })
     const missing = toolReport.tools.filter(tool => !tool.installed).map(tool => tool.id)
+    const degraded = missing.filter(id => id === 'gbrain' && softBlockedGbrain)
+    const blockingMissing = missing.filter(id => !degraded.includes(id))
     results.push({
       id: 'tool-capabilities',
       label: 'Tool Doctor',
       command: `scale tool doctor --tools ${toolIds.join(',')} --json`,
-      status: toolReport.ok ? 'passed' : 'failed',
-      summary: `${toolReport.summary.installed}/${toolReport.summary.total} selected tools are available${missing.length > 0 ? `; missing: ${missing.join(', ')}` : ''}`,
+      status: blockingMissing.length > 0 ? 'failed' : degraded.length > 0 ? 'warn' : 'passed',
+      summary: [
+        `${toolReport.summary.installed}/${toolReport.summary.total} selected tools are available`,
+        blockingMissing.length > 0 ? `missing: ${blockingMissing.join(', ')}` : undefined,
+        degraded.length > 0 ? `degraded: ${degraded.join(', ')} (scale-local fallback active)` : undefined,
+      ].filter(Boolean).join('; '),
       details: {
         toolIds,
-        missing,
+        missing: blockingMissing,
+        degraded,
+        fallbackProvider: memoryFallback?.id,
       },
     })
   }
 
-  if (input.items.some(item => item.id === 'gbrain')) {
-    const memoryReport = inspectMemory({ projectDir: input.projectDir, scaleDir: input.scaleDir })
-    const gbrain = memoryReport.providers.find(provider => provider.id === 'gbrain')
+  if (memoryReport) {
     const warnings = [...memoryReport.warnings]
-    const status = !gbrain?.available ? 'failed' : warnings.length > 0 ? 'warn' : 'passed'
+    if (softBlockedGbrain) warnings.push(`gbrain is unavailable in this runtime; falling back to ${memoryFallback!.id}`)
+    const status = !gbrain?.available ? (softBlockedGbrain ? 'warn' : 'failed') : warnings.length > 0 ? 'warn' : 'passed'
     results.push({
       id: 'memory-provider',
       label: 'Memory Provider',
@@ -680,6 +712,7 @@ export function runDependencyBootstrapPostChecks(input: {
       details: {
         warnings,
         gbrainReason: gbrain?.reason,
+        fallbackProvider: memoryFallback?.id,
       },
     })
   }
@@ -716,6 +749,17 @@ export function runDependencyBootstrapPostChecks(input: {
   }
 
   return results
+}
+
+function isNonBlockingOptionalItem(
+  item: DependencyBootstrapItemReport,
+  postChecks: DependencyBootstrapPostCheckResult[],
+): boolean {
+  if (item.id !== 'gbrain' || item.status !== 'needs-init') return false
+  return postChecks.some(check =>
+    check.id === 'memory-provider'
+    && check.status === 'warn'
+    && check.details?.fallbackProvider === 'scale-local')
 }
 
 function inspectDefinition(definition: DependencyBootstrapDefinition, context: BootstrapInstallContext): DependencyBootstrapItemReport {
@@ -789,7 +833,25 @@ function buildGbrainInstallCommand(context: BootstrapInstallContext): string | n
   return GBRAIN_INSTALL
 }
 
-function checkRtkHealth(): DependencyBootstrapHealth {
+function codegraphInitCommand(projectDir: string): string {
+  const command = `codegraph init -i ${quotePath(projectDir)}`
+  return process.platform === 'win32' ? `cmd /d /c ${command}` : command
+}
+
+export function hasCodexRtkInstructions(homeDir: string): boolean {
+  const codexDir = join(homeDir, '.codex')
+  const rtkPath = join(codexDir, 'RTK.md')
+  const agentsPath = join(codexDir, 'AGENTS.md')
+  if (!existsSync(rtkPath) || !existsSync(agentsPath)) return false
+  try {
+    const agents = readFileSync(agentsPath, 'utf-8')
+    return /RTK\.md/i.test(agents)
+  } catch {
+    return false
+  }
+}
+
+function checkRtkHealth(context: BootstrapInstallContext): DependencyBootstrapHealth {
   const gain = runHealthCommand('rtk', ['gain'])
   if (!gain.ok) {
     return {
@@ -801,11 +863,15 @@ function checkRtkHealth(): DependencyBootstrapHealth {
   }
   const output = `${gain.stdout}\n${gain.stderr}`
   if (/no hook installed/i.test(output)) {
+    if (hasCodexRtkInstructions(context.homeDir)) {
+      return {
+        status: 'ok',
+        reason: 'rtk gain evidence is available; Codex mode uses RTK.md instructions instead of an automatic shell hook.',
+      }
+    }
     return {
-      status: 'warn',
-      bootstrapStatus: 'needs-init',
-      reason: 'rtk CLI is installed, but the shell hook is not installed so command-output compression is not automatic yet.',
-      nextCommands: ['rtk init -g --codex', 'rtk gain'],
+      status: 'ok',
+      reason: 'rtk gain evidence is available; automatic hook installation is not active, so SCALE should keep using the explicit `rtk <command>` proxy path.',
     }
   }
   return { status: 'ok', reason: 'rtk CLI and gain evidence are available.' }
@@ -816,7 +882,6 @@ function checkGbrainHealth(): DependencyBootstrapHealth {
   if (health.available) {
     return {
       status: health.degraded ? 'warn' : 'ok',
-      bootstrapStatus: health.degraded ? 'manual-review' : undefined,
       reason: health.degraded
         ? `${health.reason}; provider can still be used for read-only recall.`
         : 'gbrain doctor passed; provider can be used for default memory routing.',
@@ -832,9 +897,56 @@ function checkGbrainHealth(): DependencyBootstrapHealth {
   }
 }
 
-function checkGraphifyHealth(): DependencyBootstrapHealth {
-  const version = runHealthCommand('graphify', ['--version'])
-  const hook = runHealthCommand('graphify', ['hook', 'status'], 10_000)
+async function reconcileDependencyBootstrapItems(
+  definitions: DependencyBootstrapDefinition[],
+  reports: DependencyBootstrapItemReport[],
+  context: BootstrapInstallContext,
+): Promise<void> {
+  const definitionsById = new Map(definitions.map(definition => [definition.id, definition]))
+  for (const item of reports) {
+    if (item.status !== 'needs-init' && item.status !== 'version-drift') continue
+    const definition = definitionsById.get(item.id)
+    const commands = definition?.initializeCommands?.(context) ?? []
+    if (commands.length === 0) continue
+
+    const outputs = [item.output].filter(Boolean)
+    const errors = [item.error].filter(Boolean)
+    let ok = true
+    for (const command of commands) {
+      const result = await runInstallCommand(command, context.projectDir)
+      if (result.output) outputs.push(result.output)
+      if (result.error) errors.push(result.error)
+      if (!result.ok) {
+        ok = false
+        if (!result.error) errors.push(`Initialization command failed: ${command}`)
+        break
+      }
+    }
+
+    item.output = outputs.join('\n') || undefined
+    item.error = errors.join('\n') || undefined
+
+    if (!ok) {
+      const rechecked = definition ? inspectDefinition(definition, context) : item
+      item.installed = rechecked.installed
+      item.detectedBy = rechecked.detectedBy
+      item.health = rechecked.health
+      item.status = definition?.id === 'gbrain' && rechecked.installed ? rechecked.status : 'failed'
+      continue
+    }
+
+    const rechecked = definition ? inspectDefinition(definition, context) : item
+    item.installed = rechecked.installed
+    item.detectedBy = rechecked.detectedBy
+    item.health = rechecked.health
+    item.status = rechecked.status === 'installed' ? 'installed-now' : rechecked.status
+  }
+}
+
+function checkGraphifyHealth(context: BootstrapInstallContext): DependencyBootstrapHealth {
+  const graphPath = join(context.projectDir, 'graphify-out', 'graph.json')
+  const version = runHealthCommand('graphify', ['--version'], 5_000, context.projectDir)
+  const hook = runHealthCommand('graphify', ['hook', 'status'], 10_000, context.projectDir)
   const output = `${version.stdout}\n${version.stderr}\n${hook.stdout}\n${hook.stderr}`
   if (/skill.*version|package.*version|drift|outdated/i.test(output)) {
     return {
@@ -852,7 +964,15 @@ function checkGraphifyHealth(): DependencyBootstrapHealth {
       nextCommands: ['graphify install --platform codex', 'graphify hook status'],
     }
   }
-  return { status: 'ok', reason: 'graphify CLI and hook status are available.' }
+  if (!existsSync(graphPath)) {
+    return {
+      status: 'warn',
+      bootstrapStatus: 'needs-init',
+      reason: 'graphify CLI is installed but graphify-out/graph.json is not present yet.',
+      nextCommands: [`graphify update ${quotePath(context.projectDir)} --no-cluster`, 'scale codegraph status --json'],
+    }
+  }
+  return { status: 'ok', reason: 'graphify CLI, hooks, and graph artifact are available.' }
 }
 
 function checkCodeGraphHealth(context: BootstrapInstallContext): DependencyBootstrapHealth {
@@ -877,11 +997,12 @@ function checkCodeGraphHealth(context: BootstrapInstallContext): DependencyBoots
   return { status: 'ok', reason: 'codegraph CLI and project index are available.' }
 }
 
-function runHealthCommand(command: string, args: string[], timeout = 5_000): { ok: boolean; stdout: string; stderr: string } {
+function runHealthCommand(command: string, args: string[], timeout = 5_000, cwd?: string): { ok: boolean; stdout: string; stderr: string } {
   try {
     const result = execaSync(command, args, {
       reject: false,
       timeout,
+      cwd,
     })
     return {
       ok: (result.exitCode ?? 1) === 0,
@@ -906,11 +1027,11 @@ function quotePath(path: string): string {
   return `"${path.replace(/"/g, '\\"')}"`
 }
 
-async function runInstallCommand(shellCommand: string): Promise<{ ok: boolean; output?: string; error?: string }> {
+async function runInstallCommand(shellCommand: string, cwd?: string): Promise<{ ok: boolean; output?: string; error?: string }> {
   const wrapped = wrapShellCommandWithRtk(shellCommand)
   const result = wrapped
-    ? await execa(wrapped.command, wrapped.args, { reject: false, timeout: 300_000, all: false })
-    : await execa(shellCommand, { shell: true, reject: false, timeout: 300_000, all: false })
+    ? await execa(wrapped.command, wrapped.args, { reject: false, timeout: 300_000, all: false, cwd })
+    : await execa(shellCommand, { shell: true, reject: false, timeout: 300_000, all: false, cwd })
   return {
     ok: (result.exitCode ?? 1) === 0,
     output: result.stdout ?? '',

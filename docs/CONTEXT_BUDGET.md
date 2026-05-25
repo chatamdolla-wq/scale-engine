@@ -29,7 +29,7 @@ scale context budget --write
 Check thresholds:
 
 ```bash
-scale context doctor --max-always 2500 --max-task 8000
+scale context doctor --max-always 1500 --max-task 4000
 ```
 
 Build a lazy-loaded task context pack:
@@ -51,7 +51,7 @@ scale ai-os plan \
   --task "Review frontend route with browser evidence" \
   --level L \
   --files src/routes/upload.tsx \
-  --budget 8000 \
+  --budget 4000 \
   --json
 ```
 
@@ -125,6 +125,16 @@ Provider behavior:
 | Other | `usage-ledger-only` | normal input/output usage only |
 
 The cache policy does not live in `ModelRouter`. `ModelRouter` selects a model; provider request builders or adapters apply provider-specific cache controls.
+
+To replace estimates with real usage evidence, write provider usage into the ledger and audit it directly:
+
+```bash
+scale token record \
+  --provider anthropic \
+  --usage-json '{"usage":{"input_tokens":1000,"output_tokens":200,"cache_read_input_tokens":500}}'
+
+scale token report --day 2026-05-23 --json
+```
 
 ## Progressive Governance
 

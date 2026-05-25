@@ -92,8 +92,8 @@ export interface ContextBudgetDoctorReport {
 
 const CATEGORIES: ContextBudgetCategory[] = ['always', 'on-demand', 'evidence', 'archive', 'generated']
 
-const DEFAULT_MAX_ALWAYS_TOKENS = 2500
-const DEFAULT_MAX_TASK_TOKENS = 8000
+const DEFAULT_MAX_ALWAYS_TOKENS = 1500
+const DEFAULT_MAX_TASK_TOKENS = 4000
 
 const IGNORED_DIRS = new Set([
   '.git',

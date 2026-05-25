@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { EventBus } from '../../src/core/eventBus.js'
@@ -12,12 +11,13 @@ describe('workflow hooks', () => {
   let bus: EventBus
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'scale-hooks-'))
+    mkdirSync(join(process.cwd(), '.tmp-tests'), { recursive: true })
+    dir = mkdtempSync(join(process.cwd(), '.tmp-tests', 'scale-hooks-'))
     bus = new EventBus({ eventsDir: join(dir, 'events') })
   })
 
   afterEach(() => {
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
   it('registers workflow hook templates', () => {

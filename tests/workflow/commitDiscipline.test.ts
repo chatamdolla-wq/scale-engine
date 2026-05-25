@@ -18,8 +18,15 @@ function initGitRepo(dir: string, backdateMinutes?: number): void {
   writeFileSync(join(dir, '.gitkeep'), '')
   execSync('git add .', { cwd: dir, stdio: 'pipe' })
   if (backdateMinutes) {
-    const env = `GIT_AUTHOR_DATE="2026-01-01T10:00:00+00:00" GIT_COMMITTER_DATE="2026-01-01T10:00:00+00:00"`
-    execSync(`${env} git commit -m "init"`, { cwd: dir, stdio: 'pipe', shell: 'bash' })
+    execSync('git commit -m "init"', {
+      cwd: dir,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_DATE: '2026-01-01T10:00:00+00:00',
+        GIT_COMMITTER_DATE: '2026-01-01T10:00:00+00:00',
+      },
+    })
   } else {
     execSync('git commit -m "init"', { cwd: dir, stdio: 'pipe' })
   }

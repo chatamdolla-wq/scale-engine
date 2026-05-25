@@ -164,6 +164,36 @@ describe('bootstrap CLI', () => {
     expect(report.final.runtimeChecks.map(check => check.id)).toContain('bun')
   }, 30_000)
 
+  it('verifies governed setup readiness in one report', async () => {
+    const scaleDir = makeDir('scale-bootstrap-cli-scale-')
+    const projectDir = makeDir('scale-bootstrap-cli-project-')
+    const homeDir = makeDir('scale-bootstrap-cli-home-')
+
+    const result = await runScale(['setup', '--verify', '--dir', projectDir, '--pack', 'ui', '--json'], scaleDir, projectDir, homeDir)
+
+    expect(result.exitCode).toBe(1)
+    const report = JSON.parse(result.stdout) as {
+      ok: boolean
+      packIds: string[]
+      dependencyBootstrap: { packIds: string[]; items: Array<{ id: string }> }
+      toolCapabilities: { summary: { total: number; missing: number } }
+      summary: { blockingIssues: string[] }
+      recommendations: string[]
+    }
+    expect(report.ok).toBe(false)
+    expect(report.packIds).toEqual(['ui'])
+    expect(report.dependencyBootstrap.packIds).toEqual(['ui'])
+    expect(report.dependencyBootstrap.items.map(item => item.id)).toEqual(['awesome-design-md', 'ui-ux-pro-max'])
+    expect(report.toolCapabilities.summary.total).toBe(2)
+    expect(report.toolCapabilities.summary.missing).toBe(2)
+    expect(report.summary.blockingIssues).toEqual(expect.arrayContaining([
+      expect.stringContaining('Missing governed capabilities: awesome-design-md, ui-ux-pro-max'),
+    ]))
+    expect(report.recommendations).toEqual(expect.arrayContaining([
+      'scale tool doctor --tools awesome-design-md,ui-ux-pro-max --json',
+    ]))
+  }, 30_000)
+
   it('reports workflow capability planning and bootstrap hint during init', async () => {
     const scaleDir = makeDir('scale-bootstrap-cli-scale-')
     const projectDir = makeDir('scale-bootstrap-cli-project-')

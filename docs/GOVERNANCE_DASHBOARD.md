@@ -54,6 +54,13 @@ V2.0 adds `MetricsAggregator` as the dashboard aggregation layer. It keeps the d
 
 Each number must trace back to local JSON/JSONL evidence. If a source is absent, the dashboard reports zero rather than inventing values.
 
+You can inspect the same model-usage ledger directly without opening the HTML dashboard:
+
+```bash
+scale token report --since-days 7
+scale token report --day 2026-05-23 --json
+```
+
 ## Status Model
 
 - Runtime evidence failures are blocking.

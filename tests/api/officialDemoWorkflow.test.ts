@@ -1,18 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { delimiter, join, resolve } from 'node:path'
 
 let dirs: string[] = []
 
 afterEach(() => {
-  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   dirs = []
 })
 
 function makeDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix))
+  const root = join(process.cwd(), '.tmp-tests')
+  mkdirSync(root, { recursive: true })
+  const dir = mkdtempSync(join(root, prefix))
   dirs.push(dir)
   return dir
 }
@@ -27,7 +28,7 @@ function copyOfficialDemo(targetDir: string): void {
 async function runScale(args: string[], scaleDir: string, projectDir: string) {
   return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
     env: {
-      ...process.env,
+      ...buildDemoEnv(),
       SCALE_DIR: scaleDir,
       SCALE_PROJECT_DIR: projectDir,
       SCALE_LOG_LEVEL: undefined,
@@ -38,6 +39,14 @@ async function runScale(args: string[], scaleDir: string, projectDir: string) {
     },
     reject: false,
   })
+}
+
+function buildDemoEnv(): NodeJS.ProcessEnv {
+  const rootBin = join(process.cwd(), 'node_modules', '.bin')
+  return {
+    ...process.env,
+    PATH: [rootBin, process.env.PATH ?? ''].filter(Boolean).join(delimiter),
+  }
 }
 
 function expectExitZero(result: { exitCode: number | null; stdout: string; stderr: string }): void {
@@ -51,14 +60,9 @@ describe('official agent governance demo workflow', () => {
     const taskId = '2026-05-18-oauth-state'
     copyOfficialDemo(projectDir)
 
-    const install = await execa('npm', ['install', '--package-lock=false', '--ignore-scripts', '--no-audit', '--no-fund'], {
-      cwd: projectDir,
-      reject: false,
-    })
-    expectExitZero(install)
-
     const businessTest = await execa('npm', ['test'], {
       cwd: projectDir,
+      env: buildDemoEnv(),
       reject: false,
     })
     expectExitZero(businessTest)

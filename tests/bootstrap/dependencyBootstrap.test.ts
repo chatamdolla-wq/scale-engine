@@ -1,6 +1,10 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   applyDependencyBootstrapPostActions,
+  hasCodexRtkInstructions,
   runDependencyBootstrapPostChecks,
   type DependencyBootstrapItemReport,
 } from '../../src/bootstrap/DependencyBootstrap.js'
@@ -117,6 +121,81 @@ describe('dependency bootstrap post-checks', () => {
     })
   })
 
+  it('downgrades blocked gbrain to warnings when scale-local fallback remains available', () => {
+    const results = runDependencyBootstrapPostChecks({
+      projectDir: 'E:/project/demo',
+      scaleDir: 'E:/project/demo/.scale',
+      packIds: ['memory'],
+      items: [installedItem('gbrain')],
+      homeDir: 'C:/Users/tester',
+    }, {
+      inspectTools: () => ({
+        ok: false,
+        summary: { total: 1, installed: 0, missing: 1 },
+        tools: [
+          { id: 'gbrain', name: 'GBrain', category: 'cli', requiredFor: [], checkedPaths: ['PATH:gbrain'], installed: false, status: 'missing' },
+        ],
+      }),
+      inspectMemory: () => ({
+        projectDir: 'E:/project/demo',
+        scaleDir: 'E:/project/demo/.scale',
+        configPath: 'E:/project/demo/.scale/memory-providers.json',
+        configExists: true,
+        routing: {
+          mode: 'external-first',
+          defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          allowExternalWrite: false,
+          requireEvidence: true,
+          maxResultsPerProvider: 5,
+        },
+        providers: [
+          {
+            id: 'gbrain',
+            kind: 'gbrain',
+            enabled: true,
+            available: false,
+            selectedByDefault: true,
+            priority: 95,
+            capabilities: ['graph-recall'],
+            safetyLevel: 'review-required',
+            writeMode: 'disabled',
+            reason: 'gbrain doctor failed in this runtime',
+          },
+          {
+            id: 'scale-local',
+            kind: 'scale-local',
+            enabled: true,
+            available: true,
+            selectedByDefault: false,
+            priority: 10,
+            capabilities: ['session-memory'],
+            safetyLevel: 'trusted-local',
+            writeMode: 'candidate-only',
+            reason: 'local MemoryBrain fallback is available',
+          },
+        ],
+        availableProviderCount: 1,
+        warnings: [],
+      }),
+    })
+
+    expect(results.find(result => result.id === 'tool-capabilities')).toMatchObject({
+      status: 'warn',
+      details: {
+        missing: [],
+        degraded: ['gbrain'],
+        fallbackProvider: 'scale-local',
+      },
+    })
+    expect(results.find(result => result.id === 'memory-provider')).toMatchObject({
+      status: 'warn',
+      details: {
+        fallbackProvider: 'scale-local',
+        gbrainReason: 'gbrain doctor failed in this runtime',
+      },
+    })
+  })
+
   it('scopes post-actions to the selected packs and keeps provider-order messaging readable', () => {
     const memoryActions = applyDependencyBootstrapPostActions(
       'E:/project/demo',
@@ -164,5 +243,21 @@ describe('dependency bootstrap post-checks', () => {
     expect(knowledgeActions).toEqual([
       'Reused E:/project/demo/.scale/code-intelligence.json',
     ])
+  })
+
+  it('recognizes Codex RTK mode from global instructions without requiring a shell hook', () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'scale-rtk-home-'))
+    const codexDir = join(homeDir, '.codex')
+    mkdirSync(codexDir, { recursive: true })
+    writeFileSync(join(codexDir, 'RTK.md'), '# RTK\n', 'utf-8')
+    writeFileSync(join(codexDir, 'AGENTS.md'), '@C:\\Users\\tester\\.codex\\RTK.md\n', 'utf-8')
+
+    try {
+      expect(hasCodexRtkInstructions(homeDir)).toBe(true)
+      writeFileSync(join(codexDir, 'AGENTS.md'), '# no reference\n', 'utf-8')
+      expect(hasCodexRtkInstructions(homeDir)).toBe(false)
+    } finally {
+      rmSync(homeDir, { recursive: true, force: true })
+    }
   })
 })

@@ -35,7 +35,7 @@
         "module-map"
       ],
       "source": "https://github.com/safishamsi/graphify",
-      "installHint": "pip install graphifyy && graphify install"
+      "installHint": "uv tool install graphify && graphify install --platform codex"
     }
   ],
   "fallback": {

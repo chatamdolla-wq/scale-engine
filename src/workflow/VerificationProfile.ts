@@ -67,7 +67,7 @@ export const DEFAULT_VERIFICATION_POLICY: VerificationPolicy = {
   optionalToolsWarnOnly: true,
   artifactGate: 'warn',
   artifactGateLevels: ['M', 'L', 'CRITICAL'],
-  engineeringStandardsGate: 'warn',
+  engineeringStandardsGate: 'block',
   productSmokeGate: 'warn',
 }
 

@@ -3,8 +3,11 @@ import { execa } from 'execa'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 
 let dirs: string[] = []
+const CLI_ENTRY = join(process.cwd(), 'src/api/cli.ts')
+const TSX_LOADER = pathToFileURL(join(process.cwd(), 'node_modules/tsx/dist/loader.mjs')).href
 
 afterEach(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
@@ -18,19 +21,30 @@ function makeDir(prefix: string): string {
 }
 
 async function runScale(args: string[], scaleDir: string, projectDir: string) {
-  return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
-    env: {
-      ...process.env,
-      SCALE_DIR: scaleDir,
-      SCALE_PROJECT_DIR: projectDir,
-      SCALE_LOG_LEVEL: undefined,
-    },
-    reject: false,
-  })
+  let lastResult: Awaited<ReturnType<typeof execa>>
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    lastResult = await execa('node', ['--import', TSX_LOADER, CLI_ENTRY, ...args], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        SCALE_DIR: scaleDir,
+        SCALE_PROJECT_DIR: projectDir,
+        SCALE_LOG_LEVEL: undefined,
+      },
+      reject: false,
+      windowsHide: true,
+    })
+    if (!args.includes('--json') || String(lastResult.stdout ?? '').trim()) return lastResult
+  }
+  return lastResult!
 }
 
-function parseJson<T>(stdout: string): T {
-  return JSON.parse(stdout) as T
+function parseJson<T>(stdout: string, stderr = ''): T {
+  const trimmed = stdout.trim()
+  if (!trimmed) {
+    throw new Error(`Expected JSON stdout but got empty output.${stderr ? ` stderr: ${stderr}` : ''}`)
+  }
+  return JSON.parse(trimmed) as T
 }
 
 function writeFailingSuite(scaleDir: string) {
@@ -72,7 +86,7 @@ describe('workflow eval CLI', () => {
       written: boolean
       path: string
       suite: { id: string; cases: Array<{ id: string }> }
-    }>(init.stdout)
+    }>(init.stdout, init.stderr)
     expect(initReport.written).toBe(true)
     expect(initReport.path.replace(/\\/g, '/')).toContain('/evals/suites/workflow-baseline.json')
     expect(initReport.suite.cases).toEqual(expect.arrayContaining([
@@ -89,7 +103,7 @@ describe('workflow eval CLI', () => {
         metrics: { total: number; passed: number; passAt1Rate: number; failureReplayCount: number }
       }
       runPath: string
-    }>(run.stdout)
+    }>(run.stdout, run.stderr)
     expect(runReport.run.ok).toBe(true)
     expect(runReport.run.suiteId).toBe('workflow-baseline')
     expect(runReport.run.metrics.total).toBe(1)
@@ -113,7 +127,7 @@ describe('workflow eval CLI', () => {
         failureReplayIds: string[]
       }
       failurePaths: string[]
-    }>(run.stdout)
+    }>(run.stdout, run.stderr)
     expect(runReport.run.ok).toBe(false)
     expect(runReport.run.metrics.failed).toBe(1)
     expect(runReport.run.metrics.failureReplayCount).toBe(1)
@@ -125,7 +139,7 @@ describe('workflow eval CLI', () => {
     const failuresReport = parseJson<{
       count: number
       failures: Array<{ id: string; status: string; category: string; redactionApplied: boolean }>
-    }>(failures.stdout)
+    }>(failures.stdout, failures.stderr)
     expect(failuresReport.count).toBe(1)
     expect(failuresReport.failures[0]).toMatchObject({
       status: 'open',
@@ -134,14 +148,14 @@ describe('workflow eval CLI', () => {
 
     const replay = await runScale(['eval', 'replay', failuresReport.failures[0].id, '--json'], scaleDir, projectDir)
     expect(replay.exitCode).toBe(0)
-    const replayReport = parseJson<{ count: number; failures: Array<{ replayCommand: string; prevention: string }> }>(replay.stdout)
+    const replayReport = parseJson<{ count: number; failures: Array<{ replayCommand: string; prevention: string }> }>(replay.stdout, replay.stderr)
     expect(replayReport.count).toBe(1)
     expect(replayReport.failures[0].replayCommand).toContain('process.exit(1)')
     expect(replayReport.failures[0].prevention).toContain('runtime evidence')
 
     const promote = await runScale(['eval', 'promote-failure', failuresReport.failures[0].id, '--json'], scaleDir, projectDir)
     expect(promote.exitCode).toBe(0)
-    const candidate = parseJson<{ failureId: string; status: string; evidencePath: string }>(promote.stdout)
+    const candidate = parseJson<{ failureId: string; status: string; evidencePath: string }>(promote.stdout, promote.stderr)
     expect(candidate.failureId).toBe(failuresReport.failures[0].id)
     expect(candidate.status).toBe('candidate')
     expect(existsSync(candidate.evidencePath)).toBe(true)
@@ -158,7 +172,7 @@ describe('workflow eval CLI', () => {
     expect(run.exitCode).toBe(1)
     const runReport = parseJson<{
       run: { ok: boolean; failureReplayIds: string[] }
-    }>(run.stdout)
+    }>(run.stdout, run.stderr)
     expect(runReport.run.ok).toBe(false)
     expect(runReport.run.failureReplayIds.length).toBe(1)
   }, 120_000)
@@ -171,8 +185,8 @@ describe('workflow eval CLI', () => {
     const second = await runScale(['eval', 'run', '--json'], scaleDir, projectDir)
     expect(first.exitCode).toBe(0)
     expect(second.exitCode).toBe(0)
-    const firstRun = parseJson<{ run: { id: string } }>(first.stdout)
-    const secondRun = parseJson<{ run: { id: string } }>(second.stdout)
+    const firstRun = parseJson<{ run: { id: string } }>(first.stdout, first.stderr)
+    const secondRun = parseJson<{ run: { id: string } }>(second.stdout, second.stderr)
 
     const compare = await runScale([
       'eval',
@@ -184,14 +198,14 @@ describe('workflow eval CLI', () => {
       '--json',
     ], scaleDir, projectDir)
     expect(compare.exitCode).toBe(0)
-    const comparison = parseJson<{ recommendation: string; delta: { passAt1Rate: number } }>(compare.stdout)
+    const comparison = parseJson<{ recommendation: string; delta: { passAt1Rate: number } }>(compare.stdout, compare.stderr)
     expect(comparison.recommendation).toBe('same')
     expect(comparison.delta.passAt1Rate).toBe(0)
 
     const output = join(projectDir, 'reports', 'eval.md')
     const report = await runScale(['eval', 'report', '--run', secondRun.run.id, '--output', output, '--json'], scaleDir, projectDir)
     expect(report.exitCode).toBe(0)
-    const reportJson = parseJson<{ outputPath: string; markdown: string }>(report.stdout)
+    const reportJson = parseJson<{ outputPath: string; markdown: string }>(report.stdout, report.stderr)
     expect(reportJson.outputPath).toBe(output)
     expect(reportJson.markdown).toContain('# Workflow Eval Report')
     expect(readFileSync(output, 'utf-8')).toContain('Pass@1')

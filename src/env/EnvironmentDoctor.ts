@@ -2,6 +2,7 @@ import { spawnSync, type SpawnSyncReturns } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { arch, platform, release } from 'node:os'
 import { delimiter, extname } from 'node:path'
+import { runGbrainCommandSync } from '../core/GbrainRuntime.js'
 import { resolveExternalCommandPath } from '../core/ExternalCommand.js'
 
 export type EnvironmentCheckStatus = 'ok' | 'warn' | 'missing' | 'fail'
@@ -230,7 +231,7 @@ export function inspectEnvironment(options: InspectEnvironmentOptions = {}): Env
     .map(entry => entry.trim())
     .filter(Boolean)
 
-  const checks = CHECK_DEFINITIONS.map(definition => inspectCommand(definition, resolver, runner))
+  const checks = CHECK_DEFINITIONS.map(definition => inspectCommand(definition, resolver, runner, currentPlatform))
   const nodeStatus = nodeVersionStatus(currentNodeVersion)
   const warnings = buildWarnings(checks, nodeStatus)
   const recommendations = buildRecommendations(checks, nodeStatus)
@@ -298,6 +299,7 @@ function inspectCommand(
   definition: typeof CHECK_DEFINITIONS[number],
   resolver: NonNullable<InspectEnvironmentOptions['commandResolver']>,
   runner: NonNullable<InspectEnvironmentOptions['commandRunner']>,
+  currentPlatform: NodeJS.Platform,
 ): EnvironmentCommandCheck {
   let firstFailed: EnvironmentCommandCheck | undefined
   for (const candidate of definition.candidates) {
@@ -305,9 +307,10 @@ function inspectCommand(
     if (!resolved) continue
     const result = runner(candidate.command, candidate.args, resolved)
     const output = `${result.stdout}\n${result.stderr}`.trim()
+    const interpreted = interpretSpecialCheckResult(definition.id, output, resolved, currentPlatform, result.exitCode)
+    const version = resolveSpecialVersion(definition.id, output, runner, resolved) ?? interpreted?.version ?? firstLine(output)
     if (result.exitCode === 0) {
-      const version = firstLine(output)
-      const status = commandVersionStatus(definition.id, version)
+      const status = interpreted ?? commandVersionStatus(definition.id, version)
       return {
         id: definition.id,
         label: definition.label,
@@ -323,6 +326,22 @@ function inspectCommand(
         requiredFor: definition.requiredFor,
       }
     }
+    if (interpreted) {
+      return {
+        id: definition.id,
+        label: definition.label,
+        category: definition.category,
+        status: interpreted.status,
+        required: definition.required,
+        candidates: definition.candidates.map(item => item.display),
+        detectedCommand: candidate.display,
+        resolvedPath: resolved,
+        version,
+        reason: interpreted.reason,
+        installHint: definition.installHint,
+        requiredFor: definition.requiredFor,
+      }
+    }
     firstFailed ??= {
       id: definition.id,
       label: definition.label,
@@ -332,7 +351,7 @@ function inspectCommand(
       candidates: definition.candidates.map(item => item.display),
       detectedCommand: candidate.display,
       resolvedPath: resolved,
-      reason: `${definition.label} was found but health/version command failed: ${firstLine(output)}`,
+      reason: `${definition.label} was found but health/version command failed: ${summarizeFailureOutput(definition.id, output)}`,
       installHint: definition.installHint,
       requiredFor: definition.requiredFor,
     }
@@ -352,6 +371,17 @@ function inspectCommand(
 }
 
 function runCommand(command: string, args: string[], resolvedPath?: string): CommandRunResult {
+  if (command === 'gbrain') {
+    const result = runGbrainCommandSync(args, {
+      timeout: 20_000,
+      env: process.env,
+    })
+    return {
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    }
+  }
   const executable = resolveWindowsCommandShim(resolvedPath ?? command)
   const wrapperArgs = isWindowsCommandWrapper(executable)
     ? ['/d', '/c', 'call', executable, ...args]
@@ -440,6 +470,115 @@ function firstLine(value: string): string {
   return value.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? ''
 }
 
+function interpretSpecialCheckResult(
+  id: string,
+  output: string,
+  resolvedPath: string | undefined,
+  currentPlatform: NodeJS.Platform,
+  exitCode?: number,
+): { status: EnvironmentCheckStatus; reason: string; version?: string } | null {
+  if (id === 'bash'
+    && currentPlatform === 'win32'
+    && isWindowsSystemBashLauncher(resolvedPath)
+    && typeof exitCode === 'number'
+    && exitCode !== 0) {
+    return {
+      status: 'missing',
+      reason: 'Windows bash launcher is present, but no usable Bash runtime is configured.',
+    }
+  }
+  if (id === 'gbrain') return interpretGbrainDoctorOutput(output)
+  return null
+}
+
+function summarizeFailureOutput(id: string, output: string): string {
+  const line = firstLine(output)
+  if (id === 'gbrain') {
+    const interpreted = interpretGbrainDoctorOutput(output)
+    if (interpreted) return interpreted.reason
+  }
+  if (!line) return 'no output'
+  if (id === 'gbrain') {
+    const parsed = parseGbrainDoctorReport(output)
+    if (parsed) {
+      const failingChecks = gbrainDoctorChecks(parsed)
+        .filter(check => check.status && check.status !== 'ok')
+        .map(check => check.name)
+        .filter(Boolean)
+      if (failingChecks.length > 0) {
+        return `gbrain doctor reported ${failingChecks.length} non-ok check(s): ${failingChecks.slice(0, 4).join(', ')}`
+      }
+      if (typeof parsed.status === 'string') return `gbrain doctor status=${parsed.status}`
+    }
+  }
+  return compactText(line)
+}
+
+function interpretGbrainDoctorOutput(output: string): { status: EnvironmentCheckStatus; reason: string; version?: string } | null {
+  const parsed = parseGbrainDoctorReport(output)
+  if (!parsed) return null
+
+  if (gbrainCoreRecallReady(parsed)) {
+    const optionalIssues = gbrainDoctorChecks(parsed)
+      .filter(check => check.status !== 'ok' && !GBRAIN_CORE_RECALL_CHECKS.has(check.name))
+      .map(check => check.name)
+      .filter(Boolean)
+    return {
+      status: 'ok',
+      reason: optionalIssues.length > 0
+        ? `GBrain core recall is available; optional doctor warnings: ${optionalIssues.slice(0, 4).join(', ')}`
+        : 'GBrain core recall is available.',
+    }
+  }
+
+  const coreIssues = gbrainDoctorChecks(parsed)
+    .filter(check => check.status !== 'ok' && GBRAIN_CORE_RECALL_CHECKS.has(check.name))
+    .map(check => check.name)
+    .filter(Boolean)
+  if (coreIssues.length > 0) {
+    return {
+      status: 'warn',
+      reason: `gbrain doctor reported core recall issue(s): ${coreIssues.join(', ')}`,
+    }
+  }
+
+  const nonOkChecks = gbrainDoctorChecks(parsed)
+    .filter(check => check.status !== 'ok')
+    .map(check => check.name)
+    .filter(Boolean)
+  if (nonOkChecks.length > 0) {
+    return {
+      status: 'warn',
+      reason: `gbrain doctor reported ${nonOkChecks.length} non-ok check(s): ${nonOkChecks.slice(0, 4).join(', ')}`,
+    }
+  }
+
+  if (typeof parsed.status === 'string') {
+    return {
+      status: 'ok',
+      reason: `gbrain doctor status=${parsed.status}`,
+    }
+  }
+
+  return null
+}
+
+function compactText(value: string, maxLength = 200): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  return `${normalized.slice(0, maxLength - 1)}…`
+}
+
+function resolveSpecialVersion(
+  id: string,
+  output: string,
+  runner: NonNullable<InspectEnvironmentOptions['commandRunner']>,
+  resolvedPath: string | undefined,
+): string | undefined {
+  if (id !== 'gbrain') return undefined
+  return resolveGbrainVersion(output, runner, resolvedPath)
+}
+
 function parseSemver(value: string): { major: number; minor: number; patch: number } | null {
   const match = value.match(/(\d+)\.(\d+)(?:\.(\d+))?/)
   if (!match) return null
@@ -448,4 +587,112 @@ function parseSemver(value: string): { major: number; minor: number; patch: numb
     minor: Number.parseInt(match[2], 10),
     patch: Number.parseInt(match[3] ?? '0', 10),
   }
+}
+
+function isWindowsSystemBashLauncher(resolvedPath: string | undefined): boolean {
+  if (!resolvedPath) return false
+  return /[\\/]windows[\\/]system32[\\/]bash\.exe$/i.test(resolvedPath)
+}
+
+interface GbrainDoctorReport {
+  status?: unknown
+  checks?: unknown
+}
+
+interface GbrainDoctorCheck {
+  name: string
+  status: string
+}
+
+const GBRAIN_CORE_RECALL_CHECKS = new Set(['connection', 'schema_version', 'brain_score'])
+
+function resolveGbrainVersion(
+  output: string,
+  runner: NonNullable<InspectEnvironmentOptions['commandRunner']>,
+  resolvedPath: string | undefined,
+): string {
+  const versionProbe = runner('gbrain', ['--version'], resolvedPath)
+  const versionLine = firstLine(`${versionProbe.stdout}\n${versionProbe.stderr}`)
+  if (versionProbe.exitCode === 0 && versionLine && !looksLikeJson(versionLine)) {
+    return compactText(versionLine, 80)
+  }
+
+  const parsed = parseGbrainDoctorReport(output)
+  if (typeof parsed?.status === 'string') {
+    return `gbrain doctor status=${parsed.status}`
+  }
+  return 'gbrain doctor --json'
+}
+
+function parseGbrainDoctorReport(output: string): GbrainDoctorReport | null {
+  const json = extractFirstJsonObject(output)
+  if (!json) return null
+  try {
+    const parsed = JSON.parse(json) as unknown
+    return isRecord(parsed) ? parsed as GbrainDoctorReport : null
+  } catch {
+    return null
+  }
+}
+
+function extractFirstJsonObject(output: string): string | null {
+  const start = output.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < output.length; index += 1) {
+    const char = output[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) return output.slice(start, index + 1)
+    }
+  }
+  return null
+}
+
+function looksLikeJson(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.startsWith('{') || trimmed.startsWith('[')
+}
+
+function gbrainCoreRecallReady(report: GbrainDoctorReport): boolean {
+  const connection = gbrainDoctorCheckStatus(report, 'connection')
+  const schema = gbrainDoctorCheckStatus(report, 'schema_version')
+  const brainScore = gbrainDoctorCheckStatus(report, 'brain_score')
+  return connection === 'ok' && (schema === 'ok' || brainScore === 'ok')
+}
+
+function gbrainDoctorCheckStatus(report: GbrainDoctorReport, name: string): string | undefined {
+  return gbrainDoctorChecks(report).find(check => check.name === name)?.status
+}
+
+function gbrainDoctorChecks(report: GbrainDoctorReport): GbrainDoctorCheck[] {
+  if (!Array.isArray(report.checks)) return []
+  return report.checks
+    .filter(isRecord)
+    .map(check => ({
+      name: String(check.name ?? ''),
+      status: String(check.status ?? ''),
+    }))
+    .filter(check => check.name)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

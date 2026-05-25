@@ -89,6 +89,56 @@ describe('runtime CLI', () => {
     expect(existsSync(join(scaleDir, 'events', 'sessions', 'SESSION-CLI.jsonl'))).toBe(true)
   }, 120_000)
 
+  it('records model usage alongside runtime evidence when usage payload is provided', async () => {
+    const scaleDir = makeDir('scale-runtime-cli-scale-')
+    const projectDir = makeDir('scale-runtime-cli-project-')
+
+    await runScale([
+      'runtime',
+      'start',
+      '--session-id',
+      'SESSION-USAGE',
+      '--task-id',
+      'TASK-USAGE',
+      '--level',
+      'M',
+      '--json',
+    ], scaleDir, projectDir)
+
+    const record = await runScale([
+      'runtime',
+      'record',
+      '--title',
+      'codex run',
+      '--status',
+      'passed',
+      '--summary',
+      'provider response captured',
+      '--provider',
+      'openai',
+      '--model',
+      'gpt-4.1',
+      '--usage-json',
+      '{"usage":{"input_tokens":800,"output_tokens":120,"input_tokens_details":{"cached_tokens":300}}}',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(record.exitCode).toBe(0)
+    const output = parseJson<{
+      evidence: { taskId: string; sessionId: string }
+      usage: { provider: string; model: string; totalTokens: number; cachedTokens: number; cacheSavingsTokens: number }
+    }>(record.stdout)
+    expect(output.evidence.taskId).toBe('TASK-USAGE')
+    expect(output.evidence.sessionId).toBe('SESSION-USAGE')
+    expect(output.usage).toMatchObject({
+      provider: 'openai',
+      model: 'gpt-4.1',
+      totalTokens: 920,
+      cachedTokens: 300,
+      cacheSavingsTokens: 300,
+    })
+  }, 120_000)
+
   it('fails final check when no passed evidence exists for M work', async () => {
     const scaleDir = makeDir('scale-runtime-cli-scale-')
     const projectDir = makeDir('scale-runtime-cli-project-')

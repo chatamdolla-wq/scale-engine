@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { execa } from 'execa'
+import { parseCommandLine } from '../tools/SafeCommandRunner.js'
 import { wrapShellCommandWithRtk } from '../tools/RtkRuntime.js'
 
 export const SKILLS_DIR = join(homedir(), '.claude', 'skills')
@@ -25,19 +26,30 @@ export function resolveInstalledSkillPath(skillId: string, segments: string[] = 
 export async function runInstalledSkillCommand(cmd: string, timeout: number, skillId: string): Promise<SkillInvocationResult> {
   const start = Date.now()
   try {
-    const wrapped = wrapShellCommandWithRtk(cmd)
-    const result = wrapped
-      ? await execa(wrapped.command, wrapped.args, {
+    const parsed = tryParseSkillCommand(cmd)
+    const wrapped = parsed ? null : wrapShellCommandWithRtk(cmd)
+    const result = parsed
+      ? await execa(parsed.file, parsed.args, {
           timeout,
           reject: false,
           all: false,
+          shell: false,
+          windowsHide: true,
         })
-      : await execa(cmd, {
-          shell: true,
-          timeout,
-          reject: false,
-          all: false,
-        })
+      : wrapped
+        ? await execa(wrapped.command, wrapped.args, {
+            timeout,
+            reject: false,
+            all: false,
+            windowsHide: true,
+          })
+        : await execa(cmd, {
+            shell: true,
+            timeout,
+            reject: false,
+            all: false,
+            windowsHide: true,
+          })
     return {
       success: (result.exitCode ?? 1) === 0,
       output: result.stdout ?? '',
@@ -52,6 +64,14 @@ export async function runInstalledSkillCommand(cmd: string, timeout: number, ski
       durationMs: Date.now() - start,
       skillId,
     }
+  }
+}
+
+function tryParseSkillCommand(cmd: string): { file: string; args: string[] } | null {
+  try {
+    return parseCommandLine(cmd)
+  } catch {
+    return null
   }
 }
 

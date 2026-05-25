@@ -1,3 +1,25 @@
+## 0.40.2 - 2026-05-25
+
+### Release Readiness and Stability
+
+- Tightened `release:check` around the full local publish gate: sequential full test run, setup smoke, provider rehearsal, build, audit, diff check, and pack dry-run.
+- Hardened installed-skill command execution and workflow eval CLI tests so local command paths avoid unnecessary shell proxy overhead and flaky empty-stdout JSON parsing.
+- Added provider rehearsal packaging coverage so shared workflow helpers under `scripts/workflow/lib/` ship in the npm tarball.
+
+### Setup, Providers, and Environment Health
+
+- Added `scale setup --verify` closed-loop verification with clearer provider, tool, and environment summaries.
+- Improved Windows `gbrain` recovery and smoke isolation so setup/provider rehearsals can recover from Bun shutdown and local runtime permission issues.
+- Refined environment doctor and memory provider health reporting to distinguish actionable blockers from optional upstream noise.
+
+### Token and Workflow Governance
+
+- Added model-usage ledger reporting plus `scale token record` / `scale token report` CLI coverage for auditable token accounting.
+- Reduced the default context budget to a more conservative baseline and documented the new budgeting guidance.
+- Expanded tests for bootstrap, runtime usage, provider rehearsal, environment doctor, and workflow stability paths.
+
+---
+
 ## 0.40.1 - 2026-05-24
 
 ### Setup and Upgrade Experience

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { runExternalCommandSync } from '../core/ExternalCommand.js'
+import { runGbrainCommandSync } from '../core/GbrainRuntime.js'
 import { wrapCliCommandWithRtk } from './RtkRuntime.js'
 
 export type ToolCapabilityCategory = 'skill' | 'cli' | 'mcp' | 'browser' | 'desktop'
@@ -327,6 +328,15 @@ function defaultCommandExists(command: string): boolean {
 }
 
 function defaultRunVersion(command: string, args: string[]): { ok: boolean; stdout?: string; stderr?: string } {
+  if (command === 'gbrain') {
+    const result = runGbrainCommandSync(args, {
+      timeout: 5000,
+      env: process.env,
+    })
+    return result.exitCode === 0
+      ? { ok: true, stdout: result.stdout || result.stderr }
+      : { ok: false, stdout: result.stdout, stderr: result.stderr || `gbrain command failed with exit code ${result.exitCode}` }
+  }
   try {
     const invocation = wrapCliCommandWithRtk(command, args, defaultCommandExists)
     const stdout = runExternalCommandSync(invocation.command, invocation.args, { encoding: 'utf-8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })

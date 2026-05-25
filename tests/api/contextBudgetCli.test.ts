@@ -53,10 +53,12 @@ describe('context budget CLI', () => {
 
     expect(result.exitCode).toBe(0)
     const report = parseJson<{
+      thresholds: { maxAlwaysTokens: number; maxTaskTokens: number }
       summary: { alwaysTokens: number; byCategory: Record<string, { files: number }> }
       entries: Array<{ path: string; category: string }>
       promptCache: { provider: string; strategy: string; cacheEligibleTokens: number; cacheEligiblePaths: string[] }
     }>(result.stdout)
+    expect(report.thresholds).toEqual({ maxAlwaysTokens: 1500, maxTaskTokens: 4000 })
     expect(report.summary.alwaysTokens).toBeGreaterThan(0)
     expect(report.summary.byCategory.always.files).toBeGreaterThan(0)
     expect(report.promptCache.provider).toBe('generic')

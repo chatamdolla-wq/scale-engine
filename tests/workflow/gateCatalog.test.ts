@@ -51,4 +51,16 @@ describe('GateCatalog', () => {
     expect(preflightGateStages('full')).toEqual(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
     expect(preflightGateStages('ci')).toEqual(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
   })
+
+  it('defaults engineering standards to blocking when no verification matrix exists', () => {
+    const projectDir = makeDir('scale-gates-default-project-')
+
+    const report = createGateStatusReport({ projectDir, scaleDir: join(projectDir, '.scale') })
+
+    expect(report.extensions.find(gate => gate.id === 'engineering-standards')).toMatchObject({
+      active: true,
+      blocking: true,
+      mode: 'block',
+    })
+  })
 })

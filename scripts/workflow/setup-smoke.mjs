@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  ensureMirroredGbrainInvocation,
+  normalizeGbrainSpawnResult,
+  resolveDirectWindowsGbrainInvocation,
+  shouldRetryWithMirroredGbrain,
+} from './lib/gbrain-runtime.mjs'
+import { summarizeCommandOutput } from './lib/report-output.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(scriptDir, '..', '..')
@@ -13,12 +20,19 @@ const smokeRoot = options.tempDir
   : mkSmokeRoot()
 const projectDir = join(smokeRoot, 'project')
 const scaleDir = join(smokeRoot, '.scale')
+const homeDir = join(smokeRoot, 'home')
+const appDataDir = join(homeDir, 'AppData', 'Roaming')
+const localAppDataDir = join(homeDir, 'AppData', 'Local')
+const gbrainHomeDir = join(smokeRoot, 'gbrain-home')
+const gbrainAuditDir = join(smokeRoot, 'gbrain-audit')
 const scaleInvocation = parseCommandLine(options.scaleCommand ?? 'node --import tsx src/api/cli.ts')
 const scaleCommand = formatCommand(scaleInvocation.file, scaleInvocation.args)
 const results = []
 
 mkdirSync(projectDir, { recursive: true })
 mkdirSync(scaleDir, { recursive: true })
+mkdirSync(appDataDir, { recursive: true })
+mkdirSync(localAppDataDir, { recursive: true })
 
 try {
   runSetupSmoke()
@@ -33,10 +47,19 @@ try {
 function runSetupSmoke() {
   const baseEnv = {
     ...process.env,
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    APPDATA: appDataDir,
+    LOCALAPPDATA: localAppDataDir,
     SCALE_DIR: scaleDir,
     SCALE_PROJECT_DIR: projectDir,
     SCALE_LOG_LEVEL: '',
+    GBRAIN_HOME: gbrainHomeDir,
+    GBRAIN_AUDIT_DIR: gbrainAuditDir,
+    GBRAIN_NO_BANNER: '1',
   }
+  initProject(baseEnv)
+  initIsolatedGbrain(baseEnv)
 
   const zh = runCommand('bootstrap-ui-zh', ['bootstrap', 'deps', '--dir', projectDir, '--pack', 'ui', '--lang', 'zh'], baseEnv)
   assertIncludes(zh.stdout, 'SCALE 依赖安装计划', 'Chinese bootstrap output should use Chinese title')
@@ -64,6 +87,7 @@ function runSetupSmoke() {
   const envDoctor = runJson('doctor-env-json', ['doctor', 'env', '--json'], baseEnv)
   assert(envDoctor.ok === true, 'environment doctor should pass when required core commands are available')
   assertArrayContains(envDoctor.checks?.map(check => check.id), ['git', 'npm', 'npx', 'rtk', 'gbrain', 'graphify', 'codegraph'], 'environment doctor should report core and third-party commands')
+  assert(envDoctor.checks?.find(check => check.id === 'gbrain')?.status === 'ok', 'environment doctor should validate gbrain when an isolated brain is initialized')
 
   const localMemory = runJson('setup-memory-scale-local-json', [
     'setup',
@@ -97,9 +121,105 @@ function runSetupSmoke() {
   assert(gbrainMemory.memoryProviderSwitch?.mode === 'external-first', 'gbrain provider should support external-first mode')
   assert(gbrainMemory.memoryProviderSwitch?.nextOrder?.[0] === 'gbrain', 'gbrain should become the first provider')
 
+  const apply = runJson('setup-governed-apply-json', [
+    'setup',
+    '--dir',
+    projectDir,
+    '--pack',
+    'external-cli,memory,knowledge',
+    '--apply',
+    '--memory-provider',
+    'gbrain',
+    '--memory-mode',
+    'external-first',
+    '--json',
+  ], baseEnv)
+  assert(apply.final?.ok === true, 'setup apply should succeed for external-cli, memory, and knowledge packs')
+  assert(apply.final?.complete === true, 'setup apply should leave the selected packs fully installed')
+  assert(apply.final?.summary?.needsInit === 0, 'setup apply should not leave RTK, GBrain, Graphify, or CodeGraph uninitialized')
+  assert(apply.memoryProviderSwitch?.provider === 'gbrain', 'setup apply should keep gbrain as the selected provider')
+  assert(existsSync(join(projectDir, '.codegraph')), 'setup apply should initialize a CodeGraph index in the target project')
+  assert(existsSync(join(projectDir, 'graphify-out', 'graph.json')), 'setup apply should generate a Graphify graph artifact without LLM usage')
+  assert(existsSync(join(projectDir, '.git', 'hooks', 'post-commit')), 'setup apply should install the Graphify post-commit hook')
+  assert(existsSync(join(projectDir, '.git', 'hooks', 'post-checkout')), 'setup apply should install the Graphify post-checkout hook')
+  assert(
+    ['installed', 'installed-now'].includes(apply.final?.items?.find(item => item.id === 'rtk')?.status),
+    'setup apply should leave RTK in an installed state after Codex initialization',
+  )
+  assert(
+    ['installed', 'installed-now'].includes(apply.final?.items?.find(item => item.id === 'graphify')?.status),
+    'setup apply should leave Graphify in an installed state after hook and graph initialization',
+  )
+  assert((apply.final?.postCheckSummary?.warned ?? 0) === 0, 'setup apply should not leave memory/code post-checks in a warned state')
+
+  const verify = runJson('setup-governed-verify-json', [
+    'setup',
+    '--verify',
+    '--dir',
+    projectDir,
+    '--pack',
+    'external-cli,memory,knowledge',
+    '--json',
+  ], baseEnv)
+  assert(verify.ok === true, 'setup verify should pass after governed apply in the isolated home')
+  assert((verify.summary?.blockingIssues?.length ?? 0) === 0, 'setup verify should not report any blocking dependency issues after apply')
+
   const codegraph = runJson('codegraph-status-json', ['codegraph', 'status', '--dir', repoRoot, '--json'], baseEnv)
   assertArrayContains(codegraph.providers?.map(provider => provider.id), ['codegraph', 'graphify'], 'codegraph status should expose CodeGraph and Graphify providers')
   assert(typeof codegraph.projectIndexExists === 'boolean', 'codegraph status should report project index state')
+}
+
+function initProject(env) {
+  writeFileSync(join(projectDir, 'AGENTS.md'), '# Setup smoke project\n', 'utf-8')
+  writeFileSync(join(projectDir, 'smoke.ts'), 'export const setupSmoke = "ready"\n', 'utf-8')
+  const result = spawnStructured('git', ['init'], {
+    cwd: projectDir,
+    env,
+    encoding: 'utf8',
+    timeout: options.timeoutMs,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  const stdout = String(result.stdout ?? '')
+  const stderr = String(result.stderr ?? '')
+  results.push({
+    name: 'git-init-project',
+    command: 'git init',
+    exitCode: typeof result.status === 'number' ? result.status : 1,
+    startedAt: new Date().toISOString(),
+    endedAt: new Date().toISOString(),
+    stdoutTail: summarizeCommandOutput('git-init-project', 'stdout', stdout),
+    stderrTail: summarizeCommandOutput('git-init-project', 'stderr', stderr + (result.error ? `\n${result.error.message}` : '')),
+  })
+  if (result.status !== 0) {
+    throw new Error(`git-init-project failed with exit code ${result.status ?? 1}\n${stderr || stdout}`)
+  }
+}
+
+function initIsolatedGbrain(env) {
+  const startedAt = new Date().toISOString()
+  const result = spawnStructured('gbrain', ['init', '--pglite', '--no-embedding'], {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf8',
+    timeout: options.timeoutMs,
+    maxBuffer: 20 * 1024 * 1024,
+  })
+  const normalized = normalizeGbrainSpawnResult(['init', '--pglite', '--no-embedding'], result)
+  const { stdout, stderr, exitCode, timedOut, recoveredTimeout } = normalized
+  results.push({
+    name: 'gbrain-init-isolated-home',
+    command: 'gbrain init --pglite --no-embedding',
+    exitCode,
+    timedOut,
+    recoveredTimeout,
+    startedAt,
+    endedAt: new Date().toISOString(),
+    stdoutTail: summarizeCommandOutput('gbrain-init-isolated-home', 'stdout', stdout),
+    stderrTail: summarizeCommandOutput('gbrain-init-isolated-home', 'stderr', stderr),
+  })
+  if (exitCode !== 0) {
+    throw new Error(`gbrain-init-isolated-home failed with exit code ${exitCode}\n${summarizeCommandOutput('gbrain-init-isolated-home', 'stderr', stderr) || summarizeCommandOutput('gbrain-init-isolated-home', 'stdout', stdout)}`)
+  }
 }
 
 function runJson(name, args, env) {
@@ -132,8 +252,8 @@ function runCommand(name, args, env) {
     exitCode,
     startedAt,
     endedAt: new Date().toISOString(),
-    stdoutTail: tail(stdout),
-    stderrTail: tail(stderr + (result.error ? `\n${result.error.message}` : '')),
+    stdoutTail: summarizeCommandOutput(name, 'stdout', stdout),
+    stderrTail: summarizeCommandOutput(name, 'stderr', stderr + (result.error ? `\n${result.error.message}` : '')),
   }
   results.push(entry)
   if (exitCode !== 0) {
@@ -143,6 +263,23 @@ function runCommand(name, args, env) {
 }
 
 function spawnStructured(command, args, options) {
+  const direct = resolveDirectWindowsGbrainInvocation(command, args, resolveCommandPath)
+  if (direct) {
+    const result = spawnSync(direct.command, direct.args, {
+      ...options,
+      cwd: options.cwd ?? direct.cwd,
+      shell: false,
+      windowsHide: true,
+    })
+    if (!shouldRetryWithMirroredGbrain(direct, result)) return result
+    const mirrored = ensureMirroredGbrainInvocation(direct)
+    return spawnSync(mirrored.command, mirrored.args, {
+      ...options,
+      cwd: options.cwd ?? mirrored.cwd,
+      shell: false,
+      windowsHide: true,
+    })
+  }
   const resolved = resolveWindowsCommandShim(resolveCommandPath(command) ?? command)
   if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(resolved)) {
     const comspec = process.env.ComSpec || 'cmd.exe'
@@ -200,7 +337,7 @@ function parseArgs(args) {
     else if (arg === '--temp-dir') parsed.tempDir = args[++index]
     else if (arg === '--timeout-ms') parsed.timeoutMs = Number.parseInt(args[++index] ?? '', 10)
     else if (arg === '--help' || arg === '-h') {
-      process.stdout.write(`Usage: node scripts/workflow/setup-smoke.mjs [--scale-command "scale"] [--keep-temp] [--verbose]\n`)
+      process.stdout.write('Usage: node scripts/workflow/setup-smoke.mjs [--scale-command "scale"] [--keep-temp] [--verbose]\n')
       process.exit(0)
     } else {
       throw new Error(`Unknown argument: ${arg}`)
@@ -288,12 +425,9 @@ function writeSummary(status, error) {
     repoRoot,
     projectDir,
     scaleDir,
+    homeDir,
     results,
     error: error ? String(error.stack ?? error.message ?? error) : undefined,
   }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
-}
-
-function tail(value, max = 4000) {
-  return value.length > max ? value.slice(-max) : value
 }

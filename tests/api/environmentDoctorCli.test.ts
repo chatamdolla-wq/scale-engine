@@ -46,7 +46,7 @@ describe('environment doctor CLI', () => {
       platform: string
       node: { version: string; status: string }
       path: { entryCount: number }
-      checks: Array<{ id: string; status: string; category: string; required: boolean }>
+      checks: Array<{ id: string; status: string; category: string; required: boolean; version?: string }>
       recommendations: string[]
     }
     expect(report.ok).toBe(true)
@@ -64,6 +64,8 @@ describe('environment doctor CLI', () => {
       expect.objectContaining({ id: 'graphify', category: 'third-party', required: false }),
       expect.objectContaining({ id: 'codegraph', category: 'third-party', required: false }),
     ]))
+    const gbrain = report.checks.find(check => check.id === 'gbrain')
+    if (gbrain?.version) expect(gbrain.version.trim().startsWith('{')).toBe(false)
     expect(report.recommendations.join('\n')).toContain('npm run smoke:setup')
-  }, 30_000)
+  }, 60_000)
 })

@@ -1,6 +1,6 @@
 {
   "name": "@hongmaple0820/scale-engine",
-  "version": "0.40.1",
+  "version": "0.40.2",
   "description": "Executable AI agent governance with workflow gates, evidence, skill/tool orchestration, and traceable HTML artifacts",
   "repository": {
     "type": "git",
@@ -48,6 +48,7 @@
     "docs/workflow",
     "image",
     "examples/demo-projects/agent-governance-demo",
+    "scripts/workflow/lib",
     "scripts/workflow/setup-smoke.mjs",
     "scripts/workflow/provider-rehearsal.mjs"
   ],
@@ -65,7 +66,7 @@
     "smoke:providers": "node scripts/workflow/provider-rehearsal.mjs",
     "smoke:gbrain": "node scripts/workflow/provider-rehearsal.mjs --skip-graphify --require-gbrain",
     "smoke:graphify": "node scripts/workflow/provider-rehearsal.mjs --skip-gbrain --require-graphify",
-    "release:check": "npm run typecheck && npm run lint && npm test && npm run smoke:setup && npm run build && npm audit --omit=dev && git diff --check && npm pack --dry-run",
+    "release:check": "npm run typecheck && npm run lint && npm test && npm run smoke:setup && npm run smoke:providers -- --write-report && npm run build && npm audit --omit=dev && git diff --check && npm pack --dry-run",
     "mcp": "node dist/api/mcp.js",
     "serve": "node dist/api/http.js"
   },
