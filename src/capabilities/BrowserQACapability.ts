@@ -350,7 +350,7 @@ export class BrowserQACapability {
 
       // Accessibility check
       try {
-        const accessibility = await page.accessibility.snapshot()
+        const accessibility = await (page as any).accessibility?.snapshot?.()
         if (!accessibility) result.consoleWarnings.push({ type: 'warning', text: 'No accessibility tree found' })
       } catch {}
     } finally {
