@@ -111,11 +111,51 @@ export interface UpgradePlanStep {
     | 'migrate-ai-os-runtime'
     | 'check-ai-os-runtime'
     | 'run-preflight'
+    | 'deprecation-warning'
   path?: string
   risk: UpgradeRisk
   reason: string
   command?: string
 }
+
+export interface DeprecationWarning {
+  feature: string
+  deprecatedSince: string
+  removedIn: string
+  replacement: string
+  message: string
+}
+
+export const DEPRECATION_REGISTRY: DeprecationWarning[] = [
+  {
+    feature: 'scale context inject',
+    deprecatedSince: '0.42.0',
+    removedIn: '0.43.0',
+    replacement: 'scale cortex inject',
+    message: 'The standalone "scale context inject" command is deprecated. Use "scale cortex inject" instead.',
+  },
+  {
+    feature: 'scale doctor',
+    deprecatedSince: '0.42.0',
+    removedIn: '0.43.0',
+    replacement: 'scale verify',
+    message: 'The standalone "scale doctor" command is deprecated. Use "scale verify" for comprehensive health checks.',
+  },
+  {
+    feature: 'Legacy hook exit protocol (0/1)',
+    deprecatedSince: '0.42.0',
+    removedIn: '0.44.0',
+    replacement: 'Shield exit protocol (0=allow, 2=block)',
+    message: 'Hooks using exit code 1 for blocking should migrate to exit code 2 per the Shield protocol.',
+  },
+  {
+    feature: '.scale/state/ flat artifacts',
+    deprecatedSince: '0.42.0',
+    removedIn: '0.44.0',
+    replacement: 'Engine-specific state directories (.scale/shield/, .scale/orchestrator/, .scale/cortex/)',
+    message: 'The flat .scale/state/ directory is being replaced by engine-specific state directories.',
+  },
+]
 
 export interface UpgradeBackupManifest {
   version: 1
@@ -223,6 +263,16 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
   const check = createUpgradeCheckReport(options)
   const blockers: UpgradePlanBlocker[] = []
   const steps: UpgradePlanStep[] = []
+
+  // Add deprecation warnings for old versions
+  const deprecations = getApplicableDeprecations(check.scaleEngine.currentVersion)
+  for (const dep of deprecations) {
+    steps.push({
+      action: 'deprecation-warning',
+      risk: dep.removedIn <= normalizeTargetVersion(options.targetScaleVersion) ? 'high' : 'medium',
+      reason: `${dep.message} Deprecated since ${dep.deprecatedSince}, removed in ${dep.removedIn}. Replacement: ${dep.replacement}`,
+    })
+  }
 
   if (!check.governanceLock.exists) {
     blockers.push({
@@ -739,4 +789,20 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+export function getApplicableDeprecations(currentVersion: string | null): DeprecationWarning[] {
+  if (!currentVersion) return DEPRECATION_REGISTRY
+  return DEPRECATION_REGISTRY.filter(dep => compareVersions(currentVersion, dep.deprecatedSince) < 0)
+}
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] ?? 0
+    const nb = pb[i] ?? 0
+    if (na !== nb) return na - nb
+  }
+  return 0
 }

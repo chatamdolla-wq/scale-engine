@@ -219,6 +219,149 @@ export const cortexEvolveCommand = defineCommand({
 })
 
 // ---------------------------------------------------------------------------
+// scale cortex verify
+// ---------------------------------------------------------------------------
+
+export const cortexVerifyCommand = defineCommand({
+  meta: {
+    name: 'verify',
+    description: 'Verify Cortex pipeline health — instinct store integrity, observation data, injection readiness',
+  },
+  args: {
+    dir: { type: 'string', default: process.cwd(), description: 'Project directory' },
+    json: { type: 'boolean', default: false },
+  },
+  async run({ args }) {
+    const projectDir = String(args.dir ?? process.cwd())
+    const scaleDir = join(projectDir, '.scale')
+
+    const checks: { name: string; status: 'PASS' | 'WARN' | 'FAIL'; detail: string }[] = []
+
+    // 1. Instinct store integrity
+    const store = new InstinctStore(join(scaleDir, 'instincts'))
+    const allInstincts = store.loadAll()
+    const storeStats = store.stats()
+
+    let storeIssues = 0
+    for (const instinct of allInstincts) {
+      if (!instinct.id || !instinct.trigger) { storeIssues++; continue }
+      if (instinct.confidence < 0 || instinct.confidence > 1) storeIssues++
+      if (instinct.hitRate < 0 || instinct.hitRate > 1) storeIssues++
+      if (instinct.observations < 0) storeIssues++
+    }
+
+    checks.push({
+      name: 'Instinct store integrity',
+      status: storeIssues > 0 ? 'WARN' : 'PASS',
+      detail: storeIssues > 0
+        ? `${storeIssues} instinct(s) with invalid fields out of ${allInstincts.length}`
+        : `${allInstincts.length} instincts loaded, all fields valid`,
+    })
+
+    // 2. Observation data validity
+    const extractor = new InstinctExtractor(scaleDir)
+    const observations = extractor.loadObservations()
+    let validObs = 0
+    let invalidObs = 0
+    for (const obs of observations) {
+      if (obs.timestamp && obs.gateName && obs.gateStatus) validObs++
+      else invalidObs++
+    }
+
+    checks.push({
+      name: 'Observation data',
+      status: invalidObs > 0 ? 'WARN' : observations.length === 0 ? 'WARN' : 'PASS',
+      detail: observations.length === 0
+        ? 'No observations found — run gates first to generate data'
+        : invalidObs > 0
+          ? `${invalidObs} malformed observation(s) out of ${observations.length}`
+          : `${observations.length} observations, all valid`,
+    })
+
+    // 3. Pipeline connectivity (observations → patterns → instincts)
+    if (observations.length > 0) {
+      const patterns = extractor.detectPatterns(observations)
+      const extracted = extractor.extract(patterns)
+
+      checks.push({
+        name: 'Pipeline connectivity',
+        status: patterns.length > 0 && extracted.length > 0 ? 'PASS' : 'WARN',
+        detail: `${observations.length} observations → ${patterns.length} patterns → ${extracted.length} instincts`,
+      })
+    } else {
+      checks.push({
+        name: 'Pipeline connectivity',
+        status: 'WARN',
+        detail: 'No observations to test pipeline — skipped',
+      })
+    }
+
+    // 4. Injection readiness
+    const injector = new SessionInjector(store)
+    const injection = injector.build()
+
+    checks.push({
+      name: 'Injection readiness',
+      status: injection.instinctCount > 0 ? 'PASS' : 'WARN',
+      detail: injection.instinctCount > 0
+        ? `${injection.instinctCount} high-confidence instincts ready (${injection.content.length} chars)`
+        : 'No high-confidence instincts (≥0.7) for injection',
+    })
+
+    // 5. Metrics computability
+    try {
+      const calculator = new GovernanceMetricsCalculator(scaleDir)
+      const metrics = calculator.compute(allInstincts, 30)
+      const hasPlaceholders = metrics.cost.estimatedSavingsFromCaching > 0 &&
+        metrics.trends.instinctHitRateDelta === 0
+
+      checks.push({
+        name: 'Metrics computability',
+        status: 'PASS',
+        detail: hasPlaceholders
+          ? `Gate pass rate: ${(metrics.gates.passRate * 100).toFixed(0)}%, instinct hit rate: ${(metrics.instincts.hitRate * 100).toFixed(0)}% (some values use estimates)`
+          : `Gate pass rate: ${(metrics.gates.passRate * 100).toFixed(0)}%, instinct hit rate: ${(metrics.instincts.hitRate * 100).toFixed(0)}%`,
+      })
+    } catch (err: any) {
+      checks.push({
+        name: 'Metrics computability',
+        status: 'FAIL',
+        detail: `Failed to compute metrics: ${err.message}`,
+      })
+    }
+
+    // 6. Reflexion engine availability
+    const hasLocalModel = !!process.env.SCALE_LOCAL_MODEL
+    checks.push({
+      name: 'Reflexion engine',
+      status: hasLocalModel ? 'PASS' : 'WARN',
+      detail: hasLocalModel
+        ? `Local model configured: ${process.env.SCALE_LOCAL_MODEL}`
+        : 'SCALE_LOCAL_MODEL not set — reflexion uses heuristic fallback',
+    })
+
+    // Output
+    const passed = checks.filter(c => c.status === 'PASS').length
+    const warned = checks.filter(c => c.status === 'WARN').length
+    const failed = checks.filter(c => c.status === 'FAIL').length
+    const overall = failed > 0 ? 'FAIL' : warned > 0 ? 'WARN' : 'PASS'
+
+    if (args.json) {
+      console.log(JSON.stringify({ overall, checks, store: storeStats }, null, 2))
+      return
+    }
+
+    console.log('SCALE Cortex — Pipeline Verification\n')
+    for (const check of checks) {
+      const icon = check.status === 'PASS' ? '[OK]' : check.status === 'WARN' ? '[WARN]' : '[FAIL]'
+      console.log(`  ${icon} ${check.name}: ${check.detail}`)
+    }
+    console.log(`\n  Overall: ${overall} (${passed} passed, ${warned} warnings, ${failed} failures)`)
+    console.log(`  Store: ${storeStats.total} instincts across ${Object.keys(storeStats.byDomain).length} domain(s)\n`)
+  },
+})
+
+// ---------------------------------------------------------------------------
 // scale cortex (parent)
 // ---------------------------------------------------------------------------
 
@@ -232,5 +375,6 @@ export const cortexCommand = defineCommand({
     inject: cortexInjectCommand,
     metrics: cortexMetricsCommand,
     evolve: cortexEvolveCommand,
+    verify: cortexVerifyCommand,
   },
 })

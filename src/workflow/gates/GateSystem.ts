@@ -7,7 +7,8 @@ import { EvidenceStore } from '../EvidenceStore.js'
 import { WorkflowArtifactWriter } from '../WorkflowArtifactWriter.js'
 import { detectVerificationCommands, type ResolvedVerificationCommand, type VerificationCommandConfig, type VerificationRuntimeEvidenceConfig } from '../VerificationCommands.js'
 import { registerMetaGovernanceGates } from './MetaGovernanceGates.js'
-import { META_GOVERNANCE_GATE_STAGES } from '../GateCatalog.js'
+import { registerEnhancedGates } from './EnhancedGates.js'
+import { META_GOVERNANCE_GATE_STAGES, ENHANCED_GATE_STAGES } from '../GateCatalog.js'
 import { createHash } from 'node:crypto'
 import { RuntimeEvidenceLedger } from '../../runtime/RuntimeEvidenceLedger.js'
 import { compressCommandOutput, type CommandOutputCompressionResult } from '../../tools/CommandOutputCompressor.js'
@@ -370,6 +371,20 @@ export class GateSystem {
 
   registerMetaGates(scaleDir: string = '.scale'): void {
     registerMetaGovernanceGates(this, scaleDir)
+  }
+
+  registerEnhancedGates(scaleDir: string = '.scale'): void {
+    registerEnhancedGates(this, scaleDir)
+  }
+
+  async executeEnhancedGates(scaleDir: string = '.scale'): Promise<GateResult[]> {
+    this.registerEnhancedGates(scaleDir)
+    const results: GateResult[] = []
+    for (const stage of ENHANCED_GATE_STAGES) {
+      const result = await this.executeGate(stage)
+      results.push(result)
+    }
+    return results
   }
 
   async executeMetaGovernance(scaleDir: string = '.scale'): Promise<GateResult[]> {

@@ -1,8 +1,63 @@
+## 0.43.0 - 2026-05-27
+
+### Governance Hardening & Migration Readiness
+
+#### Enhanced Gate System (G16-G22)
+
+- Added 7 new enhanced gates: G16 (lock sync), G17 (architecture), G18 (performance), G19 (error handling), G20 (documentation), G21 (test coverage), G22 (dependency hygiene).
+- Added `EnhancedGates.ts` with `GateActivation` modes (default/profile/optional/policy).
+- Extended `GateCatalog` with `GateFamily` classification (core/meta/extension).
+- Added `scripts/gates/G16-verify.sh` through `G22-verify.sh`.
+- Updated `scripts/gates/all.sh` to include enhanced gate tier.
+
+#### Migration & Deprecation
+
+- Added `docs/guides/MIGRATION.md` — breaking changes and migration paths from v0.26.0 through v0.42.0.
+- Added `DeprecationWarning` interface and `DEPRECATION_REGISTRY` in UpgradeManager with 4 deprecation entries.
+- `scale upgrade plan` now shows deprecation warnings when upgrading from old versions.
+- Updated CHANGELOG with breaking change notes for v0.42.0.
+
+#### Governance Lock Sync
+
+- Recalculated all 27 managed file SHA-256 hashes (was stale since v0.26.0).
+- `scaleVersion` in `.scale/governance.lock.json` now matches installed package version.
+
+#### Cortex Pipeline
+
+- Added `scale cortex verify` command with 6 health checks (instinct store, observation data, pipeline connectivity, injection readiness, metrics computability, reflexion engine).
+- Supports `--json` output for CI integration.
+
+#### Test Coverage
+
+- Added Shield tests: 50 tests (protectedPaths 41, shieldE2E 9).
+- Added Cortex tests: 21 tests (instinct extractor, store, session injector).
+- Added Orchestrator tests: 26 tests (policy loader, tracker adapter, workspace manager, reconciliation loop).
+- Full suite: 164 files, 1572 tests, all passing.
+
+#### Documentation
+
+- Updated `docs/workflow/README.md` gate table: G0-G22 with three tiers (core/meta/enhanced).
+- Updated `docs/guides/DEVELOPMENT_WORKFLOW.md` verification section with full 23-gate listing.
+- Updated `docs/workflow/GATES_AND_SCORE.md` with enhanced gates section.
+- Trimmed npm package docs from 18 to 4 files (deep reference readable from GitHub).
+
+---
+
 ## 0.42.0 - 2026-05-25
 
 ### SCALE 2.0 — Three-Engine Architecture
 
 This release introduces the SCALE 2.0 three-engine architecture, synthesizing patterns from three frontier projects into a unified governance runtime.
+
+#### Breaking Changes
+
+- **CLI restructuring**: `scale` CLI restructured to nested subcommand tree (66+ commands). `scale context inject` → `scale cortex inject`, `scale doctor` → `scale verify`.
+- **Gate expansion**: G0-G8 (9 gates) → G0-G22 (23 gates). Existing gate configs remain compatible.
+- **Hook protocol**: Exit-code protocol standardized: 0=allow, 2=block. Hooks using exit 1 for blocking should migrate to exit 2.
+- **Source layout**: `src/` reorganized into `src/shield/`, `src/orchestrator/`, `src/cortex/`. Internal import paths changed.
+- **Deprecations**: See `docs/guides/MIGRATION.md` for full deprecation timeline and migration steps.
+
+> **Migration guide**: `docs/guides/MIGRATION.md`
 
 #### Scale Shield — Hook-Based Deterministic Interception
 

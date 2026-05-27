@@ -60,9 +60,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$MODE" in
-  workflow) GATES=(G1 G2 G3) ;;
-  quality) GATES=(G4 G5 G6 G7 G8) ;;
-  all) GATES=(G1 G2 G3 G4 G5 G6 G7 G8) ;;
+  workflow) GATES=(G1 G2 G3 G16) ;;
+  quality) GATES=(G0 G4 G5 G6 G7 G8 G17 G18 G19 G20) ;;
+  meta) GATES=(G9 G10 G11 G12 G13 G14 G15 G21 G22) ;;
+  all) GATES=(G0 G1 G2 G3 G4 G5 G6 G7 G8 G16 G17 G18 G19 G20 G21 G22) ;;
   *)
     echo "[GATE] invalid mode: $MODE" >&2
     exit 1

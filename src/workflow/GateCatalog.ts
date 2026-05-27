@@ -47,6 +47,7 @@ export interface GateStatusReport {
     metaStages: number
     extensionGates: number
     blockingExtensions: number
+    enhancedGates: number
   }
   verificationProfile: string
   policy: VerificationPolicy
@@ -61,6 +62,7 @@ export const PREFLIGHT_FULL_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5', 'G6', 
 export const WORKFLOW_VERIFY_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
 export const PRODUCT_SMOKE_GATES: GateStage[] = ['G8']
 export const META_GOVERNANCE_GATE_STAGES: GateStage[] = ['G9', 'G10', 'G11', 'G12', 'G13', 'G14', 'G15']
+export const ENHANCED_GATE_STAGES: GateStage[] = ['G16', 'G17', 'G18', 'G19', 'G20', 'G21', 'G22']
 
 export const CORE_GATE_CATALOG: GateCatalogEntry[] = [
   {
@@ -87,7 +89,7 @@ export const CORE_GATE_CATALOG: GateCatalogEntry[] = [
     id: 'exploration',
     stage: 'G1',
     family: 'core',
-    activation: 'optional',
+    activation: 'default',
     name: 'Exploration',
     description: 'Exploration must record source files and the main contradiction.',
     requiredLevel: 'M',
@@ -97,7 +99,7 @@ export const CORE_GATE_CATALOG: GateCatalogEntry[] = [
     id: 'planning',
     stage: 'G2',
     family: 'core',
-    activation: 'optional',
+    activation: 'default',
     name: 'Planning',
     description: 'Plan must cover boundaries, exceptions, rollback, and verification.',
     requiredLevel: 'M',
@@ -153,6 +155,56 @@ export const CORE_GATE_CATALOG: GateCatalogEntry[] = [
     requiredLevel: 'profile',
     blocking: true,
   },
+  {
+    id: 'commit-discipline',
+    stage: 'G16',
+    family: 'core',
+    activation: 'default',
+    name: 'Commit Discipline',
+    description: 'Uncommitted changes must be within thresholds; no large files staged.',
+    requiredLevel: 'M',
+    blocking: true,
+  },
+  {
+    id: 'doc-hygiene',
+    stage: 'G17',
+    family: 'core',
+    activation: 'default',
+    name: 'Documentation Hygiene',
+    description: 'Changed docs must have valid links and up-to-date references.',
+    requiredLevel: 'M',
+    blocking: false,
+  },
+  {
+    id: 'runtime-evidence',
+    stage: 'G18',
+    family: 'core',
+    activation: 'default',
+    name: 'Runtime Evidence',
+    description: 'Task must have recorded runtime evidence with matching exit codes.',
+    requiredLevel: 'M',
+    blocking: true,
+  },
+  {
+    id: 'code-review',
+    stage: 'G19',
+    family: 'core',
+    activation: 'profile',
+    name: 'Code Review',
+    description: 'L/CRITICAL tasks require reviewed changes with resolved findings.',
+    requiredLevel: 'L',
+    blocking: true,
+  },
+  {
+    id: 'supply-chain',
+    stage: 'G20',
+    family: 'core',
+    activation: 'default',
+    name: 'Supply Chain',
+    description: 'No CRITICAL/HIGH vulnerabilities; lock file must be consistent.',
+    requiredLevel: 'ALWAYS',
+    blocking: true,
+  },
 ]
 
 export const META_GATE_CATALOG: GateCatalogEntry[] = [
@@ -163,11 +215,13 @@ export const META_GATE_CATALOG: GateCatalogEntry[] = [
   ['G13', 'Multi-Agent Coordination', 'Checks whether multi-agent work has coordination evidence.'],
   ['G14', 'Skill Utilization', 'Checks whether required skills were selected and verified.'],
   ['G15', 'Self-Improvement', 'Checks whether lessons can safely enter the learning loop.'],
+  ['G21', 'Context Budget', 'Task context must be within token budget; no redundant loading.'],
+  ['G22', 'Session Health', 'No leaked worktrees; session state is consistent.'],
 ].map(([stage, name, description]) => ({
   id: String(stage).toLowerCase(),
   stage: stage as GateStage,
   family: 'meta' as const,
-  activation: 'optional' as const,
+  activation: 'default' as const,
   name: String(name),
   description: String(description),
   requiredLevel: 'M' as const,
@@ -194,6 +248,7 @@ export function createGateStatusReport(options: {
   })
   const policy = resolved.policy
   const catalog = [...CORE_GATE_CATALOG, ...META_GATE_CATALOG]
+  const enhancedGates = [...CORE_GATE_CATALOG, ...META_GATE_CATALOG].filter(g => g.stage !== undefined && ENHANCED_GATE_STAGES.includes(g.stage))
   const extensions = extensionStatuses(policy)
   const profiles = [
     profileStatus('workflow:verify', 'Workflow verify', 'Default task verification gates.', WORKFLOW_VERIFY_GATES),
@@ -202,6 +257,7 @@ export function createGateStatusReport(options: {
     profileStatus('preflight:ci', 'Preflight CI', 'CI-equivalent preflight gate set.', PREFLIGHT_FULL_GATES),
     profileStatus('product-smoke', 'Product smoke', 'Product smoke profile gate set.', PRODUCT_SMOKE_GATES),
     profileStatus('meta-governance', 'Meta governance', 'Optional G9-G15 governance effectiveness gates.', META_GOVERNANCE_GATE_STAGES),
+    profileStatus('enhanced', 'Enhanced gates', 'G16-G22 commit discipline, doc hygiene, runtime evidence, code review, supply chain, context budget, session health.', ENHANCED_GATE_STAGES),
   ]
   const warnings = [...resolved.warnings]
   warnings.push('VisualGate also defaults to G9 when explicitly registered; keep visual and meta gate profiles separate until stage ids are made capability-based.')
@@ -219,6 +275,7 @@ export function createGateStatusReport(options: {
       metaStages: META_GATE_CATALOG.length,
       extensionGates: extensions.length,
       blockingExtensions: extensions.filter(gate => gate.blocking).length,
+      enhancedGates: enhancedGates.length,
     },
     verificationProfile: resolved.profileName,
     policy,

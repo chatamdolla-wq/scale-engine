@@ -50,18 +50,37 @@ make gate-workflow
 推荐顺序：
 
 ```bash
-make gate-quality
-make verify PROFILE=default
+make gate-workflow     # G1, G2, G3, G16
+make gate-quality      # G0, G4, G5, G6, G7, G8, G17, G18, G19, G20
+make verify PROFILE=default  # 完整验证
 git diff --check
 ```
 
-其中：
+门禁分三层（共 23 个），详见 [GATES_AND_SCORE.md](../workflow/GATES_AND_SCORE.md)：
 
-- `G4` 验证 workflow 脚本本身可解析。
-- `G5` 运行 `lint + typecheck + test + build`。
-- `G6` 检查任务证据和 diff hygiene。
-- `G7` 是安全面，默认走 `npm audit --audit-level=high`。
-- `G8` 检查 Markdown 与工作流文档的基础卫生。
+**核心门禁（G0-G8）** — 每次提交必须通过：
+- `G0` 构建必须通过
+- `G1` 探索至少读 3 个文件并记录主矛盾
+- `G2` 计划包含边界、异常、回滚
+- `G3` `src/` 行为改动必须伴随测试
+- `G4` lint 必须通过
+- `G5` 测试必须通过
+- `G6` 覆盖率和任务证据（profile 级）
+- `G7` 安全和依赖检查（profile 级）
+- `G8` 产品冒烟（profile 级）
+
+**元治理门禁（G9-G15）** — 治理有效性检查：
+- `G9` 知识库使用、`G11` 护栏有效性、`G12` 工作流完整性（默认启用）
+- `G10` 改进证据、`G13` 多 Agent 协调、`G14` skill 使用、`G15` 自我改进（可选）
+
+**增强门禁（G16-G22）** — 提交纪律和运行时质量：
+- `G16` 未提交文件阈值和大文件检查（阻断）
+- `G17` 文档链接卫生（advisory）
+- `G18` 运行时证据记录（阻断）
+- `G19` 代码审查（L/CRITICAL 任务阻断）
+- `G20` 供应链安全（阻断）
+- `G21` 上下文 token 预算（advisory）
+- `G22` 会话健康：worktree 泄露检查（advisory）
 
 ## 5. 沉淀
 

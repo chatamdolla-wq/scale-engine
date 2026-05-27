@@ -10,10 +10,11 @@ Use `scale gates status` to inspect the active gate catalog.
 scale gates status --json
 ```
 
-The report separates three concepts that were previously easy to confuse:
+The report separates four concepts that were previously easy to confuse:
 
 - Core gates: `G0-G8`, used by workflow verification, preflight, and product smoke profiles.
 - Meta-governance gates: `G9-G15`, used by `scale meta-governance`.
+- Enhanced gates: `G16-G22`, covering commit discipline, doc hygiene, runtime evidence, code review, supply chain, context budget, and session health.
 - Extension gates: policy-backed checks such as engineering standards, product smoke policy, and tool evidence.
 
 `scale gates status` is intentionally read-only. It does not execute checks; it explains which checks exist and which policies are blocking.
@@ -27,6 +28,38 @@ Architecture and engineering standards are driven by project configuration:
 - `.scale/frameworks.json` records project-specific framework and architecture conventions.
 
 Preflight now uses changed-file standards scope when the target is inside a Git worktree. Non-Git projects keep the old full-scan behavior so bootstrap and fixture projects still get complete feedback.
+
+## Enhanced Gates (G16-G22)
+
+Added in v0.41.0, these gates cover commit discipline, runtime quality, and session hygiene:
+
+| Gate | Name | Blocking | Description |
+| --- | --- | --- | --- |
+| G16 | Commit Discipline | ✅ | Uncommitted file count (warn=10, block=25), time since last commit (warn=60min, block=180min), staged files >1MB, whitespace errors |
+| G17 | Documentation Hygiene | — | Changed markdown files must have valid internal links |
+| G18 | Runtime Evidence | ✅ | Task must have recorded runtime evidence with matching exit codes |
+| G19 | Code Review | ✅ (L/CRITICAL) | L and CRITICAL tasks require reviewed changes with resolved findings |
+| G20 | Supply Chain | ✅ | No CRITICAL/HIGH vulnerabilities; lock file must be consistent |
+| G21 | Context Budget | — | Advisory check on context token usage against configured budget |
+| G22 | Session Health | — | Advisory check on stale worktrees and session state consistency |
+
+Run enhanced gates individually:
+
+```bash
+bash scripts/gates/G16-verify.sh   # Commit Discipline
+bash scripts/gates/G17-verify.sh   # Documentation Hygiene
+bash scripts/gates/G18-verify.sh   # Runtime Evidence
+bash scripts/gates/G19-verify.sh   # Code Review
+bash scripts/gates/G20-verify.sh   # Supply Chain
+bash scripts/gates/G21-verify.sh   # Context Budget
+bash scripts/gates/G22-verify.sh   # Session Health
+```
+
+Or run all gates including enhanced:
+
+```bash
+bash scripts/gates/all.sh --all
+```
 
 ## Task Score
 
