@@ -1315,7 +1315,7 @@ export const phaseVerify = defineCommand({
       toolEvidenceGatePassed: finalToolEvidenceGate ? !finalToolEvidenceGate.blocked : true,
     }
     await store.update(args['task-id'], { payload: finalPayload })
-    const metricGateStatus = codePassed &&
+    const metricGateStatus =
       (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked || workflowOpenTasksBlocked)
       ? 'blocked'
       : undefined
