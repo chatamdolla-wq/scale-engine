@@ -352,6 +352,16 @@ function scanPackageSource(projectDir: string, pkg: { name: string; path: string
   return findings
 }
 
+// Packages that legitimately use eval/Function for browser automation, sandboxing, etc.
+const KNOWN_EVAL_PACKAGES = new Set([
+  'playwright',
+  'playwright-core',
+  'puppeteer-core',
+  'puppeteer',
+  'jsdom',
+  'happy-dom',
+])
+
 function sourceFindingForLine(pkg: { name: string; metadata: PackageLockPackage }, path: string, lineNumber: number, line: string): DependencyAuditFinding | null {
   const trimmed = line.trim()
   if (trimmed === '' || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return null
@@ -360,7 +370,7 @@ function sourceFindingForLine(pkg: { name: string; metadata: PackageLockPackage 
       packageName: pkg.name,
       version: pkg.metadata.version,
       ruleId: 'dependency.eval',
-      severity: 'CRITICAL',
+      severity: KNOWN_EVAL_PACKAGES.has(pkg.name) ? 'MEDIUM' : 'CRITICAL',
       path,
       message: 'Dependency source uses dynamic code execution.',
       evidence: `line ${lineNumber}: ${trimmed.slice(0, 180)}`,
