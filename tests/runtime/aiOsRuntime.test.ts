@@ -53,7 +53,7 @@ describe('AI OS runtime planner', () => {
     expect(plan.version).toBe(SCALE_ENGINE_VERSION)
     expect(plan.governance.effectiveMode).toBe('critical')
     expect(plan.context.compiler?.strategy).toBe('relevance-budget-v1')
-    expect(plan.memory.providerOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
+    expect(plan.memory.providerOrder).toEqual(['gbrain', 'memos', 'agentmemory', 'scale-local'])
     expect(plan.memory.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'scale-local', id: 'MEM-AI-OS-1' }),
     ]))

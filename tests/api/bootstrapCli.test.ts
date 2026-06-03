@@ -158,7 +158,7 @@ describe('bootstrap CLI', () => {
       provider: 'scale-local',
       mode: 'local-only',
     })
-    expect(report.memoryProviderSwitch.previousOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
+    expect(report.memoryProviderSwitch.previousOrder).toEqual(['gbrain', 'memos', 'agentmemory', 'scale-local'])
     expect(report.memoryProviderSwitch.nextOrder[0]).toBe('scale-local')
     expect(report.final.packIds).toEqual(['memory'])
     expect(report.final.runtimeChecks.map(check => check.id)).toContain('bun')

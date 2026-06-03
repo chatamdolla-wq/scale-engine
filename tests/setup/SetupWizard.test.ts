@@ -25,8 +25,8 @@ describe('setup wizard', () => {
         provider: options.provider,
         mode: options.mode ?? 'auto',
         path: '.scale-test/memory-providers.json',
-        previousOrder: ['gbrain', 'agentmemory', 'scale-local'],
-        nextOrder: [options.provider, 'agentmemory', 'scale-local'],
+        previousOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
+        nextOrder: [options.provider, 'memos', 'agentmemory', 'scale-local'],
         warnings: [],
       }) as MemoryProviderUseReport,
     })

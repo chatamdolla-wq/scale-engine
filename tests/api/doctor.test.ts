@@ -328,7 +328,7 @@ describe('Doctor', () => {
         configExists: true,
         routing: {
           mode: 'external-first',
-          defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          defaultOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
           allowExternalWrite: false,
           requireEvidence: true,
           maxResultsPerProvider: 5,

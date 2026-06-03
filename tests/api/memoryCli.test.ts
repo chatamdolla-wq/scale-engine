@@ -42,7 +42,7 @@ describe('memory CLI', () => {
     expect(init.exitCode).toBe(0)
     const initReport = parseJson<{ written: boolean; path: string; config: { routing: { defaultOrder: string[] } } }>(init.stdout)
     expect(initReport.written).toBe(true)
-    expect(initReport.config.routing.defaultOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
+    expect(initReport.config.routing.defaultOrder).toEqual(['gbrain', 'memos', 'agentmemory', 'scale-local'])
     expect(existsSync(initReport.path)).toBe(true)
 
     const status = await runScale(['memory', 'provider', 'status', '--json'], scaleDir, projectDir)
@@ -82,7 +82,7 @@ describe('memory CLI', () => {
       provider: 'scale-local',
       mode: 'local-only',
     })
-    expect(switchedReport.previousOrder).toEqual(['gbrain', 'agentmemory', 'scale-local'])
+    expect(switchedReport.previousOrder).toEqual(['gbrain', 'memos', 'agentmemory', 'scale-local'])
     expect(switchedReport.nextOrder[0]).toBe('scale-local')
 
     const status = await runScale(['memory', 'provider', 'status', '--json'], scaleDir, projectDir)

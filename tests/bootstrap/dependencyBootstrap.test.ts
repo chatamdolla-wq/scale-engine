@@ -49,7 +49,7 @@ describe('dependency bootstrap post-checks', () => {
         configExists: true,
         routing: {
           mode: 'external-first',
-          defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          defaultOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
           allowExternalWrite: false,
           requireEvidence: true,
           maxResultsPerProvider: 5,
@@ -143,7 +143,7 @@ describe('dependency bootstrap post-checks', () => {
         configExists: true,
         routing: {
           mode: 'external-first',
-          defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          defaultOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
           allowExternalWrite: false,
           requireEvidence: true,
           maxResultsPerProvider: 5,
@@ -208,8 +208,8 @@ describe('dependency bootstrap post-checks', () => {
           provider: 'gbrain',
           mode: 'external-first',
           path: 'E:/project/demo/.scale/memory-providers.json',
-          previousOrder: ['gbrain', 'agentmemory', 'scale-local'],
-          nextOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          previousOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
+          nextOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
           warnings: [],
         }),
         writeCodeConfig: () => ({ path: 'E:/project/demo/.scale/code-intelligence.json', written: true }),
@@ -218,7 +218,7 @@ describe('dependency bootstrap post-checks', () => {
 
     expect(memoryActions).toEqual([
       'Wrote E:/project/demo/.scale/memory-providers.json',
-      'Memory provider order unchanged: gbrain -> agentmemory -> scale-local',
+      'Memory provider order unchanged: gbrain -> memos -> agentmemory -> scale-local',
     ])
 
     const knowledgeActions = applyDependencyBootstrapPostActions(
@@ -232,8 +232,8 @@ describe('dependency bootstrap post-checks', () => {
           provider: 'gbrain',
           mode: 'external-first',
           path: 'E:/project/demo/.scale/memory-providers.json',
-          previousOrder: ['gbrain', 'agentmemory', 'scale-local'],
-          nextOrder: ['gbrain', 'agentmemory', 'scale-local'],
+          previousOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
+          nextOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
           warnings: [],
         }),
         writeCodeConfig: () => ({ path: 'E:/project/demo/.scale/code-intelligence.json', written: false }),

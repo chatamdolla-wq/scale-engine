@@ -16,7 +16,9 @@ The inventory is intentionally conservative:
 | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | File-backed planning workflow reference | adapted concept, not vendored | MIT | `SkillRepository`, README, `THIRD_PARTY_SKILLS` |
 | [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Secondary external memory provider | external provider, fallback-only | Apache-2.0 | `MemoryProviders`, `SkillRepository`, README |
 | [garrytan/gbrain](https://github.com/garrytan/gbrain) | Default graph-backed memory provider | external provider, default-enabled | MIT | `MemoryProviders`, `SkillRepository`, README |
+| [MemTensor/MemOS](https://github.com/MemTensor/MemOS) | Memory Operating System — graph-first 3-layer memory architecture | external provider, optional | Apache-2.0 | `MemoryProviders`, `SkillRepository`, README |
 | [safishamsi/graphify](https://github.com/safishamsi/graphify) | Default knowledge graph and semantic recall source | external provider, default-enabled | review-required | `GraphifyKnowledgeBase`, `CodeIntelligence`, docs |
+| [tirth8205/code-review-graph](https://github.com/tirth8205/code-review-graph) | AST-based code review with blast radius analysis | external CLI, optional | MIT | `CodeIntelligence`, `SkillRepository`, MCP tools |
 | [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | Upstream code intelligence CLI and MCP server for project-local code graph queries | external CLI and MCP reference | MIT | `CodeIntelligence`, `doctor`, quickstart docs |
 | [anthropics/skills](https://github.com/anthropics/skills) | Frontend and webapp testing skill references | external skill reference | review-required | `SkillRepository`, `SkillCatalog`, `ToolCapabilityRegistry` |
 | [anthropics/claude-code](https://github.com/anthropics/claude-code) | Graphify and playwright-interactive skill references | optional discovery reference | review-required | `SkillDiscovery` |
