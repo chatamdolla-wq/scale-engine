@@ -12,6 +12,7 @@ import type {
 import { DAGBuilder } from './DAGBuilder.js'
 import { AgentPool } from '../agents/AgentPool.js'
 import { AgentDispatcher } from '../agents/AgentDispatcher.js'
+import { logger } from '../core/logger.js'
 
 /**
  * WorkflowOrchestrator — 工作流编排器
@@ -204,16 +205,51 @@ export class WorkflowOrchestrator {
   }
   
   /**
-   * 模拟执行（实际应调用 LLM）
-   * TODO: 集成真实 LLM 调用
+   * 执行 LLM 调用（支持 OpenAI-compatible API）
    */
   private async simulateExecution(
     agent: { id: string; profile: { id: string } },
     task: string,
     llmConfig: WorkflowLLMConfig
   ): Promise<string> {
-    // 模拟输出
-    return `Simulated output from ${agent.profile.id} for task: ${task.slice(0, 30)}...`
+    const apiKey = llmConfig.apiKey ?? process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY
+    const baseUrl = llmConfig.baseUrl ?? process.env.LLM_BASE_URL ?? 'https://api.openai.com/v1'
+    const model = llmConfig.model ?? 'gpt-4o-mini'
+
+    if (!apiKey) {
+      logger.warn({ agentId: agent.id, provider: llmConfig.provider }, 'No API key available, using simulated output')
+      return `[simulated] ${agent.profile.id}: ${task.slice(0, 100)}`
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: `You are agent ${agent.profile.id}. Complete the task concisely.` },
+            { role: 'user', content: task },
+          ],
+          max_tokens: 2000,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        logger.error({ status: response.status, error: errorText }, 'LLM API call failed')
+        return `[llm-error-${response.status}] ${agent.profile.id}: ${task.slice(0, 100)}`
+      }
+
+      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
+      return data.choices?.[0]?.message?.content ?? `[llm-empty] ${agent.profile.id}: ${task.slice(0, 100)}`
+    } catch (err) {
+      logger.error({ error: (err as Error).message }, 'LLM API call threw')
+      return `[llm-error] ${agent.profile.id}: ${task.slice(0, 100)}`
+    }
   }
   
   /**

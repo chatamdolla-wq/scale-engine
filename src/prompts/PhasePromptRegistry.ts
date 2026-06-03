@@ -3,7 +3,7 @@
 // 参考: easy-vibe (Datawhale) + vibe-coding-prompt-template (KhazP)
 
 import { join } from 'node:path'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 // ============================================================================
@@ -481,14 +481,39 @@ export class PhasePromptRegistry {
   private loadCustom(): void {
     // 加载项目自定义提示词: .scale/prompts/*.md
     const promptsDir = join(this.projectDir, '.scale', 'prompts')
-    if (existsSync(promptsDir)) {
-      // TODO: 扫描并加载自定义提示词
-    }
+    this.loadPromptsFromDir(promptsDir, 'project')
 
     // 加载用户全局自定义提示词: ~/.claude/prompts/*.md
     const globalDir = join(homedir(), '.claude', 'prompts')
-    if (existsSync(globalDir)) {
-      // TODO: 扫描并加载全局自定义提示词
+    this.loadPromptsFromDir(globalDir, 'global')
+  }
+
+  private loadPromptsFromDir(dir: string, source: 'project' | 'global'): void {
+    if (!existsSync(dir)) return
+    try {
+      const files = readdirSync(dir).filter(f => f.endsWith('.md'))
+      for (const file of files) {
+        try {
+          const content = readFileSync(join(dir, file), 'utf-8')
+          const id = `${source}:${file.replace(/\.md$/, '')}`
+          const nameMatch = content.match(/^#\s+(.+)$/m)
+          const prompt: PromptTemplate = {
+            id,
+            phase: 'build',
+            name: nameMatch?.[1] ?? file.replace(/\.md$/, ''),
+            description: `Custom prompt from ${source}: ${file}`,
+            estimatedTime: 'varies',
+            userLevels: ['vibe-coder', 'developer', 'intermediate'],
+            dependencies: [],
+            template: content,
+          }
+          this.prompts.set(prompt.id, prompt)
+        } catch {
+          // skip unreadable files
+        }
+      }
+    } catch {
+      // skip unreadable directories
     }
   }
 
@@ -560,7 +585,9 @@ export class PhasePromptRegistry {
   exportPrompt(promptId: string, outputPath: string): void {
     const prompt = this.prompts.get(promptId)
     if (!prompt) return
-    // TODO: 写入文件
+    const dir = join(outputPath, '..')
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(outputPath, prompt.template, 'utf-8')
   }
 
   /** 生成阶段索引 Markdown */

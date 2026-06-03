@@ -1,3 +1,48 @@
+## 0.46.0 - 2026-06-03
+
+### Tracker Adapters, SPA Components, VSCode Extension & Eval Benchmarks
+
+#### Tracker Adapters
+
+- Added `LinearTrackerAdapter` — full Linear GraphQL API integration (fetchCandidates, updateState, addComment, getIssue)
+- Added `JiraTrackerAdapter` — full Jira REST API v3 integration with transition-based state management
+- Wired both adapters into `OrchestratorDaemon.createTracker()` (env vars: `LINEAR_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`)
+- Added 18 unit tests for Mock/Linear/Jira tracker adapters
+
+#### SPA Components
+
+- Added 6 reusable dashboard components: `MetricCard`, `Panel`, `StatusBadge`, `DataTable`, `EventStream`, `LoadingState`
+- Added component CSS (badges, data tables, loading spinners, empty states, event stream)
+- Integrated component scripts into `index.html`
+
+#### VSCode Extension
+
+- Added `vscode-extension/` — full VS Code extension scaffold
+- 7 commands: status, verify, context, dashboard, eval run, shield status, cortex evolve
+- 3 Tree Views: Artifacts, Gates, Events
+- Configuration: projectDir, dashboardPort, autoVerify
+
+#### Eval Benchmarks
+
+- Expanded `workflow-baseline` suite from 1 to 20 cases
+- 10 bugfix, 5 feature, 3 refactor, 1 security, 1 smoke
+- Covers: null safety, regex escape, JSON parse, event leak, path traversal, async timeout, concurrent write, empty array, UTF-8 BOM, API endpoint, CLI flag, webhook config, filter query, diff view, module extraction, complexity reduction, type consolidation, secret detection
+
+#### Stub Code Elimination
+
+- `PhasePromptRegistry.loadCustom()` — implemented `.scale/prompts/*.md` and `~/.claude/prompts/*.md` custom prompt loading
+- `PhasePromptRegistry.exportPrompt()` — implemented file write
+- `EvolutionEngine.HookGenerator` — implemented pattern-specific shell checks (secret detection, dangerous commands, error handling, verification requirements)
+- `WorkflowOrchestrator.simulateExecution()` — implemented OpenAI-compatible LLM API call with fallback
+
+#### Test Coverage
+
+- Added `tests/guardrails/reviewEnforcer.test.ts` — 15 tests for ReviewEnforcer (enforce, rollback, iteration limit)
+- Added `tests/guardrails/roles.test.ts` — 11 tests for 6 role definitions
+- Added `tests/guardrails/detectorsExtended.test.ts` — 7 tests for BlameShiftDetector, IdleToolDetector
+- Added `tests/hooks/hookDeployer.test.ts` — 19 tests for HookDeployer (validate, deploy, rollback, events)
+- Total: 70 new tests, 1599 tests passing
+
 ## 0.45.0 - 2026-06-03
 
 ### Optimization Plan Completion & Memory Provider Integration

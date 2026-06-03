@@ -1,0 +1,104 @@
+{
+  "name": "scale-engine",
+  "displayName": "SCALE Engine",
+  "description": "AI agent governance, workflow gates, and evidence-driven development for VS Code",
+  "version": "0.45.0",
+  "publisher": "hongmaple0820",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "scale.status",
+        "title": "SCALE: Show Status",
+        "icon": "$(info)"
+      },
+      {
+        "command": "scale.verify",
+        "title": "SCALE: Verify Task",
+        "icon": "$(check)"
+      },
+      {
+        "command": "scale.context",
+        "title": "SCALE: Show Context Status",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "scale.dashboard",
+        "title": "SCALE: Open Dashboard",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "scale.eval.run",
+        "title": "SCALE: Run Eval Suite",
+        "icon": "$(play)"
+      },
+      {
+        "command": "scale.shield.status",
+        "title": "SCALE: Shield Status",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "scale.cortex.evolve",
+        "title": "SCALE: Run Evolution Cycle",
+        "icon": "$(sync)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "scale-engine",
+          "title": "SCALE Engine",
+          "icon": "$(shield)"
+        }
+      ]
+    },
+    "views": {
+      "scale-engine": [
+        {
+          "id": "scale.artifacts",
+          "name": "Artifacts"
+        },
+        {
+          "id": "scale.gates",
+          "name": "Gates"
+        },
+        {
+          "id": "scale.events",
+          "name": "Events"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SCALE Engine",
+      "properties": {
+        "scale.projectDir": {
+          "type": "string",
+          "default": "",
+          "description": "SCALE project directory (defaults to workspace root)"
+        },
+        "scale.dashboardPort": {
+          "type": "number",
+          "default": 3210,
+          "description": "Dashboard server port"
+        },
+        "scale.autoVerify": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-verify on file save"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

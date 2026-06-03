@@ -9,6 +9,8 @@ import { PolicyLoader } from './PolicyLoader.js'
 import { WorkspaceManager } from './WorkspaceManager.js'
 import { ReconciliationLoop } from './ReconciliationLoop.js'
 import { GitHubTrackerAdapter, MockTrackerAdapter, type ITrackerAdapter, type IssueState } from './TrackerAdapter.js'
+import { LinearTrackerAdapter } from './LinearTrackerAdapter.js'
+import { JiraTrackerAdapter } from './JiraTrackerAdapter.js'
 
 // ---------------------------------------------------------------------------
 // PID file management (for daemon lifecycle)
@@ -176,9 +178,25 @@ export class OrchestratorDaemon {
           priorityLabels: policy.polling.priorityLabels,
         })
       case 'linear':
+        return new LinearTrackerAdapter({
+          type: 'linear',
+          token: process.env.LINEAR_API_KEY,
+          activeStates: policy.tracker.activeStates as IssueState[],
+          terminalStates: policy.tracker.terminalStates as IssueState[],
+          priorityLabels: policy.polling.priorityLabels,
+          ...(policy.tracker as any),
+        })
       case 'jira':
-        logger.warn(`${policy.tracker.type} tracker not yet implemented — using mock`)
-        return new MockTrackerAdapter()
+        return new JiraTrackerAdapter({
+          type: 'jira',
+          token: process.env.JIRA_API_TOKEN,
+          baseUrl: policy.tracker.baseUrl,
+          projectKey: policy.tracker.projectKey,
+          activeStates: policy.tracker.activeStates as IssueState[],
+          terminalStates: policy.tracker.terminalStates as IssueState[],
+          priorityLabels: policy.polling.priorityLabels,
+          ...(policy.tracker as any),
+        })
       default:
         return new MockTrackerAdapter()
     }

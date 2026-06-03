@@ -276,6 +276,53 @@
     }
     .topo-btn:hover, .topo-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
 
+    /* ── Components ──────────────────────────────────────────────── */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 11px; font-weight: 500; line-height: 1.4;
+    }
+    .badge-accent { background: var(--accent-dim); color: var(--accent); }
+    .badge-success { background: rgba(0,220,130,0.15); color: #00dc82; }
+    .badge-warning { background: rgba(255,170,0,0.15); color: #ffaa00; }
+    .badge-danger { background: rgba(255,68,68,0.15); color: #ff4444; }
+    .badge-info { background: rgba(85,136,255,0.15); color: #5588ff; }
+    .badge-muted { background: var(--bg-3); color: var(--text-2); }
+
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th {
+      text-align: left; padding: 8px 12px; font-weight: 500; font-size: 11px;
+      color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    .data-table tr:hover td { background: var(--bg-2); }
+    .table-wrap { overflow-x: auto; }
+
+    .loading-state, .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 48px 24px; gap: 12px;
+    }
+    .loading-spinner {
+      width: 24px; height: 24px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-icon { font-size: 32px; opacity: 0.5; }
+    .empty-title { font-size: 14px; font-weight: 500; }
+    .empty-desc { font-size: 12px; }
+
+    .metric-icon { font-size: 20px; margin-bottom: 4px; }
+
+    .event-icon { font-size: 14px; width: 20px; text-align: center; }
+    .event-icon.accent { color: var(--accent); }
+    .event-icon.danger { color: var(--danger); }
+    .event-icon.warning { color: var(--warning); }
+    .event-icon.info { color: var(--info); }
+    .event-icon.success { color: var(--accent); }
+    .event-type { font-size: 12px; font-weight: 500; }
+    .event-time { font-size: 11px; color: var(--text-2); margin-left: auto; }
+
     /* ── Responsive ───────────────────────────────────────────────── */
     @media (max-width: 768px) {
       .sidebar { transform: translateX(-100%); }
@@ -342,6 +389,12 @@
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
   <script src="/spa/i18n.js"></script>
   <script src="/spa/app.js"></script>
+  <script src="/spa/components/MetricCard.js"></script>
+  <script src="/spa/components/Panel.js"></script>
+  <script src="/spa/components/StatusBadge.js"></script>
+  <script src="/spa/components/DataTable.js"></script>
+  <script src="/spa/components/EventStream.js"></script>
+  <script src="/spa/components/LoadingState.js"></script>
   <script src="/spa/pages/overview.js"></script>
   <script src="/spa/pages/workflow.js"></script>
   <script src="/spa/pages/monitoring.js"></script>

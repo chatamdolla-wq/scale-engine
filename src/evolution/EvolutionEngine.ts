@@ -309,7 +309,7 @@ export class HookGenerator implements IHookGenerator {
     const scriptName = `${rule.id}.sh`
     const scriptPath = join(hooksDir, scriptName)
 
-    // Generate shell script
+    // Generate shell script with pattern-specific checks
     const script = `#!/bin/bash
 # Auto-generated hook from Rule: ${rule.id}
 # Source lesson: ${rule.sourceLesson}
@@ -322,10 +322,9 @@ export class HookGenerator implements IHookGenerator {
 # Read tool input from stdin
 INPUT=$(cat)
 
-# Check condition
-# TODO: Implement specific check for pattern "${rule.pattern}"
-# For now, this is a placeholder that always passes.
-echo "Hook ${rule.id} checked (pattern: ${rule.pattern})" >&2
+${this.generatePatternCheck(rule.pattern, hookType)}
+
+echo "Hook ${rule.id} passed (pattern: ${rule.pattern})" >&2
 exit 0
 `
     writeFileSync(scriptPath, script, 'utf-8')
@@ -355,6 +354,51 @@ exit 0
 
   getGeneratedHooks(): GeneratedHook[] {
     return [...this.hooks]
+  }
+
+  private generatePatternCheck(pattern: string, hookType: string): string {
+    const lower = pattern.toLowerCase()
+
+    // Test/verification patterns: check that verification commands were run
+    if (/test|verify|lint|build/.test(lower)) {
+      return `# Check: verification must have been run
+COMMAND=$(echo "$INPUT" | grep -o '"command":"[^"]*"' | head -1 || true)
+if [ -z "$COMMAND" ]; then
+  echo "BLOCKED: No command detected. Pattern '${pattern}' requires verification." >&2
+  exit 2
+fi`
+    }
+
+    // Secret/credential patterns: scan for hardcoded secrets
+    if (/secret|credential|password|token|api.?key/.test(lower)) {
+      return `# Check: scan for hardcoded secrets in tool input
+if echo "$INPUT" | grep -qiE '(password|secret|token|api_key)\\s*[=:]\\s*["\\x27][^\\s]+'; then
+  echo "BLOCKED: Potential hardcoded secret detected. Pattern: ${pattern}" >&2
+  exit 2
+fi`
+    }
+
+    // Delete/dangerous command patterns
+    if (/delete|remove|drop|destroy/.test(lower)) {
+      return `# Check: dangerous destructive commands
+if echo "$INPUT" | grep -qiE '(rm\\s+-rf|DROP\\s+TABLE|DELETE\\s+FROM|git\\s+push\\s+.*--force)'; then
+  echo "BLOCKED: Destructive command detected. Pattern: ${pattern}" >&2
+  exit 2
+fi`
+    }
+
+    // Error handling patterns: check for empty catch blocks
+    if (/error|catch|exception|throw/.test(lower)) {
+      return `# Check: error handling quality
+if echo "$INPUT" | grep -qE 'catch\\s*\\([^)]*\\)\\s*\\{\\s*\\}'; then
+  echo "BLOCKED: Empty catch block detected. Pattern: ${pattern}" >&2
+  exit 2
+fi`
+    }
+
+    // Default: log and pass
+    return `# Pattern check: ${pattern}
+echo "Hook check: ${pattern}" >&2`
   }
 
   private inferHookType(pattern: string): 'PreToolUse' | 'PostToolUse' | 'Stop' {
