@@ -1,3 +1,55 @@
+## 0.45.0 - 2026-06-03
+
+### Optimization Plan Completion & Memory Provider Integration
+
+#### 5-Phase Optimization Plan
+
+- **Phase 1 - Release Hygiene**: Version sync (v0.45.0), npm package slim (no images)
+- **Phase 2 - CLI Refactor + Gates**: CLI split into `src/cli/` modules, gates G16-G22 implemented
+- **Phase 3 - Documentation**: CLI reference (`docs/reference/cli.md`), architecture diagrams (`docs/architecture/README.md`), README updated
+- **Phase 4 - E2E Verification**: Shield status (inject/verify), Orchestrator status --json, Cortex verify
+- **Phase 5 - Version Migration**: Migration guide (`docs/migration/v0.38-to-v0.44.md`), governance.lock.json compatibleVersions
+
+#### 3-Layer Memory Architecture
+
+- Added `MemoryNodeLayer` type: `L1-trace` → `L2-policy` → `L3-world-model` → `crystallized`
+- Added `refine()` method for knowledge extraction across layers
+- SQLite schema migration from v1 to v2 with `layer` column
+- Updated `query()` and `list()` to support `layer` filter parameter
+- Updated `dream()` to include `byLayer` statistics
+
+#### Memory Provider Integration
+
+- Added MemOS (memtensor/MemOS) as memory provider
+- Updated default provider order: `gbrain → memos → agentmemory → scale-local`
+- Added `contextSavings` to `MemoryProviderRecallReport` for token savings estimation
+- Added `estimateTokens()` helper for context size calculation
+
+#### Code Intelligence
+
+- Added code-review-graph (tirth8205/code-review-graph) as code intelligence provider
+- Registered MCP tools as Skills: `code-change-detection`, `code-review-context`
+- Added keyword matching in `recommendSkillWorkflow()` for review tasks
+
+#### Hooks & Automation
+
+- Added SessionStart hook with `scale cortex inject --minimal` and fallback
+- Added CRG incremental update hook (PostToolUse) for automatic graph rebuild on file save
+
+#### Documentation
+
+- Added `docs/reference/cli.md` — complete CLI reference
+- Added `docs/architecture/README.md` — 12 Mermaid diagrams (system overview, core engines, intelligence layer, workflow pipeline, data flow, storage architecture, integration points)
+- Added `docs/migration/v0.38-to-v0.44.md` — migration guide covering breaking changes and new features
+- Updated `docs/EXTERNAL_REFERENCES.md` with MemOS and code-review-graph entries
+- Updated `README.md` badge versions to 0.45.0
+
+#### Test & Quality
+
+- Fixed memory provider order in 6 test files
+- Added missing external references documentation
+- All 167 test files / 1599 tests passing
+
 ## 0.44.0 - 2026-06-02
 
 ### Dashboard SPA & Code Topology
