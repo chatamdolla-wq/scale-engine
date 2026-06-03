@@ -113,11 +113,11 @@ describe('ScaleMCPServer', () => {
     expect((res.result as any).serverInfo.name).toBe('scale-engine')
   })
 
-  it('tools/list returns 7 tools', async () => {
+  it('tools/list returns 10 tools', async () => {
     const res = await server.handleRequest({
       jsonrpc: '2.0', id: 2, method: 'tools/list',
     })
-    expect((res.result as any).tools.length).toBe(7)
+    expect((res.result as any).tools.length).toBe(10)
   })
 
   it('scale_create creates artifact', async () => {

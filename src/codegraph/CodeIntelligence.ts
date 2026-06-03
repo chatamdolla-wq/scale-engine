@@ -186,6 +186,10 @@ const CODEGRAPH_PROJECT_INIT_HINT = 'codegraph init -i'
 const CODEGRAPH_SERVE_COMMAND = 'codegraph serve --mcp'
 const GRAPHIFY_SOURCE = 'https://github.com/safishamsi/graphify'
 const GRAPHIFY_INSTALL_HINT = 'uv tool install graphify && graphify install --platform codex'
+const CRG_SOURCE = 'https://github.com/tirth8205/code-review-graph'
+const CRG_INSTALL_HINT = 'pip install code-review-graph'
+const CRG_PROJECT_INIT_HINT = 'code-review-graph build'
+const CRG_SERVE_COMMAND = 'code-review-graph serve'
 
 const DEFAULT_CODEGRAPH_PROVIDER: CodeIntelligenceProviderConfig = {
   id: 'codegraph',
@@ -209,6 +213,18 @@ const DEFAULT_GRAPHIFY_PROVIDER: CodeIntelligenceProviderConfig = {
   installHint: GRAPHIFY_INSTALL_HINT,
 }
 
+const DEFAULT_CRG_PROVIDER: CodeIntelligenceProviderConfig = {
+  id: 'code-review-graph',
+  type: 'external-cli',
+  enabled: true,
+  command: 'code-review-graph',
+  capabilities: ['symbols', 'callers', 'callees', 'impact', 'context', 'summary', 'module-map'],
+  source: CRG_SOURCE,
+  installHint: CRG_INSTALL_HINT,
+  projectInitHint: CRG_PROJECT_INIT_HINT,
+  serveCommand: CRG_SERVE_COMMAND,
+}
+
 let execFileSyncImpl: typeof childProcess.execFileSync = childProcess.execFileSync
 
 export function setCodeIntelligenceExecFileSyncForTesting(impl?: typeof childProcess.execFileSync): void {
@@ -221,6 +237,7 @@ export function defaultCodeIntelligenceConfig(): CodeIntelligenceConfig {
     providers: [
       { ...DEFAULT_CODEGRAPH_PROVIDER },
       { ...DEFAULT_GRAPHIFY_PROVIDER },
+      { ...DEFAULT_CRG_PROVIDER },
     ],
     fallback: {
       enabled: true,
@@ -788,6 +805,14 @@ function runCodeGraphQuery(options: {
       warnings.push(...externalQuery.warnings)
       if (hits.length === 0) warnings.push(`Provider ${externalAvailable.id} returned no hits for "${query}".`)
     }
+  } else if (externalAvailable?.id === 'code-review-graph' && options.mode === 'query') {
+    const crgQuery = queryExternalCRG({ projectDir, query })
+    if (crgQuery) {
+      hits = crgQuery.hits
+      provider = externalAvailable.id
+      warnings.push(...crgQuery.warnings)
+      if (hits.length === 0) warnings.push(`Provider code-review-graph returned no hits for "${query}".`)
+    }
   } else if (externalAvailable) {
     if (externalAvailable.id === 'codegraph' && !status.projectIndexExists) {
       warnings.push('CodeGraph CLI is installed, but this project has no .codegraph/ index yet; run codegraph init -i to enable upstream graph queries.')
@@ -870,7 +895,9 @@ function providerStatus(projectDir: string): (provider: CodeIntelligenceProvider
         ? projectIndexExists
           ? '; project index found at .codegraph/'
           : '; project index missing (.codegraph/)'
-        : ''
+        : provider.id === 'code-review-graph'
+          ? '; run code-review-graph build to index the project'
+          : ''
       return {
         id: provider.id,
         type: provider.type,
@@ -1070,12 +1097,16 @@ function confidence(hitCount: number, fallbackUsed: boolean): number {
 function recommendations(configExists: boolean, providers: CodeIntelligenceProviderStatus[], fallbackAvailable: boolean, projectIndexExists: boolean): string[] {
   const output: string[] = []
   const codegraph = providers.find(provider => provider.id === 'codegraph')
+  const crg = providers.find(provider => provider.id === 'code-review-graph')
   if (!configExists) output.push('Run scale codegraph init to create .scale/code-intelligence.json.')
   if (codegraph && !codegraph.available && codegraph.installHint) {
     output.push(`Install CodeGraph from ${codegraph.source ?? CODEGRAPH_SOURCE}: ${codegraph.installHint}.`)
   }
   if (codegraph?.available && !projectIndexExists) {
     output.push('Run codegraph init -i in the project root to build the local .codegraph/ index.')
+  }
+  if (crg && !crg.available && crg.installHint) {
+    output.push(`Install code-review-graph from ${crg.source ?? CRG_SOURCE}: ${crg.installHint}.`)
   }
   if (providers.every(provider => !provider.available)) output.push('No graph provider is available; exploration will use explicit fallback.')
   if (!fallbackAvailable) output.push('Fallback is disabled; missing providers may leave code intelligence unavailable.')
@@ -1128,7 +1159,9 @@ function hydrateProviderConfig(provider: CodeIntelligenceProviderConfig): CodeIn
     ? DEFAULT_CODEGRAPH_PROVIDER
     : provider.id === 'graphify'
       ? DEFAULT_GRAPHIFY_PROVIDER
-      : undefined
+      : provider.id === 'code-review-graph'
+        ? DEFAULT_CRG_PROVIDER
+        : undefined
   return {
     ...(defaults ?? {}),
     ...provider,
@@ -1236,6 +1269,142 @@ function queryExternalCodeGraphContext(options: {
       hits: dedupeHits(hits.filter(hit => existsOrLooksLikePath(options.projectDir, hit.file))),
       files,
       symbols: unique(hits.map(hit => hit.symbol).filter((value): value is string => Boolean(value))),
+    }
+  } catch {
+    return null
+  }
+}
+
+// ============================================================================
+// code-review-graph CLI Adapter
+// ============================================================================
+
+export interface CRGReviewContext {
+  files: string[]
+  blastRadius: Array<{ file: string; impact: string; confidence: number }>
+  tokenSavings: { naiveCorpus: number; graphQuery: number; reduction: number }
+  provider: string
+}
+
+export interface CRGDetectChangesResult {
+  changedFiles: string[]
+  affectedSymbols: Array<{ symbol: string; file: string; reason: string }>
+  affectedTests: string[]
+  blastRadiusFiles: string[]
+  provider: string
+}
+
+function crgCommandExists(): boolean {
+  return commandExists('code-review-graph')
+}
+
+function runCRGCommand(args: string[], projectDir: string): string | null {
+  try {
+    const result = runExternalCommandSync('code-review-graph', args, {
+      encoding: 'utf8',
+      cwd: projectDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }, {
+      execFileSync: execFileSyncImpl,
+      spawnSync: childProcess.spawnSync,
+    })
+    return typeof result === 'string' ? result : String(result)
+  } catch {
+    return null
+  }
+}
+
+export function queryExternalCRG(options: {
+  projectDir: string
+  query: string
+}): { hits: CodeGraphHit[]; warnings: string[] } | null {
+  // code-review-graph exposes search via MCP tools, not CLI query.
+  // Use detect-changes as a proxy for graph availability, and fall through
+  // to the artifact provider (SQLite graph) for actual search.
+  if (!crgCommandExists()) return null
+  // Verify graph exists
+  const output = runCRGCommand(['status'], options.projectDir)
+  if (!output || !output.includes('Nodes:')) return { hits: [], warnings: ['code-review-graph graph not built; run code-review-graph build'] }
+  // CRG search is MCP-only; return empty hits so the caller falls through to artifact or fallback
+  return { hits: [], warnings: ['code-review-graph search is available via MCP tools only; use code-review-graph serve or code-review-graph mcp'] }
+}
+
+export function detectChangesCRG(options: {
+  projectDir: string
+  baseRef?: string
+}): CRGDetectChangesResult | null {
+  if (!crgCommandExists()) return null
+  const args = ['detect-changes']
+  if (options.baseRef) args.push('--base', options.baseRef)
+  const output = runCRGCommand(args, options.projectDir)
+  if (!output) return null
+  try {
+    const parsed = JSON.parse(output) as {
+      changed_functions?: Array<{ name?: string; file?: string; line?: number }>
+      affected_flows?: Array<{ name?: string; files?: string[] }>
+      test_gaps?: Array<{ function?: string; file?: string }>
+      review_priorities?: Array<{ file?: string; reason?: string }>
+      context_savings?: { saved_tokens?: number; saved_percent?: number }
+    }
+    const changedFiles: string[] = []
+    const affectedSymbols: Array<{ symbol: string; file: string; reason: string }> = []
+    const affectedTests: string[] = []
+
+    for (const fn of parsed.changed_functions ?? []) {
+      const file = normalizeManifestPath(fn.file)
+      if (file && !changedFiles.includes(file)) changedFiles.push(file)
+      if (fn.name && file) affectedSymbols.push({ symbol: fn.name, file, reason: 'changed function' })
+    }
+    for (const gap of parsed.test_gaps ?? []) {
+      const file = normalizeManifestPath(gap.file)
+      if (file) affectedTests.push(file)
+    }
+    for (const priority of parsed.review_priorities ?? []) {
+      const file = normalizeManifestPath(priority.file)
+      if (file && !changedFiles.includes(file)) changedFiles.push(file)
+    }
+
+    return {
+      changedFiles,
+      affectedSymbols,
+      affectedTests,
+      blastRadiusFiles: changedFiles,
+      provider: 'code-review-graph',
+    }
+  } catch {
+    return null
+  }
+}
+
+export function reviewContextCRG(options: {
+  projectDir: string
+  files?: string[]
+}): CRGReviewContext | null {
+  if (!crgCommandExists()) return null
+  // Use detect-changes for token savings overview
+  const output = runCRGCommand(['detect-changes'], options.projectDir)
+  if (!output) return null
+  try {
+    const parsed = JSON.parse(output) as {
+      changed_functions?: Array<{ file?: string }>
+      context_savings?: { saved_tokens?: number; saved_percent?: number }
+    }
+    const files = (parsed.changed_functions ?? [])
+      .map(fn => normalizeManifestPath(fn.file))
+      .filter(Boolean)
+    const savedTokens = parsed.context_savings?.saved_tokens ?? 0
+    const savedPercent = parsed.context_savings?.saved_percent ?? 0
+    const naiveCorpus = savedTokens > 0 && savedPercent > 0 && savedPercent < 100
+      ? Math.round(savedTokens / (1 - savedPercent / 100))
+      : savedTokens > 0 ? savedTokens + 70 : 0
+    const graphQuery = naiveCorpus > savedTokens ? naiveCorpus - savedTokens : 70
+    const reduction = naiveCorpus > 0 ? Math.round(naiveCorpus / graphQuery) : 1
+
+    return {
+      files,
+      blastRadius: [],
+      tokenSavings: { naiveCorpus, graphQuery, reduction },
+      provider: 'code-review-graph',
     }
   } catch {
     return null

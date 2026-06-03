@@ -12,6 +12,12 @@ import { wireEffects } from '../orchestration/EffectsWiring.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  detectChangesCRG,
+  reviewContextCRG,
+  queryExternalCRG,
+  inspectCodeIntelligence,
+} from '../codegraph/CodeIntelligence.js'
 
 // ============================================================================
 // MCP Tool Definitions
@@ -144,6 +150,31 @@ export class ScaleMCPServer {
         description: 'Get engine statistics',
         inputSchema: { type: 'object', properties: {} },
       },
+      {
+        name: 'scale_detect_changes',
+        description: 'Detect changed files and their blast radius (affected symbols, tests, dependencies). Uses code-review-graph if available, falls back to git diff.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            baseRef: { type: 'string', description: 'Git base ref to diff against (default: HEAD~1)' },
+          },
+        },
+      },
+      {
+        name: 'scale_review_context',
+        description: 'Get review context for files — blast radius, affected dependencies, and token savings estimate. Uses code-review-graph for structural analysis.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            files: { type: 'array', items: { type: 'string' }, description: 'Files to review (default: all changed files)' },
+          },
+        },
+      },
+      {
+        name: 'scale_code_intelligence_status',
+        description: 'Show code intelligence provider status and recommendations',
+        inputSchema: { type: 'object', properties: {} },
+      },
     ]
   }
 
@@ -215,6 +246,68 @@ export class ScaleMCPServer {
         for (const a of all) byType[a.type] = (byType[a.type] ?? 0) + 1
         const events = await this.bus.query({ limit: 1000 })
         return { artifactCount: all.length, byType, eventCount: events.length }
+      }
+
+      case 'scale_detect_changes': {
+        const baseRef = (args.baseRef as string) ?? 'HEAD~1'
+        const projectDir = process.cwd()
+        const crgResult = detectChangesCRG({ projectDir, baseRef })
+        if (crgResult) {
+          return {
+            provider: crgResult.provider,
+            changedFiles: crgResult.changedFiles,
+            affectedSymbols: crgResult.affectedSymbols,
+            affectedTests: crgResult.affectedTests,
+            blastRadiusFiles: crgResult.blastRadiusFiles,
+            summary: `${crgResult.changedFiles.length} files changed, ${crgResult.blastRadiusFiles.length} files in blast radius, ${crgResult.affectedTests.length} tests affected`,
+          }
+        }
+        // Fallback: git diff
+        const { execSync } = await import('node:child_process')
+        try {
+          const diffOutput = execSync(`git diff --name-only ${baseRef}`, { encoding: 'utf8', cwd: projectDir })
+          const changedFiles = diffOutput.split('\n').filter(Boolean)
+          return {
+            provider: 'git-fallback',
+            changedFiles,
+            affectedSymbols: [],
+            affectedTests: changedFiles.filter(f => f.includes('.test.') || f.includes('.spec.')),
+            blastRadiusFiles: changedFiles,
+            summary: `${changedFiles.length} files changed (git fallback, no blast radius analysis)`,
+          }
+        } catch (e) {
+          return { error: `git diff failed: ${(e as Error).message}` }
+        }
+      }
+
+      case 'scale_review_context': {
+        const projectDir = process.cwd()
+        const files = args.files as string[] | undefined
+        const crgResult = reviewContextCRG({ projectDir, files })
+        if (crgResult) {
+          return {
+            provider: crgResult.provider,
+            files: crgResult.files,
+            blastRadius: crgResult.blastRadius,
+            tokenSavings: {
+              naiveCorpus: crgResult.tokenSavings.naiveCorpus ?? 0,
+              graphQuery: crgResult.tokenSavings.graphQuery ?? 0,
+              reduction: crgResult.tokenSavings.reduction ?? 1,
+            },
+            summary: `${crgResult.files.length} files in review context, ${crgResult.blastRadius.length} blast radius entries, ${crgResult.tokenSavings.reduction ?? 1}x token reduction`,
+          }
+        }
+        return {
+          provider: 'unavailable',
+          files: files ?? [],
+          blastRadius: [],
+          tokenSavings: { naiveCorpus: 0, graphQuery: 0, reduction: 1 },
+          summary: 'code-review-graph not available; install with: pip install code-review-graph',
+        }
+      }
+
+      case 'scale_code_intelligence_status': {
+        return inspectCodeIntelligence()
       }
 
       default:

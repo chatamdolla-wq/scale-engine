@@ -134,12 +134,31 @@ export const SKILL_REPOSITORY: SkillRepositoryEntry[] = [
     installCommand: 'Install and configure GBrain from https://github.com/garrytan/gbrain, then let SCALE route memory recall through the provider contract; do not vendor upstream source.',
     trust: 'community',
     primaryUse: 'Use as the default graph-backed memory provider for long-running project knowledge, entity relationships, and background memory maintenance.',
-    combineWith: ['memory-brain', 'agentmemory', 'codegraph'],
+    combineWith: ['memory-brain', 'agentmemory', 'memos', 'codegraph'],
     evidence: ['memory-provider-health', 'graph-recall-result', 'privacy-boundary', 'data-retention-policy'],
     attribution: {
       license: 'MIT',
       copyright: 'Copyright per upstream garrytan/gbrain project contributors',
       notice: 'Optional external provider only. Do not vendor GBrain code into SCALE without preserving MIT license text, source revision, and modification notices.',
+      usage: 'external-reference',
+      modifiedFromUpstream: false,
+    },
+  }),
+  skill({
+    id: 'memos',
+    name: 'MemOS',
+    category: 'memory',
+    description: 'Memory Operating System — graph-first 3-layer memory architecture (L1 Trace → L2 Policy → L3 World Model) with MemCube abstraction and natural language feedback.',
+    sourceUrl: 'https://github.com/MemTensor/MemOS',
+    installCommand: 'Self-host: git clone https://github.com/MemTensor/MemOS && cd docker && docker compose up. Cloud: get API key from memos-dashboard.openmem.net',
+    trust: 'community',
+    primaryUse: 'Use as a high-capability memory provider for projects needing 3-layer memory hierarchy, graph-based recall, tool memory tracking, and cross-task skill crystallization.',
+    combineWith: ['memory-brain', 'gbrain', 'codegraph'],
+    evidence: ['memory-provider-health', 'graph-recall-result', 'preference-feedback', 'tool-memory-trace'],
+    attribution: {
+      license: 'Apache-2.0',
+      copyright: 'Copyright per MemTensor/MemOS project contributors',
+      notice: 'Optional external integration only. Do not vendor MemOS code into SCALE without preserving Apache-2.0 license text and upstream NOTICE obligations.',
       usage: 'external-reference',
       modifiedFromUpstream: false,
     },
@@ -348,6 +367,44 @@ export const SKILL_REPOSITORY: SkillRepositoryEntry[] = [
     combineWith: ['skill-safety-scan'],
     evidence: ['selected-role-list', 'role-trigger-policy'],
   }),
+  skill({
+    id: 'code-change-detection',
+    name: 'Code Change Detection',
+    category: 'review',
+    description: 'Detect changed files and their blast radius using code-review-graph or git diff fallback. Identifies affected symbols, tests, and dependencies.',
+    sourceUrl: 'https://github.com/tirth8205/code-review-graph',
+    installCommand: 'pip install code-review-graph && code-review-graph build',
+    trust: 'community',
+    primaryUse: 'Use before code review to identify changed files, affected symbols, and test impact. Integrates with MCP scale_detect_changes tool.',
+    combineWith: ['codegraph', 'memory-brain', 'webapp-testing'],
+    evidence: ['change-detection-report', 'blast-radius', 'affected-tests'],
+    attribution: {
+      license: 'MIT',
+      copyright: 'Copyright per tirth8205/code-review-graph project contributors',
+      notice: 'Optional external integration. Uses code-review-graph CLI for AST-based change detection.',
+      usage: 'external-reference',
+      modifiedFromUpstream: false,
+    },
+  }),
+  skill({
+    id: 'code-review-context',
+    name: 'Code Review Context',
+    category: 'review',
+    description: 'Get review context for files with blast radius analysis, affected dependencies, and token savings estimation. Uses code-review-graph for structural analysis.',
+    sourceUrl: 'https://github.com/tirth8205/code-review-graph',
+    installCommand: 'pip install code-review-graph && code-review-graph build',
+    trust: 'community',
+    primaryUse: 'Use during code review to get focused context with blast radius, reducing token usage by 10-500x vs naive diff review. Integrates with MCP scale_review_context tool.',
+    combineWith: ['codegraph', 'code-change-detection', 'memory-brain'],
+    evidence: ['review-context', 'token-savings', 'blast-radius'],
+    attribution: {
+      license: 'MIT',
+      copyright: 'Copyright per tirth8205/code-review-graph project contributors',
+      notice: 'Optional external integration. Uses code-review-graph CLI for structural review context.',
+      usage: 'external-reference',
+      modifiedFromUpstream: false,
+    },
+  }),
 ]
 
 export function listSkillRepositoryEntries(filter?: { category?: SkillRepositoryCategory }): SkillRepositoryEntry[] {
@@ -386,6 +443,13 @@ export function recommendSkillWorkflow(input: SkillWorkflowRecommendationInput):
     add(supporting, ['codex-cli', 'gemini-cli', 'opencode-cli'])
     add(evidence, ['cli-version-check', 'command-output', 'dry-run-or-safe-mode'])
     rationale.push('检测到外部 Agent CLI 编排，需要记录版本和命令输出。')
+  }
+
+  if (matches(text, ['review', 'diff', 'change', 'blast', 'impact', 'code-review', '审查', '变更', '影响'])) {
+    add(primary, ['code-change-detection', 'code-review-context'])
+    add(supporting, ['codegraph', 'memory-brain'])
+    add(evidence, ['change-detection-report', 'blast-radius', 'review-context', 'token-savings'])
+    rationale.push('检测到代码审查或变更分析任务，需要变更检测和审查上下文。')
   }
 
   if (primary.size === 0 && supporting.size === 0) {

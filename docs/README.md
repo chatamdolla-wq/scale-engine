@@ -63,6 +63,9 @@
 
 | 文档 | 说明 |
 | --- | --- |
+| [architecture/README.md](architecture/README.md) | **架构总览** — Mermaid 图解系统架构、核心引擎、数据流 |
+| [reference/cli.md](reference/cli.md) | **CLI 参考** — 完整命令列表和用法示例 |
+| [migration/v0.38-to-v0.44.md](migration/v0.38-to-v0.44.md) | **迁移指南** — v0.38 到 v0.44 的破坏性变更和升级步骤 |
 | [00-OVERVIEW.md](00-OVERVIEW.md) | 系统概览 |
 | [01-ARCHITECTURE.md](01-ARCHITECTURE.md) | 架构设计 |
 | [02-DATA-MODEL.md](02-DATA-MODEL.md) | 数据模型 |

@@ -4,7 +4,7 @@ import { MemoryBrain, type MemoryNode } from './MemoryBrain.js'
 import { externalCommandExists } from '../core/ExternalCommand.js'
 import { runGbrainCommandSync } from '../core/GbrainRuntime.js'
 
-export type MemoryProviderKind = 'scale-local' | 'agentmemory' | 'gbrain' | 'generic-http'
+export type MemoryProviderKind = 'scale-local' | 'agentmemory' | 'gbrain' | 'memos' | 'generic-http'
 export type MemoryProviderCapability = 'keyword-recall' | 'semantic-recall' | 'graph-recall' | 'session-memory' | 'mcp' | 'write-memory'
 export type MemoryProviderSafetyLevel = 'trusted-local' | 'review-required' | 'blocked'
 export type MemoryProviderWriteMode = 'disabled' | 'candidate-only' | 'enabled'
@@ -97,6 +97,11 @@ export interface MemoryProviderRecallReport {
   fallbackUsed: boolean
   items: MemoryProviderRecallItem[]
   providerStatuses: MemoryProviderStatus[]
+  contextSavings: {
+    naiveContextTokens: number
+    recalledTokens: number
+    reduction: number
+  }
   warnings: string[]
 }
 
@@ -127,7 +132,7 @@ export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
     version: '1.0',
     routing: {
       mode: 'external-first',
-      defaultOrder: ['gbrain', 'agentmemory', 'scale-local'],
+      defaultOrder: ['gbrain', 'memos', 'agentmemory', 'scale-local'],
       allowExternalWrite: false,
       requireEvidence: true,
       maxResultsPerProvider: 5,
@@ -136,19 +141,19 @@ export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
       {
         id: 'agentmemory',
         kind: 'agentmemory',
-        enabled: false,
+        enabled: true,
         priority: 90,
-        endpoint: process.env.AGENTMEMORY_ENDPOINT,
+        endpoint: process.env.AGENTMEMORY_ENDPOINT ?? process.env.AGENTMEMORY_URL ?? 'http://localhost:3111',
         statusPath: '/health',
         searchPath: '/search',
-        apiKeyEnv: 'AGENTMEMORY_API_KEY',
+        apiKeyEnv: process.env.AGENTMEMORY_SECRET ? 'AGENTMEMORY_SECRET' : undefined,
         capabilities: ['semantic-recall', 'session-memory', 'mcp'],
         safetyLevel: 'review-required',
         writeMode: 'disabled',
         attribution: {
           license: 'Apache-2.0',
           sourceUrl: 'https://github.com/rohitg00/agentmemory',
-          notice: 'Optional external memory provider. Do not enable writes until retention, privacy, and delete boundaries are reviewed.',
+          notice: 'Self-hosted local memory server. Start with: npx @agentmemory/agentmemory. Optional AGENTMEMORY_SECRET for protected deployments.',
         },
       },
       {
@@ -167,6 +172,24 @@ export function defaultMemoryProvidersConfig(): MemoryProvidersConfig {
           license: 'MIT',
           sourceUrl: 'https://github.com/garrytan/gbrain',
           notice: 'Optional graph memory provider. Treat returned knowledge as recall evidence, not final truth.',
+        },
+      },
+      {
+        id: 'memos',
+        kind: 'memos',
+        enabled: true,
+        priority: 85,
+        endpoint: process.env.MEMOS_BASE_URL ?? 'http://localhost:8001/api/openmem/v1',
+        statusPath: '/health',
+        searchPath: '/search/memory',
+        apiKeyEnv: 'MEMOS_API_KEY',
+        capabilities: ['semantic-recall', 'graph-recall', 'session-memory', 'mcp'],
+        safetyLevel: 'review-required',
+        writeMode: 'disabled',
+        attribution: {
+          license: 'Apache-2.0',
+          sourceUrl: 'https://github.com/MemTensor/MemOS',
+          notice: 'Memory Operating System — graph-first memory with 3-layer architecture (L1 Trace → L2 Policy → L3 World Model). Self-hosted via Docker or cloud API. Get API key from memos-dashboard.openmem.net or self-host with Docker.',
         },
       },
       {
@@ -358,6 +381,20 @@ export async function recallMemoryProviders(options: {
     if (items.length >= limit && !options.provider) break
   }
 
+  // Calculate token savings: naive context (all memory nodes) vs. targeted recall
+  const brain = new MemoryBrain({ projectDir, scaleDir: options.scaleDir })
+  let naiveContextTokens = 0
+  try {
+    const allNodes = brain.list()
+    naiveContextTokens = estimateTokens(allNodes.map(n => `${n.title}\n${n.summary}`).join('\n'))
+  } finally {
+    brain.close()
+  }
+  const recalledTokens = estimateTokens(items.map(item => `${item.title}\n${item.summary}`).join('\n'))
+  const reduction = naiveContextTokens > 0 && recalledTokens > 0
+    ? Math.round((naiveContextTokens / recalledTokens) * 100) / 100
+    : 1
+
   return {
     ok: items.length > 0,
     projectDir,
@@ -370,6 +407,7 @@ export async function recallMemoryProviders(options: {
       .sort((a, b) => b.score - a.score || b.confidence - a.confidence)
       .slice(0, limit),
     providerStatuses: statuses,
+    contextSavings: { naiveContextTokens, recalledTokens, reduction },
     warnings,
   }
 }
@@ -417,6 +455,9 @@ async function recallExternal(
   if (provider.kind === 'gbrain' && commandExists('gbrain')) {
     return recallGbrainCli(input, limit)
   }
+  if (provider.kind === 'memos') {
+    return recallMemos(provider, input, limit)
+  }
   if (!provider.endpoint) return []
   const response = await fetch(new URL(provider.searchPath ?? '/search', provider.endpoint), {
     method: 'POST',
@@ -446,6 +487,58 @@ function extractExternalResults(data: unknown): Array<Record<string, unknown>> {
     if (Array.isArray(value)) return value.filter(isRecord)
   }
   return []
+}
+
+async function recallMemos(
+  provider: MemoryProviderConfig,
+  input: MemoryProviderRecallInput,
+  limit: number,
+): Promise<MemoryProviderRecallItem[]> {
+  if (!provider.endpoint) return []
+  const apiKey = provider.apiKeyEnv ? process.env[provider.apiKeyEnv] : undefined
+  const userId = process.env.MEMOS_USER_ID ?? 'scale-engine'
+  const conversationId = process.env.MEMOS_CONVERSATION_ID ?? 'default'
+  try {
+    const response = await fetch(new URL('/search/memory', provider.endpoint), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(apiKey ? { authorization: `Token ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        query: input.query,
+        user_id: userId,
+        conversation_id: conversationId,
+        memory_limit_number: limit,
+        include_preference: true,
+        include_tool_memory: true,
+      }),
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) throw new Error(`MemOS HTTP ${response.status}`)
+    const data = await response.json() as {
+      code?: number
+      data?: {
+        text_memories?: Array<Record<string, unknown>>
+        preference_memories?: Array<Record<string, unknown>>
+        tool_memories?: Array<Record<string, unknown>>
+      }
+    }
+    if (data.code && data.code !== 200) throw new Error(`MemOS error code ${data.code}`)
+    const items: MemoryProviderRecallItem[] = []
+    const allMemories = [
+      ...(data.data?.text_memories ?? []),
+      ...(data.data?.preference_memories ?? []),
+      ...(data.data?.tool_memories ?? []),
+    ]
+    for (let i = 0; i < Math.min(allMemories.length, limit); i++) {
+      const mem = allMemories[i]
+      items.push(externalToRecall('memos', mem, i))
+    }
+    return items
+  } catch (error) {
+    throw new Error(`MemOS recall failed: ${(error as Error).message}`)
+  }
 }
 
 function externalToRecall(provider: string, item: Record<string, unknown>, index: number): MemoryProviderRecallItem {
@@ -516,6 +609,22 @@ function providerStatus(provider: MemoryProviderConfig, routing: MemoryProviderR
       }
     }
   }
+  if (provider.kind === 'agentmemory') {
+    const amHealth = inspectAgentmemoryHealth(provider.endpoint)
+    return {
+      ...providerStatusBase(provider, routing),
+      available: amHealth.available,
+      reason: amHealth.reason,
+    }
+  }
+  if (provider.kind === 'memos') {
+    const memosHealth = inspectMemosHealth(provider.endpoint, provider.apiKeyEnv)
+    return {
+      ...providerStatusBase(provider, routing),
+      available: memosHealth.available,
+      reason: memosHealth.reason,
+    }
+  }
   if (!provider.endpoint) {
     return {
       ...providerStatusBase(provider, routing),
@@ -576,6 +685,99 @@ function gbrainCoreReadyHealth(report: GbrainDoctorReport): GbrainCliHealth {
     reason: `gbrain core recall is available; optional doctor warnings: ${optionalIssues.slice(0, 3).join(', ')}`,
     status,
     healthScore,
+  }
+}
+
+interface AgentmemoryHealth {
+  available: boolean
+  reason: string
+}
+
+function inspectAgentmemoryHealth(endpoint?: string): AgentmemoryHealth {
+  const url = endpoint ?? 'http://localhost:3111'
+  try {
+    // Quick TCP check: try to connect to the agentmemory server
+    const { request } = require('node:http')
+    const req = request(`${url}/health`, { method: 'GET', timeout: 2000 }, (res: { statusCode: number }) => {
+      // just checking connectivity
+    })
+    req.on('error', () => {})
+    req.end()
+    // Synchronous check via spawn
+    const { spawnSync } = require('node:child_process')
+    const result = spawnSync('node', ['-e', `
+      const http = require('http');
+      const req = http.get('${url}/health', {timeout: 2000}, (res) => {
+        let data = '';
+        res.on('data', (c) => data += c);
+        res.on('end', () => { process.stdout.write(JSON.stringify({status: res.statusCode, body: data})); process.exit(0); });
+      });
+      req.on('error', () => { process.stdout.write('{"error":"connect refused"}'); process.exit(1); });
+      req.on('timeout', () => { req.destroy(); process.stdout.write('{"error":"timeout"}'); process.exit(1); });
+    `], { timeout: 3000, encoding: 'utf8' })
+    if (result.status === 0 && result.stdout) {
+      const parsed = JSON.parse(result.stdout)
+      if (parsed.status === 200) {
+        return { available: true, reason: `agentmemory server responding at ${url}` }
+      }
+    }
+    return {
+      available: false,
+      reason: `agentmemory server not reachable at ${url}. Start with: npx @agentmemory/agentmemory`,
+    }
+  } catch {
+    return {
+      available: false,
+      reason: `agentmemory server not reachable at ${url}. Start with: npx @agentmemory/agentmemory`,
+    }
+  }
+}
+
+interface MemosHealth {
+  available: boolean
+  reason: string
+}
+
+function inspectMemosHealth(endpoint?: string, apiKeyEnv?: string): MemosHealth {
+  const url = endpoint ?? 'http://localhost:8001/api/openmem/v1'
+  const apiKey = apiKeyEnv ? process.env[apiKeyEnv] : undefined
+  // Cloud API requires key; self-hosted may not
+  const isCloud = url.includes('memt.ai') || url.includes('memtensor.cn')
+  if (isCloud && !apiKey) {
+    return { available: false, reason: `MemOS cloud API requires MEMOS_API_KEY. Get one from memos-dashboard.openmem.net` }
+  }
+  try {
+    const { spawnSync } = require('node:child_process')
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (apiKey) headers['authorization'] = `Token ${apiKey}`
+    const result = spawnSync('node', ['-e', `
+      const http = require('http');
+      const url = new URL('${url}/health');
+      const opts = { hostname: url.hostname, port: url.port || 80, path: url.pathname, method: 'GET', timeout: 3000, headers: ${JSON.stringify(headers)} };
+      const req = http.request(opts, (res) => {
+        let data = '';
+        res.on('data', (c) => data += c);
+        res.on('end', () => { process.stdout.write(JSON.stringify({status: res.statusCode})); process.exit(0); });
+      });
+      req.on('error', () => { process.stdout.write('{"error":"connect refused"}'); process.exit(1); });
+      req.on('timeout', () => { req.destroy(); process.stdout.write('{"error":"timeout"}'); process.exit(1); });
+      req.end();
+    `], { timeout: 5000, encoding: 'utf8' })
+    if (result.status === 0 && result.stdout) {
+      const parsed = JSON.parse(result.stdout)
+      if (parsed.status >= 200 && parsed.status < 400) {
+        return { available: true, reason: `MemOS server responding at ${url}` }
+      }
+    }
+    return {
+      available: false,
+      reason: `MemOS server not reachable at ${url}. Self-host: docker compose up. Cloud: set MEMOS_API_KEY from memos-dashboard.openmem.net`,
+    }
+  } catch {
+    return {
+      available: false,
+      reason: `MemOS server not reachable at ${url}. Self-host: docker compose up. Cloud: set MEMOS_API_KEY from memos-dashboard.openmem.net`,
+    }
   }
 }
 
@@ -765,6 +967,11 @@ function firstLine(value: string): string {
   return value.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? 'unknown error'
 }
 
+function estimateTokens(text: string): number {
+  // Rough estimate: ~4 chars per token for English text
+  return Math.ceil(text.length / 4)
+}
+
 function commandExists(command: string): boolean {
   return externalCommandExists(command)
 }
@@ -794,7 +1001,7 @@ function normalizeProviders(input: unknown, defaults: MemoryProviderConfig[]): M
 }
 
 function normalizeKind(value: unknown, fallback: MemoryProviderKind = 'generic-http'): MemoryProviderKind {
-  return ['scale-local', 'agentmemory', 'gbrain', 'generic-http'].includes(String(value))
+  return ['scale-local', 'agentmemory', 'gbrain', 'memos', 'generic-http'].includes(String(value))
     ? value as MemoryProviderKind
     : fallback
 }

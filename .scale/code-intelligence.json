@@ -36,6 +36,25 @@
       ],
       "source": "https://github.com/safishamsi/graphify",
       "installHint": "uv tool install graphify && graphify install --platform codex"
+    },
+    {
+      "id": "code-review-graph",
+      "type": "external-cli",
+      "enabled": true,
+      "command": "code-review-graph",
+      "capabilities": [
+        "symbols",
+        "callers",
+        "callees",
+        "impact",
+        "context",
+        "summary",
+        "module-map"
+      ],
+      "source": "https://github.com/tirth8205/code-review-graph",
+      "installHint": "pip install code-review-graph",
+      "projectInitHint": "code-review-graph build",
+      "serveCommand": "code-review-graph serve"
     }
   ],
   "fallback": {

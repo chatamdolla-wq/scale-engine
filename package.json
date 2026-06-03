@@ -25,10 +25,9 @@
   "files": [
     "dist",
     "docs/README.md",
-    "docs/SKILL_RADAR.md",
-    "docs/SKILL-REPOSITORY.md",
-    "docs/EXTERNAL_REFERENCES.md",
-    "docs/THIRD_PARTY_SKILLS.md",
+    "docs/reference",
+    "docs/architecture",
+    "docs/migration",
     "docs/guides",
     "docs/start",
     "docs/workflow",

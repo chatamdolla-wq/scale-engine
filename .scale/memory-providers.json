@@ -4,6 +4,7 @@
     "mode": "external-first",
     "defaultOrder": [
       "gbrain",
+      "memos",
       "agentmemory",
       "scale-local"
     ],
@@ -15,11 +16,11 @@
     {
       "id": "agentmemory",
       "kind": "agentmemory",
-      "enabled": false,
+      "enabled": true,
       "priority": 90,
+      "endpoint": "http://localhost:3111",
       "statusPath": "/health",
       "searchPath": "/search",
-      "apiKeyEnv": "AGENTMEMORY_API_KEY",
       "capabilities": [
         "semantic-recall",
         "session-memory",
@@ -30,7 +31,7 @@
       "attribution": {
         "license": "Apache-2.0",
         "sourceUrl": "https://github.com/rohitg00/agentmemory",
-        "notice": "Optional external memory provider. Do not enable writes until retention, privacy, and delete boundaries are reviewed."
+        "notice": "Self-hosted local memory server. Default port 3111. Start with: npx @agentmemory/agentmemory"
       }
     },
     {
@@ -53,6 +54,29 @@
         "license": "MIT",
         "sourceUrl": "https://github.com/garrytan/gbrain",
         "notice": "Optional graph memory provider. Treat returned knowledge as recall evidence, not final truth."
+      }
+    },
+    {
+      "id": "memos",
+      "kind": "memos",
+      "enabled": true,
+      "priority": 85,
+      "endpoint": "http://localhost:8001/api/openmem/v1",
+      "statusPath": "/health",
+      "searchPath": "/search/memory",
+      "apiKeyEnv": "MEMOS_API_KEY",
+      "capabilities": [
+        "semantic-recall",
+        "graph-recall",
+        "session-memory",
+        "mcp"
+      ],
+      "safetyLevel": "review-required",
+      "writeMode": "disabled",
+      "attribution": {
+        "license": "Apache-2.0",
+        "sourceUrl": "https://github.com/MemTensor/MemOS",
+        "notice": "Memory Operating System — graph-first 3-layer memory. Self-host: docker compose up. Cloud: set MEMOS_API_KEY from memos-dashboard.openmem.net"
       }
     },
     {

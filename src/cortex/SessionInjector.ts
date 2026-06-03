@@ -55,6 +55,16 @@ export class SessionInjector {
 
     const sections: string[] = []
 
+    // 0. Scoped specs (Trellis-inspired — inject relevant project specs)
+    const specs = this.loadScopedSpecs()
+    if (specs.length > 0) {
+      sections.push('## Active Project Specs\n')
+      sections.push('The following project-specific specs are active. Follow them for this session.\n')
+      for (const spec of specs) {
+        sections.push(spec)
+      }
+    }
+
     // 1. High-confidence instincts (main payload)
     if (instincts.length > 0) {
       sections.push('## SCALE Cortex — Learned Instincts\n')
@@ -156,6 +166,29 @@ export class SessionInjector {
   // -----------------------------------------------------------------------
   // Internal
   // -----------------------------------------------------------------------
+
+  private loadScopedSpecs(specsDir = '.scale/specs', maxSpecs = 3, maxLinesPerSpec = 20): string[] {
+    try {
+      const { existsSync, readdirSync, readFileSync } = require('fs')
+      const { join } = require('path')
+      if (!existsSync(specsDir)) return []
+      const files = readdirSync(specsDir).filter((f: string) => f.endsWith('.md')).sort()
+      const result: string[] = []
+      for (const file of files.slice(0, maxSpecs)) {
+        const content = readFileSync(join(specsDir, file), 'utf-8')
+        const lines = content.split('\n')
+        const truncated = lines.slice(0, maxLinesPerSpec).join('\n')
+        const suffix = lines.length > maxLinesPerSpec ? `\n... (${lines.length - maxLinesPerSpec} more lines)` : ''
+        result.push(`### Spec: ${file.replace(/\.md$/, '')}\n${truncated}${suffix}`)
+      }
+      if (files.length > maxSpecs) {
+        result.push(`... and ${files.length - maxSpecs} more specs in ${specsDir}/`)
+      }
+      return result
+    } catch {
+      return []
+    }
+  }
 
   private renderInstinctBlock(instinct: Instinct): string {
     const confidenceLabel = instinct.confidence >= 0.9 ? 'NEAR-CERTAIN' :

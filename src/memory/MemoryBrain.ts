@@ -8,6 +8,7 @@ import { redactEvidenceText, redactEvidenceValue } from '../tools/ToolEvidenceSt
 import type { MemoryLearningCandidate } from './MemoryLearning.js'
 
 export type MemoryNodeType = 'fact' | 'decision' | 'incident' | 'relation' | 'contradiction'
+export type MemoryNodeLayer = 'L1-trace' | 'L2-policy' | 'L3-world-model' | 'crystallized'
 export type MemoryNodeSource = 'runtime-evidence' | 'task-artifact' | 'docs' | 'git' | 'manual'
 export type MemoryNodeScope = 'project' | 'workspace' | 'global-candidate'
 export type MemoryNodeStatus = 'candidate' | 'active' | 'stale' | 'rejected'
@@ -15,6 +16,7 @@ export type MemoryNodeStatus = 'candidate' | 'active' | 'stale' | 'rejected'
 export interface MemoryNode {
   id: string
   type: MemoryNodeType
+  layer: MemoryNodeLayer
   title: string
   summary: string
   entities: string[]
@@ -88,6 +90,7 @@ export interface MemoryDreamReport {
     missingEvidence: number
     duplicateGroups: number
     contradictions: number
+    byLayer: Record<MemoryNodeLayer, number>
   }
   promotionCandidates: Array<{ id: string; title: string; confidence: number; evidencePaths: string[] }>
   staleCandidates: Array<{ id: string; title: string; reason: string }>
@@ -102,10 +105,23 @@ export interface MemoryPromoteReport {
   warnings: string[]
 }
 
+export interface MemoryRefineReport {
+  ok: boolean
+  generatedAt: string
+  extracted: {
+    L2Policies: number
+    L3WorldModels: number
+    crystallized: number
+  }
+  nodes: MemoryNode[]
+  warnings: string[]
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS memory_nodes (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
+  layer TEXT NOT NULL DEFAULT 'L1-trace',
   title TEXT NOT NULL,
   summary TEXT NOT NULL,
   entities TEXT NOT NULL DEFAULT '[]',
@@ -131,8 +147,12 @@ CREATE TABLE IF NOT EXISTS memory_meta (
   value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO memory_meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO memory_meta (key, value) VALUES ('schema_version', '2');
 `
+
+const ADD_LAYER_COLUMN = `ALTER TABLE memory_nodes ADD COLUMN layer TEXT NOT NULL DEFAULT 'L1-trace'`
+const ADD_LAYER_INDEX = `CREATE INDEX IF NOT EXISTS idx_memory_nodes_layer ON memory_nodes(layer)`
+const SET_SCHEMA_V2 = `UPDATE memory_meta SET value = '2' WHERE key = 'schema_version'`
 
 export class MemoryBrain {
   private projectDir: string
@@ -151,7 +171,23 @@ export class MemoryBrain {
     this.db.pragma('journal_mode = WAL')
     this.db.pragma('busy_timeout = 5000')
     this.db.exec(SCHEMA)
+    this.migrate()
     this.writeManifest()
+  }
+
+  private migrate(): void {
+    try {
+      const row = this.db.prepare("SELECT value FROM memory_meta WHERE key = 'schema_version'").get() as { value: string } | undefined
+      const version = row ? Number(row.value) : 2
+      if (version < 2) {
+        // Add layer column to existing v1 database
+        try { this.db.exec(ADD_LAYER_COLUMN) } catch { /* column already exists */ }
+        try { this.db.exec(ADD_LAYER_INDEX) } catch { /* index already exists */ }
+        try { this.db.exec(SET_SCHEMA_V2) } catch { /* already updated */ }
+      }
+    } catch {
+      // Fresh database, schema already created by SCHEMA constant
+    }
   }
 
   addNode(input: Partial<MemoryNode> & Pick<MemoryNode, 'type' | 'title' | 'summary' | 'source'>): MemoryNode {
@@ -159,6 +195,7 @@ export class MemoryBrain {
     const candidate: MemoryNode = sanitizeNode({
       id: input.id ?? `MEM-${Date.now()}-${randomUUID().slice(0, 8)}`,
       type: input.type,
+      layer: input.layer ?? 'L1-trace',
       title: input.title,
       summary: input.summary,
       entities: unique(input.entities ?? inferEntities(`${input.title}\n${input.summary}`)),
@@ -183,9 +220,9 @@ export class MemoryBrain {
     return this.ingestEvidence(options)
   }
 
-  query(query: string, options: { limit?: number; status?: MemoryNodeStatus } = {}): MemoryQueryReport {
+  query(query: string, options: { limit?: number; status?: MemoryNodeStatus; layer?: MemoryNodeLayer } = {}): MemoryQueryReport {
     const terms = tokenize(query)
-    const nodes = this.list({ status: options.status })
+    const nodes = this.list({ status: options.status, layer: options.layer })
       .map(node => ({ node, score: scoreNode(node, terms) }))
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score || b.node.confidence - a.node.confidence)
@@ -219,6 +256,11 @@ export class MemoryBrain {
       .filter(node => node.status === 'candidate' && node.evidencePaths.length > 0 && node.confidence >= 0.7)
       .map(node => ({ id: node.id, title: node.title, confidence: node.confidence, evidencePaths: node.evidencePaths }))
 
+    const byLayer: Record<MemoryNodeLayer, number> = {
+      'L1-trace': 0, 'L2-policy': 0, 'L3-world-model': 0, 'crystallized': 0,
+    }
+    for (const node of nodes) byLayer[node.layer] = (byLayer[node.layer] ?? 0) + 1
+
     return {
       ok: missingEvidence.length === 0,
       generatedAt: this.now().toISOString(),
@@ -230,6 +272,7 @@ export class MemoryBrain {
         missingEvidence: missingEvidence.length,
         duplicateGroups: duplicateGroups.length,
         contradictions: contradictions.length,
+        byLayer,
       },
       promotionCandidates,
       staleCandidates,
@@ -291,7 +334,7 @@ export class MemoryBrain {
     return { ok: warnings.length === 0, imported, skipped, warnings }
   }
 
-  list(filter: { status?: MemoryNodeStatus; scope?: MemoryNodeScope } = {}): MemoryNode[] {
+  list(filter: { status?: MemoryNodeStatus; scope?: MemoryNodeScope; layer?: MemoryNodeLayer } = {}): MemoryNode[] {
     let sql = 'SELECT * FROM memory_nodes'
     const where: string[] = []
     const params: Record<string, string> = {}
@@ -302,6 +345,10 @@ export class MemoryBrain {
     if (filter.scope) {
       where.push('scope = @scope')
       params.scope = filter.scope
+    }
+    if (filter.layer) {
+      where.push('layer = @layer')
+      params.layer = filter.layer
     }
     if (where.length) sql += ` WHERE ${where.join(' AND ')}`
     sql += ' ORDER BY updated_at DESC'
@@ -315,6 +362,124 @@ export class MemoryBrain {
 
   close(): void {
     this.db.close()
+  }
+
+  refine(options: { minL1ForL2?: number; minL2ForL3?: number; limit?: number } = {}): MemoryRefineReport {
+    const minL1ForL2 = options.minL1ForL2 ?? 3
+    const minL2ForL3 = options.minL2ForL3 ?? 3
+    const limit = options.limit ?? 20
+    const warnings: string[] = []
+    const created: MemoryNode[] = []
+    const now = this.now().toISOString()
+
+    // L1→L2: Extract policies from active L1 traces that share entities
+    const l1Traces = this.list({ status: 'active', layer: 'L1-trace' })
+    const l1ByEntity = groupByEntity(l1Traces)
+    for (const [entity, traces] of l1ByEntity) {
+      if (traces.length < minL1ForL2) continue
+      if (created.length >= limit) break
+      // Check if L2 policy already exists for this entity
+      const existingL2 = this.list({ layer: 'L2-policy' })
+        .some(n => n.entities.includes(entity))
+      if (existingL2) continue
+
+      const patterns = traces.map(t => t.summary).slice(0, 5)
+      const confidence = clampConfidence(Math.min(0.85, 0.5 + traces.length * 0.05))
+      const node = this.addNode({
+        type: 'decision',
+        layer: 'L2-policy',
+        title: `Policy: ${entity} pattern (${traces.length} observations)`,
+        summary: `Observed pattern across ${traces.length} traces: ${patterns[0]}${patterns.length > 1 ? ` (and ${patterns.length - 1} similar)` : ''}`,
+        entities: [entity, ...traces.flatMap(t => t.entities).filter(e => e !== entity).slice(0, 5)],
+        source: 'manual',
+        evidencePaths: traces.flatMap(t => t.evidencePaths).slice(0, 5),
+        confidence,
+        scope: 'project',
+        status: confidence >= 0.7 ? 'active' : 'candidate',
+        metadata: {
+          refinedFrom: traces.map(t => t.id),
+          layer: 'L2-policy',
+          refinedAt: now,
+        },
+      })
+      created.push(node)
+    }
+
+    // L2→L3: Extract world models from L2 policies that share entities
+    const l2Policies = this.list({ status: 'active', layer: 'L2-policy' })
+    const l2ByEntity = groupByEntity(l2Policies)
+    for (const [entity, policies] of l2ByEntity) {
+      if (policies.length < minL2ForL3) continue
+      if (created.length >= limit) break
+      const existingL3 = this.list({ layer: 'L3-world-model' })
+        .some(n => n.entities.includes(entity))
+      if (existingL3) continue
+
+      const policyTitles = policies.map(p => p.title).slice(0, 5)
+      const confidence = clampConfidence(Math.min(0.9, 0.6 + policies.length * 0.05))
+      const node = this.addNode({
+        type: 'fact',
+        layer: 'L3-world-model',
+        title: `World model: ${entity} (${policies.length} policies)`,
+        summary: `Consolidated understanding from ${policies.length} policies: ${policyTitles.join('; ')}`,
+        entities: [entity, ...policies.flatMap(p => p.entities).filter(e => e !== entity).slice(0, 8)],
+        source: 'manual',
+        evidencePaths: policies.flatMap(p => p.evidencePaths).slice(0, 8),
+        confidence,
+        scope: 'project',
+        status: confidence >= 0.75 ? 'active' : 'candidate',
+        metadata: {
+          refinedFrom: policies.map(p => p.id),
+          layer: 'L3-world-model',
+          refinedAt: now,
+        },
+      })
+      created.push(node)
+    }
+
+    // Crystallize: high-confidence L3 world models with long evidence chains
+    const l3Models = this.list({ status: 'active', layer: 'L3-world-model' })
+    for (const model of l3Models) {
+      if (created.length >= limit) break
+      if (model.confidence < 0.85) continue
+      const existingCrystal = this.list({ layer: 'crystallized' })
+        .some(n => n.entities.some(e => model.entities.includes(e)))
+      if (existingCrystal) continue
+
+      const node = this.addNode({
+        type: model.type,
+        layer: 'crystallized',
+        title: `Crystallized: ${model.title}`,
+        summary: model.summary,
+        entities: model.entities,
+        source: model.source,
+        evidencePaths: model.evidencePaths,
+        confidence: Math.min(0.95, model.confidence + 0.05),
+        scope: 'global-candidate',
+        status: 'candidate',
+        metadata: {
+          refinedFrom: [model.id],
+          layer: 'crystallized',
+          refinedAt: now,
+        },
+      })
+      created.push(node)
+    }
+
+    const l2Count = created.filter(n => n.layer === 'L2-policy').length
+    const l3Count = created.filter(n => n.layer === 'L3-world-model').length
+    const crystalCount = created.filter(n => n.layer === 'crystallized').length
+
+    if (l1Traces.length < minL1ForL2) warnings.push(`Only ${l1Traces.length} active L1 traces (need ${minL1ForL2}+ for L2 extraction)`)
+    if (l2Policies.length < minL2ForL3) warnings.push(`Only ${l2Policies.length} active L2 policies (need ${minL2ForL3}+ for L3 extraction)`)
+
+    return {
+      ok: created.length > 0,
+      generatedAt: now,
+      extracted: { L2Policies: l2Count, L3WorldModels: l3Count, crystallized: crystalCount },
+      nodes: created,
+      warnings,
+    }
   }
 
   private ingestEvidence(options: MemoryIngestOptions): MemoryIngestReport {
@@ -436,14 +601,15 @@ export class MemoryBrain {
     const fingerprint = fingerprintFor(node)
     this.db.prepare(`
       INSERT INTO memory_nodes (
-        id, type, title, summary, entities, source, evidence_paths, confidence, scope, status,
+        id, type, layer, title, summary, entities, source, evidence_paths, confidence, scope, status,
         created_at, updated_at, last_verified_at, metadata, fingerprint
       ) VALUES (
-        @id, @type, @title, @summary, @entities, @source, @evidencePaths, @confidence, @scope, @status,
+        @id, @type, @layer, @title, @summary, @entities, @source, @evidencePaths, @confidence, @scope, @status,
         @createdAt, @updatedAt, @lastVerifiedAt, @metadata, @fingerprint
       )
       ON CONFLICT(id) DO UPDATE SET
         type = excluded.type,
+        layer = excluded.layer,
         title = excluded.title,
         summary = excluded.summary,
         entities = excluded.entities,
@@ -459,6 +625,7 @@ export class MemoryBrain {
     `).run({
       id: node.id,
       type: node.type,
+      layer: node.layer,
       title: node.title,
       summary: node.summary,
       entities: JSON.stringify(node.entities),
@@ -673,6 +840,7 @@ function rowToNode(row: unknown): MemoryNode {
   return {
     id: String(value.id),
     type: value.type as MemoryNodeType,
+    layer: (value.layer as MemoryNodeLayer) ?? 'L1-trace',
     title: String(value.title),
     summary: String(value.summary),
     entities: parseJsonArray(value.entities),
@@ -702,6 +870,7 @@ function sanitizeNode(node: MemoryNode): MemoryNode {
   const redact = (value: string) => redactEvidenceText(value).value
   return {
     ...redacted,
+    layer: redacted.layer ?? 'L1-trace',
     title: redact(redacted.title),
     summary: redact(redacted.summary),
     entities: unique((redacted.entities ?? []).map(entity => redact(String(entity))).filter(Boolean)),
@@ -770,4 +939,20 @@ function normalizeProjectPath(projectDir: string, filePath: string): string {
 
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)]
+}
+
+function groupByEntity(nodes: MemoryNode[]): Map<string, MemoryNode[]> {
+  const groups = new Map<string, MemoryNode[]>()
+  for (const node of nodes) {
+    for (const entity of node.entities) {
+      const existing = groups.get(entity) ?? []
+      existing.push(node)
+      groups.set(entity, existing)
+    }
+  }
+  // Only return groups with multiple nodes (shared entities)
+  for (const [entity, group] of groups) {
+    if (group.length < 2) groups.delete(entity)
+  }
+  return groups
 }
