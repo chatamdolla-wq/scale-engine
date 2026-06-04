@@ -48,6 +48,10 @@ export class SkillInstaller implements ISkillInstaller {
     ['architecture-diagram-generator', { skillId: 'architecture-diagram-generator', method: 'git-clone', sourceUrl: 'https://github.com/Cocoon-AI/architecture-diagram-generator', targetPath: '~/.claude/skills/architecture-diagram-generator' }],
     ['hyperframes', { skillId: 'hyperframes', method: 'npm-install', sourceUrl: 'https://github.com/heygen-com/hyperframes', command: 'npm install -g @heygen/hyperframes' }],
     ['guizang-ppt-skill', { skillId: 'guizang-ppt-skill', method: 'git-clone', sourceUrl: 'https://github.com/op7418/guizang-ppt-skill', targetPath: '~/.claude/skills/guizang-ppt-skill' }],
+    ['qiushi-skill', { skillId: 'qiushi-skill', method: 'npm-install', sourceUrl: 'https://github.com/HughYau/qiushi-skill', command: 'npx qiushi-skill install --target claude-code --scope user', verification: 'test -d ~/.claude/skills/qiushi-skill || test -f ~/.claude/skills/arming-thought/SKILL.md' }],
+    ['pua', { skillId: 'pua', method: 'git-clone', sourceUrl: 'https://github.com/tanweai/pua', targetPath: '~/.claude/skills/pua' }],
+    ['nuwa-skill', { skillId: 'nuwa-skill', method: 'git-clone', sourceUrl: 'https://github.com/alchaincyf/nuwa-skill', targetPath: '~/.claude/skills/nuwa-skill' }],
+    ['agency-agents-zh', { skillId: 'agency-agents-zh', method: 'git-clone', sourceUrl: 'https://github.com/jnMetaCode/agency-agents-zh', targetPath: '~/.claude/skills/agency-agents-zh' }],
   ])
 
   constructor(registry: SkillRegistry, eventBus: IEventBus, skillDir = '~/.claude/skills') {
