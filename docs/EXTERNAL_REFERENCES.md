@@ -44,6 +44,9 @@ The inventory is intentionally conservative:
 | [Cocoon-AI/architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) | Architecture diagram skill reference | optional install reference | review-required | `ExternalSkills`, `SkillDiscovery`, `SkillInstaller` |
 | [heygen-com/hyperframes](https://github.com/heygen-com/hyperframes) | Video generation CLI reference | optional install reference | review-required | `ExternalSkills`, `SkillDiscovery`, `SkillInstaller` |
 | [op7418/guizang-ppt-skill](https://github.com/op7418/guizang-ppt-skill) | PPT generation skill reference | optional install reference | review-required | `ExternalSkills`, `SkillDiscovery`, `SkillInstaller` |
+| [HughYau/qiushi-skill](https://github.com/HughYau/qiushi-skill) | Materialist dialectics methodology for complex problem analysis | external skill reference | MIT | `ExternalSkills`, `SkillInstaller` |
+| [tanweai/pua](https://github.com/tanweai/pua) | High-agency persistent problem-solving skill | external skill reference | review-required | `ExternalSkills`, `SkillInstaller` |
+| [alchaincyf/nuwa-skill](https://github.com/alchaincyf/nuwa-skill) | Cognitive framework distillation for perspective skills | external skill reference | MIT | `ExternalSkills`, `SkillInstaller` |
 | [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code) | QCoder adapter target | adapter target reference | review-required | `QCoderAdapter` |
 | [Qoder docs](https://docs.qoder.com/) | Qoder adapter target | adapter target reference | review-required | `QoderAdapter` |
 | JCode | JCode adapter target; upstream source and license still need review | provisional adapter target reference | review-required | `JCodeAdapter` |

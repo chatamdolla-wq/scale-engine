@@ -20,7 +20,7 @@ describe('SkillInstaller', () => {
 
   it('should detect uninstalled optional skills', async () => {
     const pending = await installer.checkAndPrompt()
-    expect(pending).toHaveLength(11)
+    expect(pending).toHaveLength(15)
     expect(pending.map(c => c.skillId)).toEqual(expect.arrayContaining([
       'agent-browser',
       'mcp-chrome-devtools',
@@ -29,6 +29,10 @@ describe('SkillInstaller', () => {
       'opencode-cli',
       'cua',
       'fireworks-tech-graph',
+      'qiushi-skill',
+      'pua',
+      'nuwa-skill',
+      'agency-agents-zh',
     ]))
   })
 
