@@ -44,9 +44,10 @@ while IFS= read -r file; do
 done <<< "$CHANGED_MD"
 
 if [ "$BROKEN" -gt 0 ]; then
-  echo "  [WARN] $BROKEN broken link(s) found"
+  echo "  [BLOCK] $BROKEN broken link(s) found"
+  echo "  FAILED"
+  exit 1
 else
   echo "  [OK] All internal links valid"
+  echo "  PASSED"
 fi
-
-echo "  PASSED"

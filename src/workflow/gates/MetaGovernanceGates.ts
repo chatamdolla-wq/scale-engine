@@ -361,7 +361,7 @@ export class MultiAgentCoordinationGate implements IGate {
 
   async execute(): Promise<GateResult> {
     const evidenceItems: GateEvidence[] = []
-    let passed = true
+    const blockers: string[] = []
 
     // 检查1: Agent 配置是否存在
     const agentsDir = join(this.scaleDir, 'agents')
@@ -372,7 +372,7 @@ export class MultiAgentCoordinationGate implements IGate {
         passed: false,
         detail: '未配置多 Agent，无法协同'
       }))
-      // 这不是硬性失败，单 Agent 项目可以跳过
+      // 单 Agent 项目可以跳过
       return {
         gate: this.stage,
         status: 'PASSED',
@@ -384,7 +384,44 @@ export class MultiAgentCoordinationGate implements IGate {
       }
     }
 
-    // 检查2: 是否有 Agent 间通信记录
+    // 检查2: Coordinator state (SessionCoordinator integration)
+    const coordinatorPath = join(this.scaleDir, 'coordinator', 'state.json')
+    if (existsSync(coordinatorPath)) {
+      try {
+        const state = JSON.parse(readFileSync(coordinatorPath, 'utf-8'))
+        const activeSessions = state.activeSessions?.length ?? 0
+        const overlaps = state.overlaps?.length ?? 0
+        const openConflicts = (state.conflicts ?? []).filter((c: any) => c.status === 'open').length
+
+        evidenceItems.push(createEvidence({
+          kind: 'file',
+          label: 'Coordinator State',
+          passed: openConflicts === 0,
+          detail: `Sessions: ${activeSessions}, Overlaps: ${overlaps}, Open conflicts: ${openConflicts}`,
+        }))
+
+        if (openConflicts > 0) {
+          blockers.push(`${openConflicts} open conflict(s) in session coordinator`)
+        }
+      } catch {
+        evidenceItems.push(createEvidence({
+          kind: 'file',
+          label: 'Coordinator State',
+          passed: false,
+          detail: 'Could not parse coordinator state',
+        }))
+      }
+    } else {
+      evidenceItems.push(createEvidence({
+        kind: 'file',
+        label: 'Coordinator State',
+        passed: false,
+        detail: 'No coordinator state — multi-agent without coordination evidence',
+      }))
+      blockers.push('Multi-agent mode active but no SessionCoordinator state found')
+    }
+
+    // 检查3: Agent 间通信记录
     const eventsDir = join(this.scaleDir, 'events')
     if (existsSync(eventsDir)) {
       let agentEvents = 0
@@ -411,7 +448,7 @@ export class MultiAgentCoordinationGate implements IGate {
       }))
     }
 
-    // 检查3: 任务是否被合理分配
+    // 检查4: 任务是否被合理分配
     const artifactsDir = join(this.scaleDir, 'artifacts')
     if (existsSync(artifactsDir)) {
       const tasks = readdirSync(artifactsDir).filter(f => f.endsWith('.json')).filter(f => {
@@ -441,13 +478,14 @@ export class MultiAgentCoordinationGate implements IGate {
       }
     }
 
+    const passed = blockers.length === 0
     return {
       gate: this.stage,
       status: passed ? 'PASSED' : 'FAILED',
       passed,
       evidence: textEvidence(evidenceItems),
       evidenceItems,
-      blockers: passed ? [] : ['多 Agent 协同未有效配置'],
+      blockers,
       durationMs: 0
     }
   }

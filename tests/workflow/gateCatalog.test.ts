@@ -43,11 +43,14 @@ describe('GateCatalog', () => {
       mode: 'block',
     })
     expect(report.profiles.find(profile => profile.id === 'preflight:quick')?.stages).toEqual(['G3', 'G0', 'G4', 'G5'])
+    expect(report.profiles.find(profile => profile.id === 'preflight:fast-lane')?.stages).toEqual(['G3', 'G0', 'G4', 'G5'])
+    expect(report.profiles.find(profile => profile.id === 'preflight:fast-lane')?.description).toContain('S-level')
     expect(report.warnings.some(warning => warning.includes('VisualGate'))).toBe(true)
   })
 
   it('keeps preflight profile stage lists centralized', () => {
     expect(preflightGateStages('quick')).toEqual(['G3', 'G0', 'G4', 'G5'])
+    expect(preflightGateStages('fast-lane')).toEqual(['G3', 'G0', 'G4', 'G5'])
     expect(preflightGateStages('full')).toEqual(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
     expect(preflightGateStages('ci')).toEqual(['G3', 'G0', 'G4', 'G5', 'G6', 'G7'])
   })

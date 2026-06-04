@@ -189,6 +189,7 @@ export function governanceNextSteps(options: {
   }
   if (options.includeDependencyBootstrap !== false) {
     steps.push(`${bootstrapPlan.inspectCommand}  # inspect/install third-party skills and CLI dependencies explicitly`)
+    steps.push(`scale init --with-deps  # or use --with-deps to install deps during init`)
   }
   steps.push(
     'scale doctor',

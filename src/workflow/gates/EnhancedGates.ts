@@ -214,7 +214,8 @@ export class DocumentationHygieneGate implements IGate {
 
     const linksPassed = brokenLinks.length === 0
     if (!linksPassed) {
-      // Broken links are warnings, not blockers for M level
+      // Broken links block when markdown files are changed
+      blockers.push(`${brokenLinks.length} broken link(s): ${brokenLinks.slice(0, 3).join('; ')}${brokenLinks.length > 3 ? ` (+${brokenLinks.length - 3} more)` : ''}`)
       evidenceItems.push(createEvidence({
         kind: 'file',
         label: 'Internal link check',
@@ -555,12 +556,17 @@ export class ContextBudgetGate implements IGate {
 
     // Check 2: Context budget report
     const reportPath = join(this.scaleDir, 'context-budget-report.json')
+    const blockers: string[] = []
     if (existsSync(reportPath)) {
       try {
         const report = JSON.parse(readFileSync(reportPath, 'utf-8'))
         const totalTokens = report.summary?.totalTokens ?? 0
         const maxTokens = report.thresholds?.maxAlwaysTokens ?? 10000
         const withinBudget = totalTokens <= maxTokens
+
+        if (!withinBudget) {
+          blockers.push(`Token budget exceeded: ${totalTokens}/${maxTokens} (${Math.round(totalTokens / maxTokens * 100)}%)`)
+        }
 
         evidenceItems.push(createEvidence({
           kind: 'file',
@@ -585,13 +591,14 @@ export class ContextBudgetGate implements IGate {
       }))
     }
 
+    const passed = blockers.length === 0
     return {
       gate: this.stage,
-      status: 'PASSED',
-      passed: true, // Advisory only, never blocks
+      status: passed ? 'PASSED' : 'FAILED',
+      passed,
       evidence: textEvidence(evidenceItems),
       evidenceItems,
-      blockers: [],
+      blockers,
       durationMs: 0,
     }
   }
@@ -673,6 +680,45 @@ export class SessionHealthGate implements IGate {
         passed: true,
         detail: 'No active session state',
       }))
+    }
+
+    // Check 4: .scale directory size
+    const scaleDirPath = join(cwd, '.scale')
+    if (existsSync(scaleDirPath)) {
+      try {
+        const { execSync } = require('child_process')
+        const sizeOutput = execSync(`du -sk "${scaleDirPath}" 2>/dev/null`, { encoding: 'utf-8', timeout: 5000 }).trim()
+        const sizeKB = parseInt(sizeOutput.split('\t')[0], 10) || 0
+        const sizeWarn = sizeKB > 102400 // >100MB
+        evidenceItems.push(createEvidence({
+          kind: 'file',
+          label: 'Scale directory size',
+          passed: !sizeWarn,
+          detail: sizeWarn ? `.scale is ${Math.round(sizeKB / 1024)}MB (>100MB)` : `.scale is ${Math.round(sizeKB / 1024)}MB`,
+        }))
+      } catch {
+        // Skip if du unavailable
+      }
+    }
+
+    // Check 5: Disk space
+    try {
+      const { execSync } = require('child_process')
+      const dfOutput = execSync('df -k . 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim()
+      const lines = dfOutput.split('\n')
+      if (lines.length >= 2) {
+        const parts = lines[1].split(/\s+/)
+        const availKB = parseInt(parts[3], 10) || 0
+        const lowDisk = availKB < 1048576 // <1GB
+        evidenceItems.push(createEvidence({
+          kind: 'command',
+          label: 'Disk space',
+          passed: !lowDisk,
+          detail: lowDisk ? `Low disk: ${Math.round(availKB / 1024)}MB available` : `${Math.round(availKB / 1024)}MB available`,
+        }))
+      }
+    } catch {
+      // Skip if df unavailable
     }
 
     return {

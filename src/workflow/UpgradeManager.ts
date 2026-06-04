@@ -21,6 +21,21 @@ export interface UpgradeManagerOptions {
 
 export interface UpgradeApplyOptions extends UpgradeManagerOptions {
   confirm?: boolean
+  autoBackup?: boolean
+}
+
+export interface UpgradeRecommendReport {
+  version: 1
+  projectDir: string
+  riskScore: number
+  riskLevel: 'low' | 'medium' | 'high'
+  summary: string
+  steps: UpgradePlanStep[]
+  blockers: UpgradePlanBlocker[]
+  applyMode: UpgradeApplyMode
+  recommendation: 'safe-to-apply' | 'review-first' | 'blocked'
+  autoCommands: string[]
+  plan: UpgradePlanReport
 }
 
 export interface UpgradeCheckReport {
@@ -182,6 +197,11 @@ export interface UpgradeApplyReport {
     id: string
     dir: string
     manifestPath: string
+  }
+  gitBackup?: {
+    branch: string
+    ok: boolean
+    error?: string
   }
   plan: UpgradePlanReport
 }
@@ -391,6 +411,83 @@ export function createUpgradePlanReport(options: UpgradeManagerOptions = {}): Up
   }
 }
 
+const RISK_SCORES: Record<UpgradeRisk, number> = { low: 1, medium: 3, high: 5 }
+
+export function createUpgradeRecommendReport(options: UpgradeManagerOptions = {}): UpgradeRecommendReport {
+  const plan = createUpgradePlanReport(options)
+
+  // Compute aggregate risk score
+  let riskScore = 0
+  for (const step of plan.steps) {
+    riskScore += RISK_SCORES[step.risk] ?? 1
+  }
+  // Blockers add extra weight
+  riskScore += plan.blockers.length * 5
+
+  const riskLevel: UpgradeRisk = riskScore >= 10 ? 'high' : riskScore >= 4 ? 'medium' : 'low'
+  const recommendation = plan.blockers.length > 0 ? 'blocked' : plan.applyMode === 'safe' ? 'safe-to-apply' : 'review-first'
+
+  const summaryParts: string[] = []
+  summaryParts.push(`${plan.steps.length} step(s), risk score ${riskScore}`)
+  if (plan.blockers.length > 0) summaryParts.push(`${plan.blockers.length} blocker(s)`)
+  if (plan.check.scaleEngine.upToDate) summaryParts.push('SCALE Engine up to date')
+  if (plan.check.governancePack.upToDate) summaryParts.push('governance pack up to date')
+
+  const autoCommands: string[] = []
+  if (recommendation === 'safe-to-apply') {
+    autoCommands.push('scale upgrade apply --dir . --confirm --auto-backup')
+    autoCommands.push('scale preflight --preflight-profile quick')
+  } else if (recommendation === 'review-first') {
+    autoCommands.push('scale upgrade plan --dir . --html')
+    autoCommands.push('# Review the HTML plan, then:')
+    autoCommands.push('scale upgrade apply --dir . --confirm --auto-backup')
+  } else {
+    autoCommands.push('# Resolve blockers before applying:')
+    for (const blocker of plan.blockers) {
+      autoCommands.push(`#   [${blocker.code}] ${blocker.message}`)
+    }
+    autoCommands.push('scale upgrade plan --dir . --html')
+  }
+
+  return {
+    version: 1,
+    projectDir: plan.projectDir,
+    riskScore,
+    riskLevel,
+    summary: summaryParts.join('; '),
+    steps: plan.steps,
+    blockers: plan.blockers,
+    applyMode: plan.applyMode,
+    recommendation,
+    autoCommands,
+    plan,
+  }
+}
+
+export function createGitBackup(projectDir: string): { branch: string; ok: boolean; error?: string } {
+  const { execSync } = require('child_process')
+  const branch = `scale-backup-${new Date().toISOString().replace(/[:.]/g, '-')}`
+  try {
+    // Check if we're in a git repo
+    execSync('git rev-parse --is-inside-work-tree', { cwd: projectDir, stdio: 'pipe' })
+    // Check for uncommitted changes
+    const status = execSync('git status --porcelain', { cwd: projectDir, encoding: 'utf-8' }).trim()
+    if (status) {
+      // Stash uncommitted changes
+      execSync('git stash push -m "scale-upgrade-auto-backup"', { cwd: projectDir, stdio: 'pipe' })
+    }
+    // Create backup branch from current HEAD
+    execSync(`git branch "${branch}"`, { cwd: projectDir, stdio: 'pipe' })
+    if (status) {
+      // Restore stash
+      execSync('git stash pop', { cwd: projectDir, stdio: 'pipe' })
+    }
+    return { branch, ok: true }
+  } catch (err: any) {
+    return { branch, ok: false, error: err.message ?? String(err) }
+  }
+}
+
 export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeApplyReport {
   const projectDir = resolve(options.projectDir ?? process.cwd())
   const plan = createUpgradePlanReport(options)
@@ -410,6 +507,12 @@ export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeAppl
   const shouldRefreshLock = !plan.check.scaleEngine.upToDate || !plan.check.governancePack.upToDate || missingFiles.length > 0
   if (!shouldRefreshLock) {
     return upgradeApplyResult(projectDir, plan, true, false, 'No safe upgrade changes were needed.', [])
+  }
+
+  // Git branch backup (if requested)
+  let gitBackup: { branch: string; ok: boolean; error?: string } | undefined
+  if (options.autoBackup) {
+    gitBackup = createGitBackup(projectDir)
   }
 
   const backup = createUpgradeBackup(projectDir, uniqueStrings([...missingFiles, ...managedRefreshFiles, '.scale/governance.lock.json']))
@@ -440,6 +543,7 @@ export function applyUpgradePlan(options: UpgradeApplyOptions = {}): UpgradeAppl
     reason: changedFiles.length > 0 ? 'Safe upgrade changes were applied.' : 'No safe upgrade changes were needed.',
     changedFiles,
     backup,
+    gitBackup,
     plan: createUpgradePlanReport(options),
   }
 }

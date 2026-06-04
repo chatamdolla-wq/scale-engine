@@ -48,4 +48,26 @@ else
   echo "  [INFO] No active session state"
 fi
 
+# Check 4: .scale directory size
+if [ -d "$SCALE_DIR" ]; then
+  if command -v du &>/dev/null; then
+    SCALE_SIZE_KB=$(du -sk "$SCALE_DIR" 2>/dev/null | cut -f1 | tr -d ' ')
+    if [ "${SCALE_SIZE_KB:-0}" -gt 102400 ]; then
+      echo "  [WARN] .scale directory is ${SCALE_SIZE_KB}KB (>100MB)"
+    else
+      echo "  [OK] .scale directory: ${SCALE_SIZE_KB}KB"
+    fi
+  fi
+fi
+
+# Check 5: Disk space on project volume
+if command -v df &>/dev/null; then
+  DISK_AVAIL=$(df -k . 2>/dev/null | tail -1 | awk '{print $4}')
+  if [ -n "$DISK_AVAIL" ] && [ "$DISK_AVAIL" -lt 1048576 ]; then
+    echo "  [WARN] Low disk space: $((DISK_AVAIL / 1024))MB available"
+  else
+    echo "  [OK] Disk space sufficient"
+  fi
+fi
+
 echo "  PASSED"

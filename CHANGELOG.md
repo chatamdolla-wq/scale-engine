@@ -1,3 +1,54 @@
+## 0.47.0 - 2026-06-04
+
+### Improvement Roadmap: 8 Items Implemented
+
+#### P0-1: Fast-lane Mode
+- Added `PREFLIGHT_FAST_LANE_GATES` constant (G0, G3, G4, G5) for S-level task acceleration
+- Extended `preflightGateStages()` with `'fast-lane'` profile support
+- Shell runner (`scripts/gates/all.sh`) now accepts `--fast-lane` flag
+- Per-gate timing added to gate runner output
+
+#### P0-2: Upgrade Automation
+- `createUpgradeRecommendReport()`: risk scoring (low=1, medium=3, high=5, blocker=+5), recommendation types (safe-to-apply / review-first / blocked)
+- `createGitBackup()`: auto-stash, backup branch creation, restore
+- `upgrade recommend` CLI command with `--auto-apply` flag
+- `upgrade apply --auto-backup` for git-based rollback safety
+- Full troubleshooting guide: `docs/guides/UPGRADE_AUTOMATION.md`
+
+#### P1-5: Learning Path & Onboard Wizard
+- Onboard wizard: 4 questions (experience, project-stage, team-size, priority) → profile recommendation with confidence scoring
+- Profiles: minimal, standard, advanced, china-local
+- `scale onboard` CLI command (interactive + `--json` mode)
+- Learning path: 5 levels (Explorer → User → Configurator → Governor → Contributor)
+- Guide: `docs/guides/LEARNING_PATH.md`
+
+#### P1-7: Performance Baseline
+- Measurement script: `scripts/performance/measure-gates.sh` (multi-run CSV)
+- Baseline doc: `docs/PERFORMANCE_BASELINE.md` (G3=281ms, G4=1755ms, G5=467550ms)
+- CI workflow: `.github/workflows/performance-baseline.yml` (weekly + manual)
+
+#### P2-8: Multi-Agent Coordination (G13) Enforcement
+- G13 now reads `.scale/coordinator/state.json` for real coordination evidence
+- Checks activeSessions, overlaps, open conflicts → blocks on open conflicts
+- Shell script: `scripts/gates/G13-verify.sh` (agent config, coordinator state, events)
+
+#### P3-10: Token Budget (G21) Enforcement
+- G21 ContextBudgetGate now adds `blockers[]` when tokens exceed budget
+- Gate `passed` field is now dynamic (based on blockers length)
+- Shell script: `scripts/gates/G21-verify.sh` exits non-zero on over-budget
+
+#### P3-11: Session Health (G22) Fine-grained Signals
+- G22 SessionHealthGate added Check 4 (.scale directory size via `du -sk`, warn >100MB)
+- G22 SessionHealthGate added Check 5 (disk space via `df -k`, warn <1GB)
+- Shell script: `scripts/gates/G22-verify.sh` with matching checks
+
+#### P3-12: Documentation Link Hygiene (G17) Enforcement
+- G17 DocumentationHygieneGate broken links now added to `blockers[]` (was advisory)
+- Gate marked `blocking: true` in catalog
+- Shell script: `scripts/gates/G17-verify.sh` exits non-zero on broken links
+
+---
+
 ## 0.46.0 - 2026-06-03
 
 ### Tracker Adapters, SPA Components, VSCode Extension & Eval Benchmarks

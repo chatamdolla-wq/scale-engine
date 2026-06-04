@@ -58,6 +58,7 @@ export interface GateStatusReport {
 }
 
 export const PREFLIGHT_QUICK_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5']
+export const PREFLIGHT_FAST_LANE_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5']
 export const PREFLIGHT_FULL_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
 export const WORKFLOW_VERIFY_GATES: GateStage[] = ['G3', 'G0', 'G4', 'G5', 'G6', 'G7']
 export const PRODUCT_SMOKE_GATES: GateStage[] = ['G8']
@@ -173,7 +174,7 @@ export const CORE_GATE_CATALOG: GateCatalogEntry[] = [
     name: 'Documentation Hygiene',
     description: 'Changed docs must have valid links and up-to-date references.',
     requiredLevel: 'M',
-    blocking: false,
+    blocking: true,
   },
   {
     id: 'runtime-evidence',
@@ -225,10 +226,11 @@ export const META_GATE_CATALOG: GateCatalogEntry[] = [
   name: String(name),
   description: String(description),
   requiredLevel: 'M' as const,
-  blocking: false,
+  blocking: stage === 'G13',
 }))
 
-export function preflightGateStages(profile: 'quick' | 'full' | 'ci'): GateStage[] {
+export function preflightGateStages(profile: 'quick' | 'full' | 'ci' | 'fast-lane'): GateStage[] {
+  if (profile === 'fast-lane') return [...PREFLIGHT_FAST_LANE_GATES]
   return profile === 'quick' ? [...PREFLIGHT_QUICK_GATES] : [...PREFLIGHT_FULL_GATES]
 }
 
@@ -253,6 +255,7 @@ export function createGateStatusReport(options: {
   const profiles = [
     profileStatus('workflow:verify', 'Workflow verify', 'Default task verification gates.', WORKFLOW_VERIFY_GATES),
     profileStatus('preflight:quick', 'Preflight quick', 'Fast preflight without coverage or security.', PREFLIGHT_QUICK_GATES),
+    profileStatus('preflight:fast-lane', 'Preflight fast-lane', 'S-level fast-lane: build + TDD + lint + tests only. Skips exploration, planning, coverage, security, and meta governance.', PREFLIGHT_FAST_LANE_GATES),
     profileStatus('preflight:full', 'Preflight full', 'Full preflight including coverage and security.', PREFLIGHT_FULL_GATES),
     profileStatus('preflight:ci', 'Preflight CI', 'CI-equivalent preflight gate set.', PREFLIGHT_FULL_GATES),
     profileStatus('product-smoke', 'Product smoke', 'Product smoke profile gate set.', PRODUCT_SMOKE_GATES),

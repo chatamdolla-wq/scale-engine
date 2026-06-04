@@ -85,6 +85,7 @@ import { gatesCommand } from '../cli/gateStatusCommands.js'
 import { scoreCommand } from '../cli/scoreCommands.js'
 import { promptCommand } from '../cli/promptCommands.js'
 import { quickstartCommand } from '../cli/quickstartCommands.js'
+import { onboardCommand } from '../cli/onboardCommands.js'
 import { tuiCommand } from '../cli/tuiCommands.js'
 import { qaCommand } from '../cli/qaCommands.js'
 import { autofixCommand } from '../cli/autofixCommands.js'
@@ -106,6 +107,7 @@ import {
   createThirdPartyUpdateReport,
   createUpgradeCheckReport,
   createUpgradePlanReport,
+  createUpgradeRecommendReport,
   rollbackLatestUpgrade,
   writeUpgradePlanHtml,
 } from '../workflow/UpgradeManager.js'
@@ -2551,7 +2553,7 @@ const preflight = defineCommand({
     'test-cmd': { type: 'string', description: 'Override test command' },
     'coverage-cmd': { type: 'string', description: 'Override coverage command' },
     profile: { type: 'string', description: 'Verification profile from .scale/verification.json' },
-    'preflight-profile': { type: 'string', default: 'quick', description: 'Gate intensity profile (quick/full/ci); quick skips coverage and security' },
+    'preflight-profile': { type: 'string', default: 'quick', description: 'Gate intensity profile (quick/fast-lane/full/ci); fast-lane for S-level tasks (build+TDD+lint+tests only)' },
     service: { type: 'string', description: 'Service name from .scale/verification.json; use all for required services' },
     'tdd-evidence': { type: 'string', description: 'Path to JSON TDD evidence with red/green/refactor/testFirst=true' },
     'tdd-strict': { type: 'boolean', default: false, description: 'Require TDD evidence before other gates' },
@@ -2811,7 +2813,7 @@ const status = defineCommand({
 // ============================================================================
 
 const init = defineCommand({
-  meta: { name: 'init', description: 'Initialize SCALE Engine governance in current project (one-click bootstrap, not third-party auto-install)' },
+  meta: { name: 'init', description: 'Initialize SCALE Engine governance in current project (use --with-deps to also install third-party skills, CLIs, memory, and knowledge providers)' },
   args: {
     agent: { type: 'string', default: '', description: `Agent type (${SUPPORTED_AGENTS.join('/')}) - auto-detected if not specified` },
     dir: { type: 'string', default: '.', description: 'Project directory' },
@@ -2828,6 +2830,7 @@ const init = defineCommand({
     'coverage-threshold': { type: 'string', default: '80', description: 'Coverage threshold (default 80%)' },
     'retry-threshold': { type: 'string', default: '3', description: 'Brute retry threshold (default 3)' },
     'block-severity': { type: 'string', default: 'CRITICAL', description: 'Block severity level (CRITICAL/HIGH/MEDIUM)' },
+    'with-deps': { type: 'boolean', default: false, description: 'Also install third-party skills, CLIs, memory, and knowledge providers after governance init' },
   },
   async run({ args }) {
     // Interactive configuration mode
@@ -2924,6 +2927,21 @@ const init = defineCommand({
         profileId,
         governancePack: String(args['governance-pack']),
       })) console.log(`   → ${step}`)
+
+      // Auto-install third-party deps if --with-deps
+      if (args['with-deps']) {
+        console.log(`\n🧰 Installing third-party dependencies (full pack)...`)
+        const depReport = await bootstrapDependencies({
+          projectDir: resolve(args.dir),
+          scaleDir: join(resolve(args.dir), '.scale'),
+          packIds: ['full'],
+          includeIds: [],
+          apply: true,
+        })
+        console.log(`   ✓ ${depReport.summary.installed}/${depReport.summary.total} dependencies installed`)
+        if (depReport.summary.needsInit > 0) console.log(`   ⚠ ${depReport.summary.needsInit} need manual init`)
+        if (depReport.summary.failed > 0) console.log(`   ✗ ${depReport.summary.failed} failed`)
+      }
       return
     }
 
@@ -2976,6 +2994,21 @@ const init = defineCommand({
         console.log(`\n🧰 Dependency bootstrap: ${qsResult.dependencyBootstrapCommand}`)
         console.log(`\n📋 Next steps:`)
         for (const step of qsResult.nextSteps) console.log(`   → ${step}`)
+
+        // Auto-install third-party deps if --with-deps
+        if (args['with-deps']) {
+          console.log(`\n🧰 Installing third-party dependencies (full pack)...`)
+          const depReport = await bootstrapDependencies({
+            projectDir: resolve(args.dir),
+            scaleDir: join(resolve(args.dir), '.scale'),
+            packIds: ['full'],
+            includeIds: [],
+            apply: true,
+          })
+          console.log(`   ✓ ${depReport.summary.installed}/${depReport.summary.total} dependencies installed`)
+          if (depReport.summary.needsInit > 0) console.log(`   ⚠ ${depReport.summary.needsInit} need manual init`)
+          if (depReport.summary.failed > 0) console.log(`   ✗ ${depReport.summary.failed} failed`)
+        }
       } else {
         console.log(`\n⚠️  No agent platform detected`)
         const detection = detectPlatform(args.dir)
@@ -3039,6 +3072,21 @@ const init = defineCommand({
       profileId,
       governancePack: String(args['governance-pack']),
     })) console.log(`   → ${step}`)
+
+    // Auto-install third-party deps if --with-deps
+    if (args['with-deps']) {
+      console.log(`\n🧰 Installing third-party dependencies (full pack)...`)
+      const depReport = await bootstrapDependencies({
+        projectDir: resolve(args.dir),
+        scaleDir: join(resolve(args.dir), '.scale'),
+        packIds: ['full'],
+        includeIds: [],
+        apply: true,
+      })
+      console.log(`   ✓ ${depReport.summary.installed}/${depReport.summary.total} dependencies installed`)
+      if (depReport.summary.needsInit > 0) console.log(`   ⚠ ${depReport.summary.needsInit} need manual init`)
+      if (depReport.summary.failed > 0) console.log(`   ✗ ${depReport.summary.failed} failed`)
+    }
   },
 })
 
@@ -3895,11 +3943,76 @@ const upgradePlan = defineCommand({
   },
 })
 
+const upgradeRecommend = defineCommand({
+  meta: { name: 'recommend', description: '自动分析升级风险并推荐操作 / Auto-analyze upgrade risk and recommend actions' },
+  args: {
+    dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
+    'target-version': { type: 'string', description: '目标 SCALE Engine 版本 / Target SCALE Engine version' },
+    'auto-apply': { type: 'boolean', default: false, description: '如果安全则自动应用 / Auto-apply if safe' },
+    lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
+    json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
+  },
+  run({ args }) {
+    const lang = normalizeLangArg(args.lang)
+    const projectDir = resolve(String(args.dir ?? PROJECT_DIR))
+    const report = createUpgradeRecommendReport({
+      projectDir,
+      scaleDir: resolveScaleDirForProject(projectDir),
+      targetScaleVersion: args['target-version'] ? String(args['target-version']) : undefined,
+    })
+    if (args.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    const riskEmoji = report.riskLevel === 'high' ? '🔴' : report.riskLevel === 'medium' ? '🟡' : '🟢'
+    const recEmoji = report.recommendation === 'safe-to-apply' ? '✅' : report.recommendation === 'blocked' ? '🚫' : '⚠️'
+    if (lang === 'zh') {
+      console.log('SCALE 升级推荐')
+      console.log(`  项目: ${report.projectDir}`)
+      console.log(`  ${riskEmoji} 风险分数: ${report.riskScore} (${report.riskLevel})`)
+      console.log(`  ${recEmoji} 推荐: ${report.recommendation}`)
+      console.log(`  摘要: ${report.summary}`)
+      console.log(`  应用模式: ${report.applyMode}`)
+    } else {
+      console.log('SCALE Upgrade Recommend')
+      console.log(`  Project: ${report.projectDir}`)
+      console.log(`  ${riskEmoji} Risk score: ${report.riskScore} (${report.riskLevel})`)
+      console.log(`  ${recEmoji} Recommendation: ${report.recommendation}`)
+      console.log(`  Summary: ${report.summary}`)
+      console.log(`  Apply mode: ${report.applyMode}`)
+    }
+    if (report.blockers.length > 0) {
+      console.log(lang === 'zh' ? '  阻塞项:' : '  Blockers:')
+      for (const blocker of report.blockers) console.log(`    [${blocker.code}] ${blocker.message}`)
+    }
+    if (report.steps.length > 0) {
+      console.log(lang === 'zh' ? '  步骤:' : '  Steps:')
+      for (const step of report.steps) console.log(`    [${step.risk}] ${step.action}: ${step.reason}`)
+    }
+    console.log(lang === 'zh' ? '  建议命令:' : '  Suggested commands:')
+    for (const cmd of report.autoCommands) console.log(`    ${cmd}`)
+
+    // Auto-apply if requested and safe
+    if (args['auto-apply'] && report.recommendation === 'safe-to-apply') {
+      console.log(lang === 'zh' ? '\n  自动应用中...' : '\n  Auto-applying...')
+      const result = applyUpgradePlan({
+        projectDir,
+        scaleDir: resolveScaleDirForProject(projectDir),
+        confirm: true,
+        autoBackup: true,
+      })
+      console.log(lang === 'zh' ? `  结果: ${result.reason}` : `  Result: ${result.reason}`)
+      if (result.gitBackup?.ok) console.log(lang === 'zh' ? `  Git 备份: ${result.gitBackup.branch}` : `  Git backup: ${result.gitBackup.branch}`)
+    }
+  },
+})
+
 const upgradeApply = defineCommand({
   meta: { name: 'apply', description: '按已审阅计划安全应用升级 / Guarded entrypoint for applying an upgrade plan' },
   args: {
     dir: { type: 'string', default: PROJECT_DIR, description: '项目目录 / Project directory' },
     confirm: { type: 'boolean', default: false, description: '确认当前升级计划已经审阅 / Confirm the current plan was reviewed' },
+    'auto-backup': { type: 'boolean', default: false, description: '应用前自动创建 git 分支备份 / Create git branch backup before applying' },
     lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
     json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
@@ -3910,6 +4023,7 @@ const upgradeApply = defineCommand({
       projectDir,
       scaleDir: resolveScaleDirForProject(projectDir),
       confirm: isTruthyFlag(args.confirm),
+      autoBackup: isTruthyFlag(args['auto-backup']),
     })
     if (args.json) {
       console.log(JSON.stringify(result, null, 2))
@@ -3920,7 +4034,14 @@ const upgradeApply = defineCommand({
     console.log(lang === 'zh' ? `  已应用: ${result.applied}` : `  Applied: ${result.applied}`)
     console.log(lang === 'zh' ? `  原因: ${formatUpgradeApplyReason(result.reason, lang)}` : `  Reason: ${result.reason}`)
     console.log(lang === 'zh' ? `  应用模式: ${result.plan.applyMode}` : `  Apply mode: ${result.plan.applyMode}`)
-    if (result.backup) console.log(lang === 'zh' ? `  备份: ${result.backup.manifestPath}` : `  Backup: ${result.backup.manifestPath}`)
+    if (result.gitBackup) {
+      if (result.gitBackup.ok) {
+        console.log(lang === 'zh' ? `  Git 备份分支: ${result.gitBackup.branch}` : `  Git backup branch: ${result.gitBackup.branch}`)
+      } else {
+        console.log(lang === 'zh' ? `  Git 备份失败: ${result.gitBackup.error}` : `  Git backup failed: ${result.gitBackup.error}`)
+      }
+    }
+    if (result.backup) console.log(lang === 'zh' ? `  文件备份: ${result.backup.manifestPath}` : `  File backup: ${result.backup.manifestPath}`)
     for (const path of result.changedFiles) console.log(lang === 'zh' ? `  已变更: ${path}` : `  changed: ${path}`)
     if (!result.ok) process.exitCode = 1
   },
@@ -3962,7 +4083,7 @@ const upgrade = defineCommand({
     lang: { type: 'string', default: 'zh', description: '输出语言 zh/en / Output language' },
     json: { type: 'boolean', default: false, description: '输出 JSON / Print JSON output' },
   },
-  subCommands: { check: upgradeCheck, plan: upgradePlan, apply: upgradeApply, rollback: upgradeRollback },
+  subCommands: { check: upgradeCheck, plan: upgradePlan, recommend: upgradeRecommend, apply: upgradeApply, rollback: upgradeRollback },
   async run({ args }) {
     if (isUpgradeSubcommandInvocation(process.argv)) return
     const lang = normalizeLangArg(args.lang)
@@ -6797,6 +6918,7 @@ const main = defineCommand({
     'out-of-scope': outOfScope,
     config,
     quickstart: quickstartCommand,
+    onboard: onboardCommand,
     tui: tuiCommand,
     qa: qaCommand,
     'auto-fix': autofixCommand,
