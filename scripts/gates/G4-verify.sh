@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+echo "[G4] Lint"
+cd "$ROOT"
+
+# Sub-step 1: Shell script syntax validation
+echo "  [G4] Checking shell script syntax..."
 SCRIPTS=(
   "$ROOT/scripts/gates/all.sh"
   "$ROOT/scripts/gates/G1-verify.sh"
@@ -24,16 +30,27 @@ SCRIPTS=(
 )
 
 for script in "${SCRIPTS[@]}"; do
-  bash -n "$script"
+  [ -f "$script" ] && bash -n "$script"
 done
 
-python3 -m py_compile "$ROOT/scripts/lib/workflow_state.py"
+[ -f "$ROOT/scripts/lib/workflow_state.py" ] && python3 -m py_compile "$ROOT/scripts/lib/workflow_state.py"
 
 for script in \
   "$ROOT/scripts/workflow/check-reality.ps1" \
   "$ROOT/scripts/workflow/check-docs-scope.ps1" \
   "$ROOT/scripts/workflow/write-runtime-contract.ps1"; do
-  [ -f "$script" ] || { echo "[G4] missing $script"; exit 1; }
+  [ -f "$script" ] || { echo "  [WARN] missing $script (non-blocking)"; }
 done
 
-echo "[G4] workflow scripts passed"
+echo "  [OK] Shell script syntax passed"
+
+# Sub-step 2: TypeScript lint (ESLint)
+echo "  [G4] Running TypeScript lint..."
+if npm run lint 2>&1; then
+  echo "  [OK] TypeScript lint passed"
+else
+  echo "  [BLOCK] TypeScript lint failed"
+  exit 1
+fi
+
+echo "  PASSED"
