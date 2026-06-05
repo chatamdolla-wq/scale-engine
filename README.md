@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.47.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.48.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-22-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.47.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.48.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
 [![RepoStars](https://repostars.dev/api/embed?repo=hongmaple0820%2Fscale-engine&theme=copper)](https://repostars.dev/?repos=hongmaple0820%2Fscale-engine&theme=copper)
@@ -201,9 +201,15 @@ make verify PROFILE=default
 | GitHub | https://github.com/hongmaple0820/scale-engine | 源码、Issues、PR |
 | Gitee | https://gitee.com/hongmaple/scale-engine | 国内镜像与反馈 |
 | npm | https://www.npmjs.com/package/@hongmaple0820/scale-engine | CLI 包下载 |
+| QQ 群 | 628043364 | 国内用户交流、问题反馈 |
+| 邮箱 | 2496155694@qq.com | 合作、反馈、建议 |
 
 <p align="center">
   <img src="image/wechat-public.jpg" alt="SCALE Engine 微信公众号" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/wechat-id-qr.webp" alt="个人微信" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/feishu-group-qr.webp" alt="飞书交流群" width="220" />
 </p>
 
 ## 赞赏与支持

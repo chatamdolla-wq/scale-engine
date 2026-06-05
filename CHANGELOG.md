@@ -1,3 +1,47 @@
+## 0.48.0 - 2026-06-05
+
+### CLI Monolith Split & Community Skills
+
+#### CLI Architecture Refactoring
+- Split `src/api/cli.ts` from 6946 lines to 1660 lines (76% reduction)
+- Extracted 16 command modules to `src/cli/`:
+  - `engineBootstrap.ts` — engine singleton, shared helpers
+  - `sessionCommands.ts` — session start/end
+  - `gateInlineCommands.ts` — pre-tool/post-tool/before-stop hooks
+  - `metaGovernanceCommands.ts` — G9-G15 meta governance gates
+  - `artifactCrudCommands.ts` — create/list/show/suggest/createPRD
+  - `transitionCommands.ts` — transition/verifyTask/role
+  - `diagnoseHuntCommands.ts` — diagnose/hunt proactive scans
+  - `dependencyTddCommands.ts` — dependency audit/TDD/stats/metrics
+  - `contextCommands.ts` — context build/status/inject/glossary/budget
+  - `codegraphCommands.ts` — code intelligence status/init/query/impact
+  - `evalCommands.ts` — eval init/run/report/compare/replay
+  - `evolveDoctorCommands.ts` — evolution cycle and doctor diagnostics
+  - `workflowEvidenceCommands.ts` — workflow presets and evidence
+  - `initConfigCommands.ts` — init/bootstrap/setup/config
+  - `upgradeAssetsCommands.ts` — upgrade/assets/standards/artifact
+  - `runtimeSkillCommands.ts` — runtime/memory/outOfScope/skill/token
+  - `toolAgentCommands.ts` — tool/agent/team orchestration
+
+#### Community Skills Integration
+- Integrated 4 community skills into ExternalSkills registry:
+  - `qiushi-skill` — materialist dialectics methodology (3.2k stars)
+  - `pua` — high-agency persistent problem-solving (17.9k stars)
+  - `nuwa-skill` — cognitive framework distillation (22.6k stars)
+  - `agency-agents-zh` — 215 expert agent roles, 50 China-market (13.8k stars)
+
+#### Phase 1 — Credibility Foundation
+- ESLint: enable real TypeScript lint rules (1748 warnings, 0 errors)
+- G0-verify.sh: structural integrity check (package.json, tsconfig, cli.ts)
+- Version drift prevention test added
+
+#### Community & Documentation
+- Added QQ group (628043364) and email (2496155694@qq.com) to README and COMMUNITY.md
+- Added Feishu group, WeChat ID, and WeChat public account QR codes
+- Updated English README badges and version references
+
+---
+
 ## 0.47.0 - 2026-06-04
 
 ### Improvement Roadmap: 8 Items Implemented

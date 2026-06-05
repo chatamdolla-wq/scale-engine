@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.45.0-orange?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.48.0-orange?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platforms-22-blue?style=flat-square" alt="platforms" />
   <img src="https://img.shields.io/badge/agents-12-blue?style=flat-square" alt="agents" />
   <img src="https://img.shields.io/badge/tests-verified-brightgreen?style=flat-square" alt="tests" />
-  <img src="https://img.shields.io/badge/npm-0.45.0-cb3837?style=flat-square&logo=npm" alt="npm" />
+  <img src="https://img.shields.io/badge/npm-0.48.0-cb3837?style=flat-square&logo=npm" alt="npm" />
 </p>
 
 [![RepoStars](https://repostars.dev/api/embed?repo=hongmaple0820%2Fscale-engine&theme=copper)](https://repostars.dev/?repos=hongmaple0820%2Fscale-engine&theme=copper)
@@ -148,9 +148,15 @@ Entry docs:
 | GitHub | https://github.com/hongmaple0820/scale-engine | Source, issues, and PRs |
 | Gitee | https://gitee.com/hongmaple/scale-engine | China mirror and feedback |
 | npm | https://www.npmjs.com/package/@hongmaple0820/scale-engine | CLI package |
+| QQ Group | 628043364 | Community chat and support |
+| Email | 2496155694@qq.com | Cooperation, feedback, and suggestions |
 
 <p align="center">
   <img src="image/wechat-public.jpg" alt="SCALE Engine WeChat public account" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/wechat-id-qr.webp" alt="Personal WeChat" width="220" />
+  &nbsp;&nbsp;
+  <img src="image/feishu-group-qr.webp" alt="Feishu group" width="220" />
 </p>
 
 ## Sponsorship
