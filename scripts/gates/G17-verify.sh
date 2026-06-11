@@ -28,8 +28,10 @@ BROKEN=0
 while IFS= read -r file; do
   [ -z "$file" ] && continue
   [ -f "$file" ] || continue
-  # Extract markdown links and check if target files exist
-  grep -oP '\[([^\]]*)\]\(([^)]+)\)' "$file" 2>/dev/null | while IFS= read -r link; do
+  # Extract markdown links and check if target files exist.
+  # `|| true` keeps a changed markdown file with zero links from aborting the
+  # gate under `set -euo pipefail` (grep exits 1 on no match).
+  { grep -oP '\[([^\]]*)\]\(([^)]+)\)' "$file" 2>/dev/null || true; } | while IFS= read -r link; do
     TARGET=$(echo "$link" | sed 's/.*](//' | sed 's/).*//' | cut -d'#' -f1)
     [ -z "$TARGET" ] && continue
     [[ "$TARGET" == http* ]] && continue
