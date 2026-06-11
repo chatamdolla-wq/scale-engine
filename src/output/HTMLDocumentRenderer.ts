@@ -35,6 +35,12 @@ export interface SpecData {
   edgeCases: string[]
   northStar: string
   ambiguityScore?: number
+  // P0 六要素契约（可选，缺省不渲染对应 section）。
+  verificationSurface?: string[]
+  constraints?: string[]
+  boundaries?: { files: string[]; tools: string[]; forbidden: string[] }
+  iterationStrategy?: string
+  blockedStopCondition?: string
 }
 
 export interface PlanData {
@@ -539,6 +545,25 @@ export class HTMLDocumentRenderer {
       this.renderSection('north-star', 'North Star', `
         <p>${this.escapeHtml(data.northStar)}</p>
       `),
+      data.verificationSurface?.length ? this.renderSection('verification-surface', 'Verification Surface', `
+        <ul>${data.verificationSurface.map(s => `<li>${this.escapeHtml(s)}</li>`).join('\n')}</ul>
+      `) : '',
+      data.constraints?.length ? this.renderSection('constraints', 'Constraints', `
+        <ul>${data.constraints.map(c => `<li>${this.escapeHtml(c)}</li>`).join('\n')}</ul>
+      `) : '',
+      data.boundaries ? this.renderSection('boundaries', 'Boundaries', `
+        <ul>
+          <li>Files: ${data.boundaries.files.length ? data.boundaries.files.map(f => this.escapeHtml(f)).join(', ') : '(none)'}</li>
+          <li>Tools: ${data.boundaries.tools.length ? data.boundaries.tools.map(t => this.escapeHtml(t)).join(', ') : '(none)'}</li>
+          <li>Forbidden: ${data.boundaries.forbidden.length ? data.boundaries.forbidden.map(f => this.escapeHtml(f)).join(', ') : '(none)'}</li>
+        </ul>
+      `) : '',
+      data.iterationStrategy ? this.renderSection('iteration-strategy', 'Iteration Strategy', `
+        <p>${this.escapeHtml(data.iterationStrategy)}</p>
+      `) : '',
+      data.blockedStopCondition ? this.renderSection('blocked-stop-condition', 'Blocked Stop Condition', `
+        <p>${this.escapeHtml(data.blockedStopCondition)}</p>
+      `) : '',
     ].filter(Boolean).join('\n')
 
     const meta = this.buildMetaTags([

@@ -150,6 +150,26 @@ export interface SpecPayload {
   edgeCases: string[]
   northStar: string
   ambiguityScore?: number // FSM guard requires this for FROZEN transition
+  // P0 六要素契约（借鉴 Codex Goals 完成契约模型）。
+  // 全部可选以保持向后兼容：`outcome` 复用 `what`，其余为新增的结构化补强字段。
+  /** 具体证据来源：测试名 / 基准命令 / 产物路径。后续 evidence 须能映射回其中某一项。 */
+  verificationSurface?: string[]
+  /** 运行期间不能退化的指标（性能 / 安全 / 兼容性）。 */
+  constraints?: string[]
+  /** 执行边界：可改文件、可用工具、明确禁动范围。 */
+  boundaries?: SpecBoundaries
+  /** build 阶段每轮迭代后如何决定下一步。 */
+  iterationStrategy?: string
+  /** 无可行路径时报告什么、需要什么才能解锁。 */
+  blockedStopCondition?: string
+}
+
+/** Spec 执行边界（六要素之一） */
+export interface SpecBoundaries {
+  files: string[]
+  tools: string[]
+  /** 明确不能动的范围（与需求层 outOfScope 互补：此处是执行层禁动）。 */
+  forbidden: string[]
 }
 
 /** Plan —— 技术方案 (HOW) */
@@ -271,6 +291,8 @@ export interface EvidencePayload {
   output: string
   duration: number
   artifacts: string[]
+  /** P0: 指向 Spec.verificationSurface 中声明的某一项；无映射的证据视为未对齐（P0 仅告警）。 */
+  verificationSurfaceRef?: string
 }
 
 /** Defect —— 缺陷 */
