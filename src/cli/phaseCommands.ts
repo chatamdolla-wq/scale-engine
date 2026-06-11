@@ -36,7 +36,8 @@ import { runSafeCommand } from '../tools/SafeCommandRunner.js'
 import type { KarpathyCheck } from '../workflow/types.js'
 import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import type { SpecPayload, PlanPayload, TaskPayload } from '../artifact/types.js'
+import type { SpecPayload, PlanPayload, TaskPayload, EvidencePayload } from '../artifact/types.js'
+import { computeSurfaceCoverage, formatSurfaceCoverageWarnings, type SurfaceCoverageReport } from '../workflow/SurfaceCoverage.js'
 import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
 import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
@@ -791,6 +792,41 @@ async function confirmDraftSpec(
   }
 }
 
+// Helper: Resolve the originating Spec for a Task by walking Task -> Plan -> Spec.
+async function resolveSpecForTask(
+  store: ReturnType<typeof getEngine>['store'],
+  task: { parents?: string[] } | null | undefined,
+): Promise<{ id: string; payload: SpecPayload } | undefined> {
+  const planId = task?.parents?.[0]
+  if (!planId) return undefined
+  const plan = await store.get(planId)
+  const specId = plan?.parents?.[0]
+  if (!specId) return undefined
+  const spec = await store.get(specId)
+  if (!spec || spec.type !== 'Spec') return undefined
+  return { id: spec.id, payload: spec.payload as SpecPayload }
+}
+
+// Helper: Collect free-form evidence signals (commands run, files, evidence refs/artifacts)
+// used to soft-map a Spec's verificationSurface during verify/ship (P0 Decision C1).
+async function gatherVerificationSignals(
+  store: ReturnType<typeof getEngine>['store'],
+  options: { evidenceIds?: string[]; commands?: Array<string | undefined>; files?: string[] },
+): Promise<string[]> {
+  const signals: string[] = []
+  for (const command of options.commands ?? []) if (command) signals.push(command)
+  for (const file of options.files ?? []) if (file) signals.push(file)
+  for (const id of options.evidenceIds ?? []) {
+    const record = await store.get(id)
+    if (!record || record.type !== 'Evidence') continue
+    const payload = record.payload as EvidencePayload
+    if (payload.verificationSurfaceRef) signals.push(payload.verificationSurfaceRef)
+    if (payload.toolUsed) signals.push(payload.toolUsed)
+    if (payload.artifacts?.length) signals.push(...payload.artifacts)
+  }
+  return signals
+}
+
 // Helper: Generate plan markdown file
 function generatePlanMarkdown(id: string, specId: string, payload: PlanPayload): string {
   return `# Plan: ${id}
@@ -1462,6 +1498,25 @@ export const phaseVerify = defineCommand({
       artifactCheck,
       finalGateStatus: metricGateStatus,
     })
+
+    // P0 (Decision C1): soft-map the Spec's verificationSurface against evidence.
+    // Unmapped items are reported as warnings only — never blocking in P0.
+    const spec = await resolveSpecForTask(store, task)
+    const verificationCommands = resolvedVerification.targets.flatMap(target => [
+      target.config.build, target.config.lint, target.config.test, target.config.coverage,
+    ])
+    const surfaceSignals = await gatherVerificationSignals(store, {
+      evidenceIds: verificationEvidenceIds,
+      commands: [
+        ...verificationCommands,
+        args['build-cmd'], args['lint-cmd'], args['test-cmd'], args['coverage-cmd'],
+      ],
+      files: taskFiles,
+    })
+    const surfaceCoverage: SurfaceCoverageReport | undefined = spec?.payload.verificationSurface?.length
+      ? computeSurfaceCoverage(spec.payload.verificationSurface, surfaceSignals)
+      : undefined
+
     const result = {
       phase: 'VERIFY',
       taskId: args['task-id'],
@@ -1487,11 +1542,15 @@ export const phaseVerify = defineCommand({
         blocked: skillInstallationBlocked,
       },
       metric: metricRecord,
+      verificationSurfaceCoverage: surfaceCoverage,
       passed
     }
     if (args.json) console.log(JSON.stringify(result, null, 2))
     else {
       console.log(`\nVERIFY: ${passed ? 'PASSED' : 'FAILED'}`)
+      if (surfaceCoverage) {
+        for (const line of formatSurfaceCoverageWarnings(surfaceCoverage)) console.log(`   ${line}`)
+      }
       if (metricRecord) console.log(`   Metrics: ${metricRecord.taskId} ${metricRecord.finalGateStatus} (fix iterations: ${metricRecord.fixIterations})`)
       if (artifactCheck && !artifactCheck.complete) {
         console.log(`   Artifact gaps: ${artifactCheck.missing.length} missing, ${artifactCheck.incomplete.length} incomplete`)
@@ -2108,6 +2167,16 @@ export const phaseShip = defineCommand({
       } catch (e) { console.error("Warning: Plan completion transition failed:", (e as Error).message) }
     }
 
+    // P0 (Decision C1): soft-map the Spec's verificationSurface at ship time too.
+    const shipSpec = await resolveSpecForTask(store, task)
+    const shipSignals = await gatherVerificationSignals(store, {
+      evidenceIds: payload.verificationEvidenceIds,
+      files: payload.filesInvolved,
+    })
+    const shipSurfaceCoverage: SurfaceCoverageReport | undefined = shipSpec?.payload.verificationSurface?.length
+      ? computeSurfaceCoverage(shipSpec.payload.verificationSurface, shipSignals)
+      : undefined
+
     // === WorkflowEngine Integration ===
     // Generate HonestDelivery report
     if (!args.json) {
@@ -2141,6 +2210,9 @@ export const phaseShip = defineCommand({
         unverifiedItems.forEach(item => console.log(`  [UNVERIFIED] ${item}`))
         console.log('')
       }
+      if (shipSurfaceCoverage) {
+        for (const line of formatSurfaceCoverageWarnings(shipSurfaceCoverage)) console.log(line)
+      }
     }
 
     const result = {
@@ -2161,6 +2233,7 @@ export const phaseShip = defineCommand({
         blockers: workspaceBoundary.blockers,
         warnings: workspaceBoundary.warnings,
       } : null,
+      verificationSurfaceCoverage: shipSurfaceCoverage,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))
