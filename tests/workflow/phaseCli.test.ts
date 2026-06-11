@@ -1527,4 +1527,136 @@ export function leaky(token: string) {
     expect(ship.stderr).toContain('Child repository modules/common has uncommitted changes')
     expect(headAfter.stdout).toBe(headBefore.stdout)
   }, 120_000)
+
+  // P0: define --draft / --confirm two-step lifecycle
+  it('define --draft stops the Spec at REVIEWING (not FROZEN)', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'Draft Spec Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'spec is created,review evidence is persisted',
+      '--draft',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(define.exitCode).toBe(0)
+    const result = parseJson<{ spec: { id: string; status: string }; status: string; draft: boolean }>(define.stdout)
+    expect(result.draft).toBe(true)
+    expect(result.status).toBe('REVIEWING')
+    expect(result.spec.status).toBe('REVIEWING')
+
+    // Markdown reflects REVIEWING, not FROZEN
+    const specMd = readFileSync(join(scaleDir, 'specs', `${result.spec.id}.md`), 'utf-8')
+    expect(specMd).toContain('**Status**: REVIEWING')
+  }, 120_000)
+
+  it('define --confirm freezes a draft Spec (REVIEWING -> FROZEN)', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'Confirm Spec Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'spec is created,review evidence is persisted',
+      '--draft',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const confirm = await runScale(['define', '--confirm', specId, '--json'], scaleDir, projectDir)
+    expect(confirm.exitCode).toBe(0)
+    const confirmResult = parseJson<{ confirm: boolean; status: string; spec: { status: string } }>(confirm.stdout)
+    expect(confirmResult.confirm).toBe(true)
+    expect(confirmResult.status).toBe('FROZEN')
+    expect(confirmResult.spec.status).toBe('FROZEN')
+
+    const specMd = readFileSync(join(scaleDir, 'specs', `${specId}.md`), 'utf-8')
+    expect(specMd).toContain('**Status**: FROZEN')
+  }, 120_000)
+
+  it('define persists the six-element contract fields', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'Six Element Spec',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'spec is created',
+      '--verification-surface',
+      'tests/foo.test.ts,npm run e2e',
+      '--constraints',
+      'p95 < 200ms,no new dependency',
+      '--boundary-files',
+      'src/foo/**',
+      '--boundary-forbidden',
+      'src/billing/**',
+      '--iteration-strategy',
+      'Run the suite after each milestone before continuing.',
+      '--blocked-stop',
+      'If sandbox is unreachable, report and wait for credentials.',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(define.exitCode).toBe(0)
+    const spec = parseJson<{ spec: { id: string; payload: {
+      verificationSurface?: string[]
+      constraints?: string[]
+      boundaries?: { files: string[]; forbidden: string[] }
+      iterationStrategy?: string
+      blockedStopCondition?: string
+    } } }>(define.stdout).spec
+    expect(spec.payload.verificationSurface).toEqual(['tests/foo.test.ts', 'npm run e2e'])
+    expect(spec.payload.constraints).toEqual(['p95 < 200ms', 'no new dependency'])
+    expect(spec.payload.boundaries).toMatchObject({ files: ['src/foo/**'], forbidden: ['src/billing/**'] })
+    expect(spec.payload.iterationStrategy).toContain('after each milestone')
+    expect(spec.payload.blockedStopCondition).toContain('sandbox is unreachable')
+
+    const specMd = readFileSync(join(scaleDir, 'specs', `${spec.id}.md`), 'utf-8')
+    expect(specMd).toContain('## Verification Surface')
+    expect(specMd).toContain('tests/foo.test.ts')
+    expect(specMd).toContain('## Boundaries')
+    expect(specMd).toContain('## Blocked Stop Condition')
+  }, 120_000)
+
+  it('define --confirm on a missing Spec fails cleanly', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const confirm = await runScale(['define', '--confirm', 'SPEC-does-not-exist', '--json'], scaleDir, projectDir)
+    expect(confirm.exitCode).not.toBe(0)
+    expect(confirm.stderr).toContain('Spec not found')
+  }, 120_000)
+
+  it('bare define (no --draft) still auto-freezes for backward compatibility', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+
+    const define = await runScale([
+      'define',
+      'Backward Compatible Spec',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'spec is created,review evidence is persisted',
+      '--json',
+    ], scaleDir, projectDir)
+
+    expect(define.exitCode).toBe(0)
+    const result = parseJson<{ spec: { status: string }; status: string; draft: boolean }>(define.stdout)
+    expect(result.draft).toBe(false)
+    expect(result.status).toBe('FROZEN')
+    expect(result.spec.status).toBe('FROZEN')
+  }, 120_000)
 })

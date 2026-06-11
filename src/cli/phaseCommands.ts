@@ -405,11 +405,11 @@ async function recordVerificationMetric(options: {
 }
 
 // Helper: Generate spec markdown file
-function generateSpecMarkdown(id: string, title: string, payload: SpecPayload): string {
+function generateSpecMarkdown(id: string, title: string, payload: SpecPayload, status = 'FROZEN'): string {
   return `# Spec: ${title}
 
 **ID**: ${id}
-**Status**: FROZEN
+**Status**: ${status}
 **Ambiguity Score**: ${payload.ambiguityScore ?? 0.15}
 
 ## What
@@ -473,9 +473,20 @@ function calculateAmbiguityScore(description: string, successCriteria: string[])
 export const phaseDefine = defineCommand({
   meta: { name: 'define', description: 'DEFINE: Create Spec with AmbiguityScorer + SocraticQuestioner (/spec)' },
   args: {
-    title: { type: 'positional', required: true },
+    title: { type: 'positional', required: false },
     description: { type: 'string', alias: 'd' },
     'success-criteria': { type: 'string', alias: 'c', description: 'Comma-separated criteria' },
+    // P0 draft/confirm two-step lifecycle (backward compatible: bare `define` still auto-freezes)
+    draft: { type: 'boolean', default: false, description: 'Stop the new Spec at REVIEWING (requires `define --confirm <id>` to FROZEN)' },
+    confirm: { type: 'string', description: 'Confirm and freeze an existing draft Spec id (REVIEWING -> FROZEN)' },
+    // P0 six-element contract inputs (optional, comma-separated where plural)
+    'verification-surface': { type: 'string', description: 'Comma-separated evidence sources: test names / benchmark commands / artifact paths' },
+    'constraints': { type: 'string', description: 'Comma-separated invariants that must not regress (perf/security/compat)' },
+    'boundary-files': { type: 'string', description: 'Comma-separated files allowed to change' },
+    'boundary-tools': { type: 'string', description: 'Comma-separated tools allowed to use' },
+    'boundary-forbidden': { type: 'string', description: 'Comma-separated scope that must not be touched' },
+    'iteration-strategy': { type: 'string', description: 'How each build iteration decides the next step' },
+    'blocked-stop': { type: 'string', description: 'What to report / what is needed to unblock when no path is viable' },
     // Socratic refinement answers (optional)
     'goal': { type: 'string', description: 'Goal answer for Socratic refinement' },
     'constraint': { type: 'string', description: 'Constraint answer for Socratic refinement' },
@@ -489,6 +500,18 @@ export const phaseDefine = defineCommand({
   },
   async run({ args }) {
     const { store, fsm, workflowEngine } = getEngine()
+
+    // P0: --confirm freezes an existing draft Spec (REVIEWING -> FROZEN) without re-creating it.
+    if (args.confirm) {
+      await confirmDraftSpec(store, fsm, String(args.confirm), Boolean(args.json))
+      return
+    }
+
+    if (!args.title) {
+      console.error('\nMissing required argument: title (or pass --confirm <spec-id> to freeze a draft)\n')
+      process.exit(1)
+    }
+
     const rawDesc = String(args.description ?? args.title)
 
     // Parse success criteria
@@ -582,6 +605,18 @@ export const phaseDefine = defineCommand({
       createdBy: { kind: 'human', userId: 'cli' },
     })
 
+    // P0 six-element contract inputs (optional; omitted fields stay undefined)
+    const csv = (v: unknown): string[] | undefined => {
+      const items = typeof v === 'string' ? v.split(',').map(s => s.trim()).filter(Boolean) : []
+      return items.length ? items : undefined
+    }
+    const boundaryFiles = csv(args['boundary-files'])
+    const boundaryTools = csv(args['boundary-tools'])
+    const boundaryForbidden = csv(args['boundary-forbidden'])
+    const boundaries = (boundaryFiles || boundaryTools || boundaryForbidden)
+      ? { files: boundaryFiles ?? [], tools: boundaryTools ?? [], forbidden: boundaryForbidden ?? [] }
+      : undefined
+
     // Create Spec artifact with proper payload (use refined requirement if available)
     const specPayload: SpecPayload = {
       what: refinedRequirement,
@@ -590,6 +625,11 @@ export const phaseDefine = defineCommand({
       edgeCases: [],
       northStar: 'Deliver user value',
       ambiguityScore,
+      verificationSurface: csv(args['verification-surface']),
+      constraints: csv(args['constraints']),
+      boundaries,
+      iterationStrategy: typeof args['iteration-strategy'] === 'string' && args['iteration-strategy'] ? String(args['iteration-strategy']) : undefined,
+      blockedStopCondition: typeof args['blocked-stop'] === 'string' && args['blocked-stop'] ? String(args['blocked-stop']) : undefined,
     }
 
     const spec = await store.create({
@@ -600,11 +640,15 @@ export const phaseDefine = defineCommand({
       createdBy: { kind: 'human', userId: 'cli' },
     })
 
+    // Draft mode stops at REVIEWING; default mode auto-freezes (FROZEN).
+    const isDraft = Boolean(args.draft)
+    const finalStatus = isDraft ? 'REVIEWING' : 'FROZEN'
+
     // Generate spec markdown file
     const specsDir = join(SCALE_DIR, 'specs')
     ensureDir(specsDir)
     const specPath = join(specsDir, `${spec.id}.md`)
-    writeFileSync(specPath, generateSpecMarkdown(spec.id, args.title, specPayload))
+    writeFileSync(specPath, generateSpecMarkdown(spec.id, args.title, specPayload, finalStatus))
 
     // Generate spec HTML file (default format: html)
     const outputFormat: OutputFormat = (args.format as OutputFormat) ?? 'md'
@@ -614,7 +658,7 @@ export const phaseDefine = defineCommand({
         title: args.title,
         brand: args.brand as string | undefined,
         version: SCALE_ENGINE_VERSION,
-        status: 'FROZEN',
+        status: finalStatus,
       })
       const html = renderer.renderSpec({
         id: spec.id,
@@ -625,12 +669,17 @@ export const phaseDefine = defineCommand({
         edgeCases: specPayload.edgeCases,
         northStar: specPayload.northStar,
         ambiguityScore,
+        verificationSurface: specPayload.verificationSurface,
+        constraints: specPayload.constraints,
+        boundaries: specPayload.boundaries,
+        iterationStrategy: specPayload.iterationStrategy,
+        blockedStopCondition: specPayload.blockedStopCondition,
       })
       specHtmlPath = join(specsDir, `${spec.id}.html`)
       renderer.writeToFile(html, specHtmlPath)
     }
 
-    // FSM transitions: DRAFT -> REVIEWING -> FROZEN
+    // FSM transitions: DRAFT -> REVIEWING (-> FROZEN unless --draft)
     // Phase 1: refine (DRAFT -> REVIEWING) - no guards
     const refineResult = await fsm.canTransition(spec.id, 'refine')
     if (!refineResult.allowed) {
@@ -642,24 +691,31 @@ export const phaseDefine = defineCommand({
     }
     await fsm.transition(spec.id, 'refine', { actor: { kind: 'system', component: 'phase-define' } })
 
-    // Phase 2: approve (REVIEWING -> FROZEN) - guards: ambiguityScore <= 0.2, has successCriteria
-    const approveResult = await fsm.canTransition(spec.id, 'approve')
-    if (!approveResult.allowed) {
-      if (!args.json) {
-        console.error('\nFSM transition blocked: REVIEWING -> FROZEN')
-        console.error('   Spec cannot be frozen due to:')
-        approveResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
-        console.error('\n   Resolve issues before proceeding.')
+    // Phase 2: approve (REVIEWING -> FROZEN) - guards: ambiguityScore <= 0.2, has successCriteria.
+    // Skipped in --draft mode: the draft waits for `scale define --confirm <id>`.
+    if (!isDraft) {
+      const approveResult = await fsm.canTransition(spec.id, 'approve')
+      if (!approveResult.allowed) {
+        if (!args.json) {
+          console.error('\nFSM transition blocked: REVIEWING -> FROZEN')
+          console.error('   Spec cannot be frozen due to:')
+          approveResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+          console.error('\n   Resolve issues before proceeding.')
+        }
+        process.exit(1)
       }
-      process.exit(1)
-    }
-    await fsm.transition(spec.id, 'approve', { actor: { kind: 'system', component: 'phase-define' } })
+      await fsm.transition(spec.id, 'approve', { actor: { kind: 'system', component: 'phase-define' } })
 
-    if (!args.json) {
-      console.log('   FSM: DRAFT -> REVIEWING -> FROZEN ✓')
+      if (!args.json) {
+        console.log('   FSM: DRAFT -> REVIEWING -> FROZEN ✓')
+      }
+    } else if (!args.json) {
+      console.log('   FSM: DRAFT -> REVIEWING (draft; not yet FROZEN)')
     }
 
-    const result = { phase: 'DEFINE', spec, specPath, specHtmlPath, ambiguityScore, successCriteria, format: outputFormat, promptOptimization }
+    // Refresh the spec so the reported status reflects the post-transition state.
+    const finalSpec = (await store.get(spec.id)) ?? spec
+    const result = { phase: 'DEFINE', spec: finalSpec, specPath, specHtmlPath, ambiguityScore, successCriteria, format: outputFormat, promptOptimization, status: finalStatus, draft: isDraft }
 
     // Write explore artifact for Gate G1 verification
     const artifactWriter = new WorkflowArtifactWriter(SCALE_DIR)
@@ -679,10 +735,61 @@ export const phaseDefine = defineCommand({
       if (specHtmlPath) console.log(`   HTML file: ${specHtmlPath}`)
       console.log(`   Ambiguity score: ${ambiguityScore.toFixed(2)}`)
       console.log(`   Success criteria: ${successCriteria.length}`)
-      console.log(`\n   Next: scale plan ${spec.id}\n`)
+      if (isDraft) {
+        console.log(`\n   Draft created (REVIEWING). Review, then confirm:`)
+        console.log(`   Next: scale define --confirm ${spec.id}\n`)
+      } else {
+        console.log(`\n   Next: scale plan ${spec.id}\n`)
+      }
     }
   },
 })
+
+// Helper: Confirm a draft Spec (REVIEWING -> FROZEN) for the `define --confirm <id>` flow.
+async function confirmDraftSpec(
+  store: ReturnType<typeof getEngine>['store'],
+  fsm: ReturnType<typeof getEngine>['fsm'],
+  specId: string,
+  json: boolean,
+): Promise<void> {
+  const spec = await store.get(specId)
+  if (!spec || spec.type !== 'Spec') {
+    console.error(`\nSpec not found: ${specId}\n`)
+    process.exit(1)
+  }
+  if (spec.status === 'FROZEN') {
+    if (!json) console.log(`\nSpec ${specId} is already FROZEN.\n`)
+    else console.log(JSON.stringify({ phase: 'DEFINE', confirm: true, spec, status: 'FROZEN', alreadyFrozen: true }, null, 2))
+    return
+  }
+
+  const approveResult = await fsm.canTransition(specId, 'approve')
+  if (!approveResult.allowed) {
+    if (!json) {
+      console.error('\nFSM transition blocked: REVIEWING -> FROZEN')
+      console.error('   Spec cannot be confirmed due to:')
+      approveResult.blockedBy?.forEach(b => console.error(`   [GUARD] ${b.guard}: ${b.message}`))
+      console.error('\n   Resolve issues before confirming.')
+    }
+    process.exit(1)
+  }
+  await fsm.transition(specId, 'approve', { actor: { kind: 'human', userId: 'cli' } })
+
+  // Refresh persisted markdown status (draft was written as REVIEWING).
+  const specPath = join(SCALE_DIR, 'specs', `${specId}.md`)
+  if (existsSync(specPath)) {
+    writeFileSync(specPath, generateSpecMarkdown(specId, spec.title, spec.payload as SpecPayload, 'FROZEN'))
+  }
+
+  const confirmed = await store.get(specId)
+  if (json) {
+    console.log(JSON.stringify({ phase: 'DEFINE', confirm: true, spec: confirmed, status: 'FROZEN' }, null, 2))
+  } else {
+    console.log(`\nCONFIRM: ${specId}`)
+    console.log('   FSM: REVIEWING -> FROZEN ✓')
+    console.log(`\n   Next: scale plan ${specId}\n`)
+  }
+}
 
 // Helper: Generate plan markdown file
 function generatePlanMarkdown(id: string, specId: string, payload: PlanPayload): string {
