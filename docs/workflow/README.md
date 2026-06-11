@@ -52,6 +52,12 @@ See [GATES_AND_SCORE.md](GATES_AND_SCORE.md) for gate catalog visibility, archit
 
 See [PROMPT_OPTIMIZATION.md](PROMPT_OPTIMIZATION.md) for the deterministic prompt rewrite layer used by `scale prompt optimize` and `scale define`.
 
+## 模板与示例
+
+- 不知道一个任务该用哪些模板、模板和哪个门禁挂钩，先读 [TEMPLATE_GUIDE.md](TEMPLATE_GUIDE.md)（按等级 + 按改动类型的选择矩阵，含模板↔门禁映射）。
+- 想看从 `make new-task` 到提交的完整一遍真实命令，读 [E2E_EXAMPLE.md](E2E_EXAMPLE.md)。
+- FSM Guard（物理阻止「未验证就 COMPLETE」）的状态机示例见 [../TASK_GUARD_WORKFLOW_DEMO.md](../TASK_GUARD_WORKFLOW_DEMO.md)。
+
 ## 门禁说明
 
 SCALE 2.0 共 23 个门禁，分三层：核心门禁（G0-G8）、元治理门禁（G9-G15）、增强门禁（G16-G22）。
