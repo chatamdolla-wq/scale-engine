@@ -1659,4 +1659,61 @@ export function leaky(token: string) {
     expect(result.status).toBe('FROZEN')
     expect(result.spec.status).toBe('FROZEN')
   }, 120_000)
+
+  // P0 (Decision C1): verify soft-maps Spec.verificationSurface against evidence (warn, not block).
+  it('verify reports verificationSurface coverage and flags unmapped items without blocking', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+
+    const define = await runScale([
+      'define',
+      'Surface Coverage Feature',
+      '--description',
+      'Implement a deterministic CLI regression workflow with input arguments and output evidence persisted by the CLI. Use TypeScript CLI commands with rollback constraints, quality lint typecheck, and acceptance verification evidence.',
+      '--success-criteria',
+      'spec is created,evidence persisted',
+      '--verification-surface',
+      'tests/foo.test.ts,manual-qa-signoff',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+
+    const plan = await runScale(['plan', specId, '--rollback', 'revert the commit', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+
+    const build = await runScale(['build', planId, '--description', 'surface coverage task', '--level', 'S', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const taskId = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout).task.id
+
+    const verify = await runScale([
+      'verify',
+      taskId,
+      '--build-cmd', 'node -v',
+      '--lint-cmd', 'node -v',
+      '--test-cmd', 'node -v',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+    const coverage = parseJson<{ verificationSurfaceCoverage?: { declared: number; mapped: number; unmapped: string[] } }>(verify.stdout).verificationSurfaceCoverage
+    expect(coverage).toBeDefined()
+    expect(coverage?.declared).toBe(2)
+    expect(coverage?.unmapped).toContain('manual-qa-signoff')
+
+    // Mapping a surface item via the test command moves it out of "unmapped".
+    const verifyMapped = await runScale([
+      'verify',
+      taskId,
+      '--build-cmd', 'node -v',
+      '--lint-cmd', 'node -v',
+      '--test-cmd', 'npx vitest run tests/foo.test.ts',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verifyMapped.exitCode).toBe(0)
+    const mappedCoverage = parseJson<{ verificationSurfaceCoverage?: { mapped: number; unmapped: string[] } }>(verifyMapped.stdout).verificationSurfaceCoverage
+    expect(mappedCoverage?.unmapped).not.toContain('tests/foo.test.ts')
+    expect(mappedCoverage?.unmapped).toContain('manual-qa-signoff')
+  }, 120_000)
 })
