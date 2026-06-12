@@ -320,6 +320,18 @@ describe('SessionInjector', () => {
 
     expect(injection.instinctCount).toBe(1)
     expect(injection.content.length).toBeLessThan(500) // minimal is shorter
+    expect(injection.content).toContain('证据纪律') // contract present even when minimal
+  })
+
+  it('keeps the evidence-discipline contract in minimal injection with no instincts', () => {
+    const dir = makeDir('cortex-minimal-empty-')
+    const store = new InstinctStore(dir)
+    store.save(makeInstinct({ confidence: 0.3 })) // below injection threshold
+
+    const injection = new SessionInjector(store).buildMinimal()
+
+    expect(injection.instinctCount).toBe(0)
+    expect(injection.content).toContain('证据纪律')
   })
 
   it('returns empty injection when no high-confidence instincts', () => {

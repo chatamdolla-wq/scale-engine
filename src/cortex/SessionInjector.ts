@@ -4,7 +4,7 @@
 // Injects: instincts + prior session summary + learned skills + project detection
 
 import { logger } from '../core/logger.js'
-import { EVIDENCE_DISCIPLINE_PROMPT } from '../agents/evidenceDiscipline.js'
+import { EVIDENCE_DISCIPLINE_PROMPT, EVIDENCE_DISCIPLINE_PROMPT_MINIMAL } from '../agents/evidenceDiscipline.js'
 import type { Instinct } from './InstinctExtractor.js'
 import type { InstinctStore } from './InstinctStore.js'
 
@@ -114,9 +114,11 @@ export class SessionInjector {
   buildMinimal(projectId?: string): SessionInjection {
     const instincts = this.instinctStore.getInjectionInstincts(projectId)
 
+    // The evidence-discipline contract is always present at SessionStart, even under
+    // a constrained budget — here as the condensed single-line form (P1.3).
     if (instincts.length === 0) {
       return {
-        content: '',
+        content: EVIDENCE_DISCIPLINE_PROMPT_MINIMAL,
         instinctCount: 0,
         metadata: { projectId, instinctsApplied: [] },
       }
@@ -128,7 +130,7 @@ export class SessionInjector {
     )
 
     return {
-      content: `SCALE Cortex Instincts (${instincts.length}):\n${lines.join('\n')}`,
+      content: `${EVIDENCE_DISCIPLINE_PROMPT_MINIMAL}\n\nSCALE Cortex Instincts (${instincts.length}):\n${lines.join('\n')}`,
       instinctCount: instincts.length,
       metadata: { projectId, instinctsApplied: instincts.map(i => i.id) },
     }
