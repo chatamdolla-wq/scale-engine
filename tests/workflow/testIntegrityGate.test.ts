@@ -182,4 +182,43 @@ describe('TestIntegrityGate', () => {
     expect(result.passed).toBe(true)
     expect(result.blockers).toEqual([])
   })
+
+  it('records the verify-time test-file hash in evidence (decision F1)', async () => {
+    const gate = new TestIntegrityGate({ diff: NON_TEST_ONLY, testFileHash: 'abc123', testFiles: ['tests/a.test.ts'] })
+    const result = await gate.execute()
+    const payload = JSON.parse(result.evidenceItems[0].source ?? '{}')
+    expect(payload.testFileHashAtVerify).toBe('abc123')
+    expect(payload.analyzedFiles).toContain('tests/a.test.ts')
+  })
+
+  it('flags coverage regression beyond epsilon (decision G1)', async () => {
+    const gate = new TestIntegrityGate({ diff: NON_TEST_ONLY, coverageCurrent: 80, coverageBaseline: 90 })
+    const result = await gate.execute()
+    const payload = JSON.parse(result.evidenceItems[0].source ?? '{}')
+    expect(payload.coverageDelta).toBeCloseTo(-10)
+    expect(payload.findings.some((f: { kind: string }) => f.kind === 'coverage-regression')).toBe(true)
+  })
+
+  it('coverage regression blocks under enforced (non-advisory) profile', async () => {
+    const gate = new TestIntegrityGate({ diff: NON_TEST_ONLY, coverageCurrent: 80, coverageBaseline: 90, advisory: false })
+    const result = await gate.execute()
+    expect(result.passed).toBe(false)
+    expect(result.blockers.some(b => b.startsWith('coverage-regression'))).toBe(true)
+  })
+
+  it('does not flag coverage within epsilon tolerance', async () => {
+    const gate = new TestIntegrityGate({ diff: NON_TEST_ONLY, coverageCurrent: 89.8, coverageBaseline: 90, advisory: false })
+    const result = await gate.execute()
+    expect(result.passed).toBe(true)
+    const payload = JSON.parse(result.evidenceItems[0].source ?? '{}')
+    expect(payload.findings.some((f: { kind: string }) => f.kind === 'coverage-regression')).toBe(false)
+  })
+
+  it('does not flag coverage when no baseline exists yet (first run)', async () => {
+    const gate = new TestIntegrityGate({ diff: NON_TEST_ONLY, coverageCurrent: 50, advisory: false })
+    const result = await gate.execute()
+    expect(result.passed).toBe(true)
+    const payload = JSON.parse(result.evidenceItems[0].source ?? '{}')
+    expect(payload.coverageDelta).toBeUndefined()
+  })
 })

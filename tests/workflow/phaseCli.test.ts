@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { execa } from 'execa'
+import { writeCoverageBaseline, writeTestIntegrityBaseline } from '../../src/workflow/gates/testIntegritySupport.js'
 
 let dirs: string[] = []
 let repoFiles: string[] = []
@@ -22,6 +23,30 @@ function makeProjectDir(): string {
 
 async function runScale(args: string[], scaleDir: string, projectDir?: string) {
   return execa('node', ['--import', 'tsx', 'src/api/cli.ts', ...args], {
+    env: {
+      ...process.env,
+      SCALE_DIR: scaleDir,
+      SCALE_PROJECT_DIR: projectDir,
+      SCALE_LOG_LEVEL: undefined,
+      SCALE_VERIFICATION_BUILD_CMD: undefined,
+      SCALE_VERIFICATION_LINT_CMD: undefined,
+      SCALE_VERIFICATION_TEST_CMD: undefined,
+      SCALE_VERIFICATION_COVERAGE_CMD: undefined,
+    },
+    reject: false,
+  })
+}
+
+// Runs the CLI with cwd set to the project dir so per-process caches that live
+// under <cwd>/.scale (e.g. ScanCache) are isolated per test. The tsx loader and
+// the CLI entrypoint are referenced by absolute path because the changed cwd
+// would otherwise break the repo-relative `tsx` / `src/api/cli.ts` lookups.
+const REPO_ROOT = process.cwd()
+const TSX_LOADER = join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'loader.mjs')
+const CLI_ENTRY = join(REPO_ROOT, 'src', 'api', 'cli.ts')
+async function runScaleInProject(args: string[], scaleDir: string, projectDir: string) {
+  return execa('node', ['--import', TSX_LOADER, CLI_ENTRY, ...args], {
+    cwd: projectDir,
     env: {
       ...process.env,
       SCALE_DIR: scaleDir,
@@ -59,7 +84,10 @@ function parseJson<T = unknown>(stdout: string): T {
 function coverageFixtureCommand(coverage = '100.00'): string {
   const text = `All files | 100.00 | 100.00 | 100.00 | 100.00 | ${coverage}`
   const codes = Array.from(text).map(char => char.charCodeAt(0)).join(',')
-  return `node -e "process.stdout.write(String.fromCharCode(${codes}))"`
+  // Use a synchronous fd write so the full line is flushed before the process
+  // exits. process.stdout.write is asynchronous for pipes and can drop its tail
+  // under heavy parallel load, which would truncate the trailing coverage value.
+  return `node -e "require('fs').writeSync(1, String.fromCharCode(${codes}))"`
 }
 
 afterEach(() => {
@@ -1715,5 +1743,138 @@ export function leaky(token: string) {
     const mappedCoverage = parseJson<{ verificationSurfaceCoverage?: { mapped: number; unmapped: string[] } }>(verifyMapped.stdout).verificationSurfaceCoverage
     expect(mappedCoverage?.unmapped).not.toContain('tests/foo.test.ts')
     expect(mappedCoverage?.unmapped).toContain('manual-qa-signoff')
+  }, 120_000)
+
+  async function buildTaskForIntegrity(scaleDir: string, projectDir: string): Promise<string> {
+    const define = await runScale([
+      'define',
+      'Test Integrity Feature',
+      '--description',
+      'Implement a deterministic TypeScript CLI workflow today that accepts task input arguments, persists verification evidence output, keeps rollback constraints explicit, and proves the G23 test integrity gate guards coverage regression and verify-to-ship test hash consistency.',
+      '--success-criteria',
+      'verification evidence is persisted,test integrity gate guards coverage and hash',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(define.exitCode).toBe(0)
+    const specId = parseJson<{ spec: { id: string } }>(define.stdout).spec.id
+    const plan = await runScale(['plan', specId, '--rollback', 'Delete temporary files', '--json'], scaleDir, projectDir)
+    expect(plan.exitCode).toBe(0)
+    const planId = parseJson<{ plan: { id: string } }>(plan.stdout).plan.id
+    const build = await runScale(['build', planId, '--description', 'Test integrity task', '--level', 'M', '--json'], scaleDir, projectDir)
+    expect(build.exitCode).toBe(0)
+    const buildResult = parseJson<{ task: { id: string }; artifactDir?: string }>(build.stdout)
+    if (buildResult.artifactDir) repoDirs.push(join(projectDir, buildResult.artifactDir))
+    return buildResult.task.id
+  }
+
+  it('G23 (PR-D2): coverage regression blocks verify completion under an enforced profile', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'tests'), { recursive: true })
+    writeFileSync(join(projectDir, 'tests', 'foo.test.ts'), "import { it, expect } from 'vitest'\nit('works', () => { expect(1).toBe(1) })\n", 'utf-8')
+
+    const taskId = await buildTaskForIntegrity(scaleDir, projectDir)
+    // Seed the "last passing" coverage baseline at 90% (decision G1).
+    writeCoverageBaseline(scaleDir, taskId, 90)
+
+    // G6 results are memoised by ScanCache, which keys off `git diff` and lives
+    // under <cwd>/.scale/cache/scans. Running the CLI with cwd = projectDir
+    // isolates that cache per test; otherwise every spawned verify shares the
+    // repo-root cache and this test (the only one asserting a non-100% coverage
+    // value) reads a sibling test's cached 100% result instead of running its
+    // own 80% command. The CLI entrypoint is referenced by absolute path so the
+    // changed cwd does not break module resolution.
+    const verify = await runScaleInProject([
+      'verify', taskId,
+      '--build-cmd', 'node -v',
+      '--lint-cmd', 'node -v',
+      '--test-cmd', 'node -v',
+      '--coverage-cmd', coverageFixtureCommand('80.00'),
+      '--profile', 'ci',
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+    const result = parseJson<{
+      passed: boolean
+      testIntegrity: { enforced: boolean; passed: boolean; blockers: string[] }
+    }>(verify.stdout)
+    expect(result.testIntegrity.enforced).toBe(true)
+    expect(result.testIntegrity.passed).toBe(false)
+    expect(result.testIntegrity.blockers.some(b => b.includes('coverage-regression'))).toBe(true)
+    expect(result.passed).toBe(false)
+  }, 120_000)
+
+  it('G23 (PR-D2): coverage regression only warns under the default (advisory) profile', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'tests'), { recursive: true })
+    writeFileSync(join(projectDir, 'tests', 'foo.test.ts'), "import { it, expect } from 'vitest'\nit('works', () => { expect(1).toBe(1) })\n", 'utf-8')
+
+    const taskId = await buildTaskForIntegrity(scaleDir, projectDir)
+    writeCoverageBaseline(scaleDir, taskId, 90)
+
+    const verify = await runScale([
+      'verify', taskId,
+      '--build-cmd', 'node -v',
+      '--lint-cmd', 'node -v',
+      '--test-cmd', 'node -v',
+      '--coverage-cmd', coverageFixtureCommand('80.00'),
+      '--json',
+    ], scaleDir, projectDir)
+    expect(verify.exitCode).toBe(0)
+    const result = parseJson<{ testIntegrity: { enforced: boolean; passed: boolean } }>(verify.stdout)
+    expect(result.testIntegrity.enforced).toBe(false)
+    // Advisory: the regression is surfaced as evidence but never blocks the gate.
+    expect(result.testIntegrity.passed).toBe(true)
+  }, 120_000)
+
+  it('G23 (PR-D2): ship is hard-blocked when test files change after verify under an enforced profile', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'tests'), { recursive: true })
+    writeFileSync(join(projectDir, 'tests', 'foo.test.ts'), "import { it, expect } from 'vitest'\nit('works', () => { expect(1).toBe(1) })\n", 'utf-8')
+
+    const taskId = await buildTaskForIntegrity(scaleDir, projectDir)
+    // Persist an enforced verify-time baseline whose hash will not match the
+    // current test file content, simulating "passed verify, then tampered".
+    writeTestIntegrityBaseline(scaleDir, {
+      taskId,
+      profile: 'ci',
+      enforce: true,
+      testFileHashAtVerify: 'STALE_HASH_FROM_VERIFY',
+      testFiles: ['tests/foo.test.ts'],
+      verifiedAt: 0,
+    })
+
+    const ship = await runScale(['ship', taskId, '--json'], scaleDir, projectDir)
+    expect(ship.exitCode).toBe(1)
+    expect(ship.stderr).toContain('Test integrity gate (G23) blocked ship')
+    expect(ship.stderr).toContain('hash mismatch')
+  }, 120_000)
+
+  it('G23 (PR-D2): ship is not hard-blocked by a hash change under an advisory baseline', async () => {
+    const scaleDir = makeScaleDir()
+    const projectDir = makeProjectDir()
+    await execa('git', ['init'], { cwd: projectDir })
+    mkdirSync(join(projectDir, 'tests'), { recursive: true })
+    writeFileSync(join(projectDir, 'tests', 'foo.test.ts'), "import { it, expect } from 'vitest'\nit('works', () => { expect(1).toBe(1) })\n", 'utf-8')
+
+    const taskId = await buildTaskForIntegrity(scaleDir, projectDir)
+    writeTestIntegrityBaseline(scaleDir, {
+      taskId,
+      profile: 'default',
+      enforce: false,
+      testFileHashAtVerify: 'STALE_HASH_FROM_VERIFY',
+      testFiles: ['tests/foo.test.ts'],
+      verifiedAt: 0,
+    })
+
+    const ship = await runScale(['ship', taskId, '--json'], scaleDir, projectDir)
+    // Advisory baseline never hard-blocks on hash mismatch; ship fails later for
+    // the ordinary "not verified" reason, not the G23 integrity guard.
+    expect(ship.stderr).not.toContain('Test integrity gate (G23) blocked ship')
   }, 120_000)
 })

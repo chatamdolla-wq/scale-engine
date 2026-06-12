@@ -294,6 +294,8 @@ export interface TestIntegrityFinding {
     | 'only-added'
     | 'weakened-assertion'
     | 'timeout-inflated'
+    | 'coverage-regression'
+    | 'hash-mismatch'
   /** Intended enforcement once G23 leaves advisory mode (see P1 decision E1). */
   severity: 'warn' | 'block'
   /** Human-readable explanation of the flagged change. */
@@ -326,6 +328,8 @@ export interface TestIntegrityEvidence {
   testFileHashAtVerify?: string
   /** PR-D2: test-file hash recomputed at ship time. */
   testFileHashAtShip?: string
+  /** PR-D2: whether enforcement (blocking) applied for this run's profile. */
+  enforced?: boolean
 }
 
 /** Evidence —— 验证证据 */

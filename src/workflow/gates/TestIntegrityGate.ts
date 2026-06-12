@@ -1,13 +1,15 @@
-// SCALE Engine — G23 Test Integrity Gate (P1.2, PR-D1)
+// SCALE Engine — G23 Test Integrity Gate (P1.2)
 // Detects "fake green" test tampering by analysing the test-file diff:
 // assertion count drops, newly introduced skip/only, weakened assertions, and
-// inflated timeouts. PR-D1 ships advisory (warn-only); enforcement + verify→ship
-// hash consistency + coverage regression land in PR-D2.
+// inflated timeouts. PR-D1 shipped advisory detection; PR-D2 adds coverage
+// regression (decision G1), records the verify-time test-file hash (decision F1),
+// and flips block-severity findings into real blockers under enforced profiles (E1).
 
 import type { GateResult, GateStage, GateEvidence } from '../types.js'
 import type { TestIntegrityEvidence, TestIntegrityFinding } from '../../artifact/types.js'
 import type { IGate } from './GateSystem.js'
 import { execSync } from 'node:child_process'
+import { DEFAULT_COVERAGE_EPSILON, detectCoverageRegression, isTestFile } from './testIntegritySupport.js'
 
 type RequiredLevel = 'S' | 'M' | 'L' | 'ALWAYS' | 'CRITICAL'
 
@@ -21,9 +23,6 @@ function createEvidence(input: Omit<GateEvidence, 'id'>): GateEvidence {
 function textEvidence(items: GateEvidence[]): string {
   return items.map(item => `${item.label}: ${item.detail}`).join('\n')
 }
-
-/** Matches test files by filename suffix or by living under a tests/__tests__ dir. */
-const TEST_FILE_PATTERN = /(?:^|\/)(?:__tests__|tests?|specs?)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/
 
 /** expect(...) / assert(...) / assert.* / .should / should(...) — line-level assertion signal. */
 const ASSERTION_PATTERN = /\bexpect\s*\(|\bassert\s*\(|\bassert\.|\.should\b|\bshould\s*\(/
@@ -47,10 +46,6 @@ export interface TestIntegrityAnalysis {
   assertionCountDelta: number
   findings: TestIntegrityFinding[]
   flaggedPatterns: string[]
-}
-
-function isTestFile(path: string): boolean {
-  return TEST_FILE_PATTERN.test(path)
 }
 
 /** Parse a unified `git diff` into per-line records limited to test files. */
@@ -134,8 +129,18 @@ export interface TestIntegrityGateOptions {
   baseRef?: string
   /** Pre-supplied unified diff (skips git invocation). Primarily for tests. */
   diff?: string
-  /** When true (PR-D1 default) the gate never blocks — it only surfaces findings. */
+  /** When true (default) the gate never blocks — it only surfaces findings (decision E1). */
   advisory?: boolean
+  /** PR-D2: current coverage percentage for regression comparison (decision G1). */
+  coverageCurrent?: number
+  /** PR-D2: last passing coverage baseline; regression flagged when current < baseline - ε. */
+  coverageBaseline?: number
+  /** PR-D2: coverage regression tolerance in percentage points. */
+  coverageEpsilon?: number
+  /** PR-D2: deterministic test-file set hashed at verify time (decision F1). */
+  testFileHash?: string
+  /** PR-D2: the test files backing testFileHash (recorded in evidence for ship-time replay). */
+  testFiles?: string[]
 }
 
 /**
@@ -153,12 +158,22 @@ export class TestIntegrityGate implements IGate {
   private baseRef: string
   private injectedDiff?: string
   private advisory: boolean
+  private coverageCurrent?: number
+  private coverageBaseline?: number
+  private coverageEpsilon: number
+  private testFileHash?: string
+  private testFiles?: string[]
 
   constructor(options: TestIntegrityGateOptions = {}) {
     this.cwd = options.cwd ?? process.cwd()
     this.baseRef = options.baseRef ?? 'HEAD'
     this.injectedDiff = options.diff
     this.advisory = options.advisory ?? true
+    this.coverageCurrent = options.coverageCurrent
+    this.coverageBaseline = options.coverageBaseline
+    this.coverageEpsilon = options.coverageEpsilon ?? DEFAULT_COVERAGE_EPSILON
+    this.testFileHash = options.testFileHash
+    this.testFiles = options.testFiles
   }
 
   private collectDiff(): string {
@@ -173,25 +188,34 @@ export class TestIntegrityGate implements IGate {
   async execute(): Promise<GateResult> {
     const startedAt = Date.now()
     const analysis = analyzeTestDiff(this.collectDiff())
+    const findings: TestIntegrityFinding[] = [...analysis.findings]
+
+    const coverage = detectCoverageRegression(this.coverageCurrent, this.coverageBaseline, this.coverageEpsilon)
+    if (coverage.finding) findings.push(coverage.finding)
+
+    const flaggedPatterns = findings.map(f => `[${f.severity}] ${f.kind}: ${f.detail}`)
 
     const evidence: TestIntegrityEvidence = {
-      analyzedFiles: analysis.analyzedFiles,
+      analyzedFiles: this.testFiles ?? analysis.analyzedFiles,
       preChangeAssertionCount: analysis.preChangeAssertionCount,
       postChangeAssertionCount: analysis.postChangeAssertionCount,
       assertionCountDelta: analysis.assertionCountDelta,
-      flaggedPatterns: analysis.flaggedPatterns,
-      findings: analysis.findings,
+      flaggedPatterns,
+      findings,
       advisory: this.advisory,
+      enforced: !this.advisory,
+      coverageDelta: coverage.delta,
+      testFileHashAtVerify: this.testFileHash,
     }
 
-    const blockingFindings = analysis.findings.filter(f => f.severity === 'block')
+    const blockingFindings = findings.filter(f => f.severity === 'block')
     // PR-D1: advisory — never block. PR-D2 will drive blocking via profile policy.
     const blockers = this.advisory ? [] : blockingFindings.map(f => `${f.kind}: ${f.detail}`)
     const passed = blockers.length === 0
 
-    const summaryDetail = analysis.analyzedFiles.length === 0
+    const summaryDetail = analysis.analyzedFiles.length === 0 && findings.length === 0
       ? 'No test files changed; nothing to analyse.'
-      : `Analyzed ${analysis.analyzedFiles.length} test file(s); assertion delta ${analysis.assertionCountDelta >= 0 ? '+' : ''}${analysis.assertionCountDelta}; ${analysis.findings.length} finding(s)${this.advisory ? ' (advisory)' : ''}.`
+      : `Analyzed ${analysis.analyzedFiles.length} changed test file(s); assertion delta ${analysis.assertionCountDelta >= 0 ? '+' : ''}${analysis.assertionCountDelta}; ${findings.length} finding(s)${this.advisory ? ' (advisory)' : ' (enforced)'}.`
 
     const evidenceItems: GateEvidence[] = [
       createEvidence({
@@ -201,7 +225,7 @@ export class TestIntegrityGate implements IGate {
         detail: summaryDetail,
         source: JSON.stringify(evidence),
       }),
-      ...analysis.findings.map(finding => createEvidence({
+      ...findings.map(finding => createEvidence({
         kind: 'scan',
         label: `Test integrity finding (${finding.kind})`,
         passed: this.advisory ? true : finding.severity !== 'block',
