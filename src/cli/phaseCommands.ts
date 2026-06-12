@@ -46,6 +46,8 @@ import {
   evaluateConstraints,
   formatBoundaryWarnings,
   formatConstraintWarnings,
+  isEnforcedBoundaryProfile,
+  countBoundaryBlockers,
   type BoundaryEnforcementReport,
   type ConstraintCoverageReport,
 } from '../workflow/BoundaryEnforcement.js'
@@ -1395,6 +1397,19 @@ export const phaseVerify = defineCommand({
     const workflowOpenTaskBlockers = blockingWorkflowOpenTasks(workflowState.openTasks, args['task-id'])
     const workflowOpenTasksBlocked = workflowOpenTaskBlockers.length > 0
 
+    // P0+ (decision E1): resolve the originating Spec up-front so the executional
+    // boundary / constraint checks can gate Task completion. Both reports are
+    // advisory under default/auto and blocking under full/ci/strict; the
+    // detection logic is identical, only the report mode and gating differ.
+    const spec = await resolveSpecForTask(store, task)
+    const boundaryEnforced = isEnforcedBoundaryProfile(resolvedVerification.profileName)
+    const boundaryEnforcement: BoundaryEnforcementReport | undefined =
+      evaluateBoundaries(taskFiles, spec?.payload.boundaries, boundaryEnforced)
+    const constraintCoverage: ConstraintCoverageReport | undefined =
+      evaluateConstraints(spec?.payload.constraints, spec?.payload.verificationSurface, boundaryEnforced)
+    const boundaryBlocked = boundaryEnforced &&
+      countBoundaryBlockers(boundaryEnforcement, constraintCoverage) > 0
+
     // Attempt FSM transition to COMPLETED
     // Guards: build_passed, lint_passed, tests_passed, open workflow tasks, and optional artifact policy.
     const codePassed = results.buildStatus === 'success' &&
@@ -1409,6 +1424,7 @@ export const phaseVerify = defineCommand({
       !skillInstallationBlocked &&
       !engineeringStandards.blocked &&
       !(toolEvidenceGate?.blocked ?? false) &&
+      !boundaryBlocked &&
       !workflowOpenTasksBlocked
 
     let transitionResult = null
@@ -1439,6 +1455,8 @@ export const phaseVerify = defineCommand({
       console.log('\n   Engineering standards gate blocked completion - fix blocking standards findings')
     } else if (!args.json && toolEvidenceGate?.blocked) {
       console.log('\n   Tool evidence gate blocked completion - required tools need passed execution evidence')
+    } else if (!args.json && boundaryBlocked) {
+      console.log('\n   Boundary enforcement blocked completion - keep edits inside Spec boundaries and guard every constraint (enforced profile)')
     } else if (!args.json && workflowOpenTasksBlocked) {
       console.log('\n   Workflow open tasks blocked completion - finish required workflow commands first')
     }
@@ -1497,7 +1515,7 @@ export const phaseVerify = defineCommand({
     }
     await store.update(args['task-id'], { payload: finalPayload })
     const metricGateStatus =
-      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked || workflowOpenTasksBlocked)
+      (finalArtifactGate.blocked || finalSkillGate?.blocked || skillInstallationBlocked || engineeringStandards.blocked || finalToolEvidenceGate?.blocked || boundaryBlocked || workflowOpenTasksBlocked)
       ? 'blocked'
       : undefined
     const metricRecord = await recordVerificationMetric({
@@ -1512,7 +1530,8 @@ export const phaseVerify = defineCommand({
 
     // P0 (Decision C1): soft-map the Spec's verificationSurface against evidence.
     // Unmapped items are reported as warnings only — never blocking in P0.
-    const spec = await resolveSpecForTask(store, task)
+    // (`spec`, `boundaryEnforcement` and `constraintCoverage` were resolved
+    // above so the boundary checks could gate completion under enforced profiles.)
     const verificationCommands = resolvedVerification.targets.flatMap(target => [
       target.config.build, target.config.lint, target.config.test, target.config.coverage,
     ])
@@ -1527,14 +1546,6 @@ export const phaseVerify = defineCommand({
     const surfaceCoverage: SurfaceCoverageReport | undefined = spec?.payload.verificationSurface?.length
       ? computeSurfaceCoverage(spec.payload.verificationSurface, surfaceSignals)
       : undefined
-
-    // P0+ (advisory): enforce the Spec's executional boundaries against the
-    // changed-file set, and check each declared constraint is guarded by a
-    // verificationSurface item. Both are warnings only — never blocking.
-    const boundaryEnforcement: BoundaryEnforcementReport | undefined =
-      evaluateBoundaries(taskFiles, spec?.payload.boundaries)
-    const constraintCoverage: ConstraintCoverageReport | undefined =
-      evaluateConstraints(spec?.payload.constraints, spec?.payload.verificationSurface)
 
     const result = {
       phase: 'VERIFY',
