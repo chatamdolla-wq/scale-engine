@@ -19,9 +19,10 @@ import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
 import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationEngineeringStandardsGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
-import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
+import { ReviewStore, type ReviewFinding, type ReviewRecord, type ReviewMode } from '../workflow/ReviewStore.js'
 import { JudgePromptStore, LlmJudge } from '../review/LlmJudge.js'
 import { JsonLlmClient } from '../review/JsonLlmClient.js'
+import { FreshContextVerifier } from '../review/FreshContextVerifier.js'
 import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
 import { createWorkflowGuidance, renderWorkflowGuidance } from '../workflow/WorkflowGuidance.js'
@@ -1651,6 +1652,10 @@ async function reviewGitChanges(taskPayload?: TaskPayload): Promise<{ changedFil
   return { ...analyzeReview({ statusOutput, diffs, taskPayload, verificationEvidence }), diffs }
 }
 
+function normalizeReviewMode(value: string | undefined): ReviewMode {
+  return value === 'fresh-subagent' || value === 'hybrid' ? value : 'ai-self'
+}
+
 // Build a compact diff summary (file headers + added lines) for the advisory
 // LLM-as-Judge (P1.4). Capped so it never blows the model/context budget.
 function buildJudgeDiffSummary(diffs: Array<{ file: string; text: string }>): string {
@@ -1916,6 +1921,7 @@ export const phaseReview = defineCommand({
     format: { type: 'string', alias: 'f', description: 'Output format: html or md (default: html)' },
     brand: { type: 'string', description: 'Brand theme for HTML output (vercel/stripe/notion/linear/github)' },
     judge: { type: 'boolean', default: true, description: 'Run the advisory LLM-as-Judge spec-conformance check (P1.4)' },
+    mode: { type: 'string', default: 'ai-self', description: 'Review mode: ai-self (default) | fresh-subagent | hybrid (P2.2)' },
     json: { type: 'boolean', default: false },
   },
   async run({ args }) {
@@ -1954,17 +1960,35 @@ export const phaseReview = defineCommand({
     const summary = summarizeFindings(findings)
     const passed = summary.critical === 0 && summary.high === 0
 
-    // P1.4 (decision K1): run the advisory LLM-as-Judge. It is *never* part of
-    // `passed` and never blocks ship — it only annotates the review record.
+    const reviewMode = normalizeReviewMode(args.mode)
+    // Resolve the originating Spec once; both the advisory judge (P1.4) and the
+    // fresh-context verifier (P2.2) read its outcome / verificationSurface.
+    const needsSpec = args.judge || reviewMode !== 'ai-self'
+    const spec = needsSpec ? await resolveSpecForTask(store, task) : undefined
+    const diffSummary = needsSpec ? buildJudgeDiffSummary(review.diffs) : ''
+
+    // P1.4 (decision K1): advisory LLM-as-Judge. Never part of `passed`.
     let judgeVerdict: ReviewRecord['judge']
     if (args.judge) {
-      const spec = await resolveSpecForTask(store, task)
       const judge = new LlmJudge(new JsonLlmClient(), new JudgePromptStore(SCALE_DIR))
       judgeVerdict = await judge.judge({
         outcome: spec?.payload.what,
         verificationSurface: spec?.payload.verificationSurface ?? [],
-        diffSummary: buildJudgeDiffSummary(review.diffs),
+        diffSummary,
         reviewFindings: summary,
+      })
+    }
+
+    // P2.2 (decisions M1/N1/O1): fresh-context verifier runs only for
+    // fresh-subagent / hybrid modes, on isolated input (surface + diff + gate
+    // summary, no build-agent history). Advisory only — never blocks ship.
+    let freshVerifyVerdict: ReviewRecord['freshVerify']
+    if (reviewMode !== 'ai-self') {
+      freshVerifyVerdict = await new FreshContextVerifier(new JsonLlmClient()).verify({
+        outcome: spec?.payload.what,
+        verificationSurface: spec?.payload.verificationSurface ?? [],
+        diffSummary,
+        gateSummary: `critical=${summary.critical} high=${summary.high} medium=${summary.medium} low=${summary.low}`,
       })
     }
 
@@ -1975,6 +1999,8 @@ export const phaseReview = defineCommand({
       changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
       judge: judgeVerdict,
+      reviewMode,
+      freshVerify: freshVerifyVerdict,
     })
 
     if (task && taskPayload) {
@@ -2025,6 +2051,8 @@ export const phaseReview = defineCommand({
       changedFiles: review.changedFiles.map(file => normalizeGitPath(file.path)),
       summary,
       judge: judgeVerdict,
+      reviewMode,
+      freshVerify: freshVerifyVerdict,
       karpathy: karpathyReport,
       passed,
       format: reviewOutputFormat,
@@ -2051,6 +2079,12 @@ export const phaseReview = defineCommand({
         console.log(`\nJudge (advisory, ${judgeVerdict.modelUsed}): ${judgeVerdict.decision.toUpperCase()} (confidence ${judgeVerdict.confidence.toFixed(2)})`)
         console.log(`  ${judgeVerdict.rationale}`)
         if (judgeVerdict.unmetSurfaces.length) console.log(`  Unmet surfaces: ${judgeVerdict.unmetSurfaces.join('; ')}`)
+      }
+
+      if (freshVerifyVerdict) {
+        console.log(`\nFresh-context verifier (advisory, ${freshVerifyVerdict.modelUsed}): ${freshVerifyVerdict.decision.toUpperCase()} (confidence ${freshVerifyVerdict.confidence.toFixed(2)})`)
+        console.log(`  ${freshVerifyVerdict.rationale}`)
+        if (freshVerifyVerdict.unmetSurfaces.length) console.log(`  Unmet surfaces: ${freshVerifyVerdict.unmetSurfaces.join('; ')}`)
       }
 
       if (passed) {

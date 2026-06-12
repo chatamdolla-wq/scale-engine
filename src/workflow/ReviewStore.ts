@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { JudgeVerdict } from '../review/LlmJudge.js'
+import type { FreshVerifyVerdict } from '../review/FreshContextVerifier.js'
+
+/** P2.2 three-level review mode. Default `ai-self` = legacy behaviour. */
+export type ReviewMode = 'ai-self' | 'fresh-subagent' | 'hybrid'
 
 export type ReviewSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 export type ReviewCategory = 'style' | 'logic' | 'security' | 'performance' | 'process'
@@ -33,6 +37,10 @@ export interface ReviewRecord {
   specCoverage?: number
   /** P1.4: advisory LLM-as-Judge verdict. Never affects `passed`. */
   judge?: JudgeVerdict
+  /** P2.2: which review mode produced this record. Defaults to `ai-self`. */
+  reviewMode?: ReviewMode
+  /** P2.2: advisory fresh-context verifier verdict. Never affects `passed`. */
+  freshVerify?: FreshVerifyVerdict
   createdAt: number
 }
 
