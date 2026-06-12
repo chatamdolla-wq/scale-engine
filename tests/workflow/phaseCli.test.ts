@@ -1003,6 +1003,7 @@ export function leaky(token: string) {
     const reviewResult = parseJson<{
       passed: boolean
       reviewId: string
+      judge: { decision: string; modelUsed: string; promptVersion: string; advisory: boolean }
       karpathy: {
         passed: boolean
         context: { hypothesesListed: boolean; hasExtraFeatures: boolean; changesTraceable: boolean; hasVerifiableGoal: boolean }
@@ -1011,6 +1012,12 @@ export function leaky(token: string) {
     }>(review.stdout)
     expect(reviewResult.passed).toBe(true)
     expect(reviewResult.reviewId).toMatch(/^REVIEW-/)
+    // P1.4: advisory LLM-as-Judge runs by default (heuristic offline) and is
+    // recorded without affecting `passed`.
+    expect(reviewResult.judge.modelUsed).toBe('heuristic')
+    expect(reviewResult.judge.advisory).toBe(true)
+    expect(reviewResult.judge.promptVersion).toBe('spec-conformance.v1')
+    expect(['pass', 'fail', 'uncertain']).toContain(reviewResult.judge.decision)
     expect(reviewResult.karpathy.passed).toBe(true)
     expect(reviewResult.karpathy.context).toMatchObject({
       hypothesesListed: true,
