@@ -50,8 +50,13 @@ export function createAstConfirmer(code: string, options: { jsx?: boolean } = {}
 
   walk(parsed.program, node => {
     switch (node.type) {
+      // Mirror the regex pre-filter exactly (`eval(` | `new Function(`): the
+      // confirmer must not be broader than the regex, otherwise it carries
+      // dead branches that can never fire (AST is only consulted on a regex
+      // hit). Bare `Function(...)` calls are intentionally a follow-up — adding
+      // them requires widening the regex too, which is a detection-scope change.
       case 'CallExpression':
-        if (identifierName(node.callee) === 'eval' || identifierName(node.callee) === 'Function') {
+        if (identifierName(node.callee) === 'eval') {
           index.unsafeExec.add(node.callee.loc.start.line)
         }
         break
