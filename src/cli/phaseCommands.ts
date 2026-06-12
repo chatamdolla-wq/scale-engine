@@ -1512,6 +1512,7 @@ export const phaseVerify = defineCommand({
       requiredTools: finalToolEvidenceGate?.requiredTools,
       toolEvidenceIds: finalToolEvidenceGate?.passed.map(item => item.evidenceId).filter((id): id is string => Boolean(id)),
       toolEvidenceGatePassed: finalToolEvidenceGate ? !finalToolEvidenceGate.blocked : true,
+      boundaryGatePassed: !boundaryBlocked,
     }
     await store.update(args['task-id'], { payload: finalPayload })
     const metricGateStatus =
