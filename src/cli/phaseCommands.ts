@@ -2164,6 +2164,7 @@ export const phaseShip = defineCommand({
     const artifactGatePassed = payload.artifactGateMode !== 'block' || payload.artifactGatePassed !== false
     const skillGatePassed = payload.skillGatePassed !== false
     const toolEvidenceGatePassed = payload.toolEvidenceGatePassed !== false
+    const boundaryGatePassed = payload.boundaryGatePassed !== false
 
     if (!artifactGatePassed) {
       console.error('\nTask artifact gate did not pass. Complete required task artifacts and re-run: scale verify ' + args['task-id'] + ' --artifact-gate block\n')
@@ -2183,6 +2184,11 @@ export const phaseShip = defineCommand({
       if (payload.requiredTools?.length) {
         console.error('Required tools: ' + payload.requiredTools.join(', '))
       }
+      process.exit(1)
+    }
+
+    if (!boundaryGatePassed) {
+      console.error('\nTask boundary gate did not pass under an enforced profile. Fix the executional boundary violations / unguarded constraints and re-run: scale verify ' + args['task-id'] + ' --profile <enforced>\n')
       process.exit(1)
     }
 
