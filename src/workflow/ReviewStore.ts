@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import type { JudgeVerdict } from '../review/LlmJudge.js'
 
 export type ReviewSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 export type ReviewCategory = 'style' | 'logic' | 'security' | 'performance' | 'process'
@@ -30,6 +31,8 @@ export interface ReviewRecord {
   specFindings?: string[]
   /** Spec关键词覆盖率 0..1 */
   specCoverage?: number
+  /** P1.4: advisory LLM-as-Judge verdict. Never affects `passed`. */
+  judge?: JudgeVerdict
   createdAt: number
 }
 
