@@ -268,6 +268,8 @@ export interface TaskPayload {
   requiredTools?: string[]
   toolEvidenceIds?: string[]
   toolEvidenceGatePassed?: boolean
+  /** P0+ executional boundary/constraint gate. False when an enforced profile blocked on a boundary violation or unguarded constraint. */
+  boundaryGatePassed?: boolean
   reviewEvidenceIds?: string[]
   reviewedAt?: Timestamp
   /** Agent Brief — 标准化的 Agent 可执行工单（借鉴 mattpocock/skills） */
