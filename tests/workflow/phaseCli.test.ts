@@ -1004,6 +1004,8 @@ export function leaky(token: string) {
       passed: boolean
       reviewId: string
       judge: { decision: string; modelUsed: string; promptVersion: string; advisory: boolean }
+      reviewMode: string
+      freshVerify?: { decision: string }
       karpathy: {
         passed: boolean
         context: { hypothesesListed: boolean; hasExtraFeatures: boolean; changesTraceable: boolean; hasVerifiableGoal: boolean }
@@ -1018,6 +1020,21 @@ export function leaky(token: string) {
     expect(reviewResult.judge.advisory).toBe(true)
     expect(reviewResult.judge.promptVersion).toBe('spec-conformance.v1')
     expect(['pass', 'fail', 'uncertain']).toContain(reviewResult.judge.decision)
+    // P2.2: default mode is ai-self and does NOT run the fresh-context verifier.
+    expect(reviewResult.reviewMode).toBe('ai-self')
+    expect(reviewResult.freshVerify).toBeUndefined()
+
+    // P2.2: --mode=fresh-subagent runs the advisory fresh-context verifier
+    // (heuristic offline) without changing `passed`.
+    const freshReview = await runScale(['review', taskId, '--mode', 'fresh-subagent', '--json'], scaleDir, projectDir)
+    expect(freshReview.exitCode).toBe(0)
+    const freshResult = parseJson<{ passed: boolean; reviewMode: string; freshVerify: { decision: string; modelUsed: string; advisory: boolean } }>(freshReview.stdout)
+    expect(freshResult.passed).toBe(true)
+    expect(freshResult.reviewMode).toBe('fresh-subagent')
+    expect(freshResult.freshVerify.modelUsed).toBe('heuristic')
+    expect(freshResult.freshVerify.advisory).toBe(true)
+    expect(['verified', 'unverified', 'uncertain']).toContain(freshResult.freshVerify.decision)
+
     expect(reviewResult.karpathy.passed).toBe(true)
     expect(reviewResult.karpathy.context).toMatchObject({
       hypothesesListed: true,
