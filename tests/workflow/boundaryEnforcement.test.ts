@@ -5,6 +5,8 @@ import {
   pathMatchesGlob,
   formatBoundaryWarnings,
   formatConstraintWarnings,
+  isEnforcedBoundaryProfile,
+  countBoundaryBlockers,
 } from '../../src/workflow/BoundaryEnforcement.js'
 
 describe('pathMatchesGlob', () => {
@@ -121,5 +123,71 @@ describe('formatters', () => {
 
     const c = formatConstraintWarnings({ declared: 2, covered: 1, uncovered: ['no new deps'], advisory: true })
     expect(c.join('\n')).toContain('[UNGUARDED] no new deps')
+  })
+
+  it('escalate labels from advisory to blocking when the report is enforced', () => {
+    const b = formatBoundaryWarnings({
+      declaredAllowed: 1, declaredForbidden: 0, changedFiles: 1,
+      violations: [{ file: 'src/x.ts', kind: 'outside-allowed' }],
+      advisory: false,
+    })
+    expect(b[0]).toContain('[BLOCKER]')
+    expect(b[0]).toContain('blocking under enforced profile')
+
+    const c = formatConstraintWarnings({ declared: 1, covered: 0, uncovered: ['no new deps'], advisory: false })
+    expect(c[0]).toContain('[BLOCKER]')
+    expect(c[0]).toContain('blocking under enforced profile')
+  })
+})
+
+describe('isEnforcedBoundaryProfile (decision E1)', () => {
+  it('treats full/ci/strict (and name-suffixed variants) as enforced', () => {
+    for (const p of ['full', 'ci', 'strict', 'CI', 'team-strict', 'release:full', 'node_ci']) {
+      expect(isEnforcedBoundaryProfile(p)).toBe(true)
+    }
+  })
+
+  it('keeps default/auto (and unset) advisory', () => {
+    for (const p of ['default', 'auto', 'quick', 'official', undefined]) {
+      expect(isEnforcedBoundaryProfile(p)).toBe(false)
+    }
+  })
+})
+
+describe('countBoundaryBlockers', () => {
+  it('sums boundary violations and uncovered constraints', () => {
+    const boundary = evaluateBoundaries(
+      ['src/billing/charge.ts', 'src/auth/secrets.ts'],
+      { files: ['src/auth/**'], tools: [], forbidden: ['**/secrets.ts'] },
+      true,
+    )
+    const constraint = evaluateConstraints(['no new npm dependencies'], ['tests/cli/flags.test.ts'], true)
+    // one outside-allowed + one forbidden-touched + one uncovered constraint
+    expect(countBoundaryBlockers(boundary, constraint)).toBe(3)
+  })
+
+  it('is zero for clean or undefined reports', () => {
+    expect(countBoundaryBlockers(undefined, undefined)).toBe(0)
+    const clean = evaluateBoundaries(['src/auth/login.ts'], { files: ['src/auth/**'], tools: [], forbidden: [] }, true)
+    const covered = evaluateConstraints(['login latency must not regress'], ['benchmarks/latency.bench.ts'], true)
+    expect(countBoundaryBlockers(clean, covered)).toBe(0)
+  })
+})
+
+describe('enforced flag sets advisory mode (detection unchanged)', () => {
+  it('reports advisory:false under enforcement but the same violations', () => {
+    const args = ['src/billing/charge.ts'] as string[]
+    const boundaries = { files: ['src/auth/**'], tools: [], forbidden: [] }
+    const advisory = evaluateBoundaries(args, boundaries)
+    const enforced = evaluateBoundaries(args, boundaries, true)
+    expect(advisory?.advisory).toBe(true)
+    expect(enforced?.advisory).toBe(false)
+    expect(enforced?.violations).toEqual(advisory?.violations)
+
+    const cAdvisory = evaluateConstraints(['no new npm dependencies'], [])
+    const cEnforced = evaluateConstraints(['no new npm dependencies'], [], true)
+    expect(cAdvisory?.advisory).toBe(true)
+    expect(cEnforced?.advisory).toBe(false)
+    expect(cEnforced?.uncovered).toEqual(cAdvisory?.uncovered)
   })
 })

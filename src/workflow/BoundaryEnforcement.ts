@@ -1,6 +1,6 @@
-// SCALE Engine - P0+ Boundary & Constraint enforcement (advisory)
+// SCALE Engine - P0+ Boundary & Constraint enforcement
 //
-// Two soft checks layered on top of the P0 six-element Spec contract:
+// Two checks layered on top of the P0 six-element Spec contract:
 //
 //  1. Boundary enforcement — compares the files a task actually changed against
 //     the Spec's executional `boundaries` (allowed `files` globs + explicitly
@@ -11,9 +11,14 @@
 //     must not regress) against the Spec's `verificationSurface`. A constraint
 //     with no surface guarding it is a silent-regression risk.
 //
-// Both are advisory in P0+: violations are surfaced as warnings and recorded as
-// evidence, but never flip `passed` or block ship. A profile-gated hard block
-// (like G23's E1 escalation) is deferred to a follow-up.
+// Enforcement is profile-gated (mirrors G23's E1 escalation): under `default`
+// and `auto` both checks are advisory — violations are surfaced as warnings and
+// recorded as evidence but never flip `passed` or block ship. Under an enforced
+// profile (`full`/`ci`/`strict`), the same findings are blocking: any boundary
+// violation or unguarded constraint stops Task completion. The `enforced` flag
+// threaded into the evaluators only sets the report's `advisory` mode; the
+// detection logic is identical, so a re-verify under `default` cannot silence a
+// finding, only downgrade how it is reported.
 
 import type { SpecBoundaries } from '../artifact/types.js'
 
@@ -32,7 +37,7 @@ export interface BoundaryEnforcementReport {
   declaredForbidden: number
   changedFiles: number
   violations: BoundaryViolation[]
-  /** Always true in P0+: this report never blocks. */
+  /** `true` under default/auto (warn only); `false` under an enforced profile. */
   advisory: boolean
 }
 
@@ -42,6 +47,16 @@ export interface ConstraintCoverageReport {
   /** Constraints with no verificationSurface token overlap. */
   uncovered: string[]
   advisory: boolean
+}
+
+/**
+ * Profiles in which boundary/constraint findings hard-block Task completion
+ * (decision E1, shared with G23). `default`/`auto` stay advisory; a profile
+ * whose name is or ends with `full`/`ci`/`strict` enforces.
+ */
+export function isEnforcedBoundaryProfile(profileName: string | undefined): boolean {
+  if (!profileName) return false
+  return /(?:^|[:_-])(?:full|ci|strict)$/i.test(profileName)
 }
 
 function norm(value: string): string {
@@ -92,6 +107,7 @@ export function pathMatchesGlob(file: string, glob: string): boolean {
 export function evaluateBoundaries(
   changedFiles: Array<string | undefined | null> | undefined,
   boundaries: SpecBoundaries | undefined,
+  enforced = false,
 ): BoundaryEnforcementReport | undefined {
   if (!boundaries) return undefined
   const allowed = (boundaries.files ?? []).map(norm).filter(Boolean)
@@ -116,7 +132,7 @@ export function evaluateBoundaries(
     declaredForbidden: forbidden.length,
     changedFiles: files.length,
     violations,
-    advisory: true,
+    advisory: !enforced,
   }
 }
 
@@ -148,6 +164,7 @@ function constraintCovered(constraint: string, surfaces: string[]): boolean {
 export function evaluateConstraints(
   constraints: string[] | undefined,
   verificationSurface: string[] | undefined,
+  enforced = false,
 ): ConstraintCoverageReport | undefined {
   const declared = (constraints ?? []).map(c => c.trim()).filter(Boolean)
   if (declared.length === 0) return undefined
@@ -157,15 +174,31 @@ export function evaluateConstraints(
     declared: declared.length,
     covered: declared.length - uncovered.length,
     uncovered,
-    advisory: true,
+    advisory: !enforced,
   }
+}
+
+/**
+ * Count the findings that block Task completion under an enforced profile:
+ * every boundary violation plus every unguarded constraint. Returns 0 when both
+ * reports are clean or undefined. The caller decides whether to act on the
+ * count based on the active profile (advisory reports are not blocked even when
+ * this count is non-zero).
+ */
+export function countBoundaryBlockers(
+  boundary: BoundaryEnforcementReport | undefined,
+  constraint: ConstraintCoverageReport | undefined,
+): number {
+  return (boundary?.violations.length ?? 0) + (constraint?.uncovered.length ?? 0)
 }
 
 /** Render boundary warning lines (empty when there is nothing to warn about). */
 export function formatBoundaryWarnings(report: BoundaryEnforcementReport | undefined): string[] {
   if (!report || report.violations.length === 0) return []
+  const tag = report.advisory ? '[WARN]' : '[BLOCKER]'
+  const mode = report.advisory ? 'advisory, not blocking' : 'blocking under enforced profile'
   const lines = [
-    `[WARN] boundary enforcement: ${report.violations.length} violation(s) (advisory, not blocking)`,
+    `${tag} boundary enforcement: ${report.violations.length} violation(s) (${mode})`,
   ]
   for (const v of report.violations) {
     lines.push(
@@ -181,8 +214,10 @@ export function formatBoundaryWarnings(report: BoundaryEnforcementReport | undef
 /** Render constraint-coverage warning lines (empty when fully covered). */
 export function formatConstraintWarnings(report: ConstraintCoverageReport | undefined): string[] {
   if (!report || report.uncovered.length === 0) return []
+  const tag = report.advisory ? '[WARN]' : '[BLOCKER]'
+  const mode = report.advisory ? 'advisory, not blocking' : 'blocking under enforced profile'
   const lines = [
-    `[WARN] constraint coverage: ${report.covered}/${report.declared} guarded by verificationSurface (advisory, not blocking)`,
+    `${tag} constraint coverage: ${report.covered}/${report.declared} guarded by verificationSurface (${mode})`,
   ]
   for (const constraint of report.uncovered) {
     lines.push(`   [UNGUARDED] ${constraint}`)
