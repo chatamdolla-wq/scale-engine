@@ -41,6 +41,14 @@ import { join } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { SpecPayload, PlanPayload, TaskPayload, EvidencePayload } from '../artifact/types.js'
 import { computeSurfaceCoverage, formatSurfaceCoverageWarnings, type SurfaceCoverageReport } from '../workflow/SurfaceCoverage.js'
+import {
+  evaluateBoundaries,
+  evaluateConstraints,
+  formatBoundaryWarnings,
+  formatConstraintWarnings,
+  type BoundaryEnforcementReport,
+  type ConstraintCoverageReport,
+} from '../workflow/BoundaryEnforcement.js'
 import { HTMLDocumentRenderer } from '../output/HTMLDocumentRenderer.js'
 import type { OutputFormat } from '../output/HTMLDocumentRenderer.js'
 import { SCALE_ENGINE_VERSION } from '../version.js'
@@ -1520,6 +1528,14 @@ export const phaseVerify = defineCommand({
       ? computeSurfaceCoverage(spec.payload.verificationSurface, surfaceSignals)
       : undefined
 
+    // P0+ (advisory): enforce the Spec's executional boundaries against the
+    // changed-file set, and check each declared constraint is guarded by a
+    // verificationSurface item. Both are warnings only — never blocking.
+    const boundaryEnforcement: BoundaryEnforcementReport | undefined =
+      evaluateBoundaries(taskFiles, spec?.payload.boundaries)
+    const constraintCoverage: ConstraintCoverageReport | undefined =
+      evaluateConstraints(spec?.payload.constraints, spec?.payload.verificationSurface)
+
     const result = {
       phase: 'VERIFY',
       taskId: args['task-id'],
@@ -1546,6 +1562,8 @@ export const phaseVerify = defineCommand({
       },
       metric: metricRecord,
       verificationSurfaceCoverage: surfaceCoverage,
+      boundaryEnforcement,
+      constraintCoverage,
       passed
     }
     if (args.json) console.log(JSON.stringify(result, null, 2))
@@ -1554,6 +1572,8 @@ export const phaseVerify = defineCommand({
       if (surfaceCoverage) {
         for (const line of formatSurfaceCoverageWarnings(surfaceCoverage)) console.log(`   ${line}`)
       }
+      for (const line of formatBoundaryWarnings(boundaryEnforcement)) console.log(`   ${line}`)
+      for (const line of formatConstraintWarnings(constraintCoverage)) console.log(`   ${line}`)
       if (metricRecord) console.log(`   Metrics: ${metricRecord.taskId} ${metricRecord.finalGateStatus} (fix iterations: ${metricRecord.fixIterations})`)
       if (artifactCheck && !artifactCheck.complete) {
         console.log(`   Artifact gaps: ${artifactCheck.missing.length} missing, ${artifactCheck.incomplete.length} incomplete`)
