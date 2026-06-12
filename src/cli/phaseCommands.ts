@@ -19,6 +19,16 @@ import { WorkflowEngine } from '../workflow/WorkflowEngine.js'
 import { WorkflowArtifactWriter } from '../workflow/WorkflowArtifactWriter.js'
 import { resolveVerificationTargets, type VerificationArtifactGateMode, type VerificationEngineeringStandardsGateMode, type VerificationPolicy } from '../workflow/VerificationProfile.js'
 import { EvidenceStore } from '../workflow/EvidenceStore.js'
+import { TestIntegrityGate } from '../workflow/gates/TestIntegrityGate.js'
+import {
+  computeTestFileHash,
+  enumerateTestFiles,
+  isEnforcedTestIntegrityProfile,
+  readCoverageBaseline,
+  readTestIntegrityBaseline,
+  writeCoverageBaseline,
+  writeTestIntegrityBaseline,
+} from '../workflow/gates/testIntegritySupport.js'
 import { ReviewStore, type ReviewFinding, type ReviewRecord } from '../workflow/ReviewStore.js'
 import { TaskMetricsStore, type MetricTaskLevel } from '../workflow/TaskMetricsStore.js'
 import { appendVerificationArtifact, checkTaskArtifactCompleteness, scaffoldTaskArtifacts, type TaskArtifactCheckResult, type TaskArtifactScaffoldResult } from '../workflow/TaskArtifactScaffolder.js'
@@ -1292,6 +1302,39 @@ export const phaseVerify = defineCommand({
       .map(match => parseFloat(match[1]))
     if (coverageValues.length > 0) results.testCoverage = Math.min(...coverageValues)
 
+    // G23 Test Integrity (P1.2 PR-D2): analyse the test-file diff, compare coverage
+    // against the last passing baseline (decision G1), and record the verify-time
+    // test-file hash (decision F1). Advisory by default; block-severity findings only
+    // hard-block under enforced profiles like full/ci (decision E1).
+    const testIntegrityEnforced = isEnforcedTestIntegrityProfile(resolvedVerification.profileName)
+    const testFiles = enumerateTestFiles(PROJECT_DIR)
+    const testFileHash = computeTestFileHash(PROJECT_DIR, testFiles)
+    const coverageBaseline = readCoverageBaseline(SCALE_DIR, args['task-id'])
+    const priorIntegrityBaseline = readTestIntegrityBaseline(SCALE_DIR, args['task-id'])
+    const testIntegrityResult = await new TestIntegrityGate({
+      cwd: PROJECT_DIR,
+      advisory: !testIntegrityEnforced,
+      coverageCurrent: results.testCoverage,
+      coverageBaseline,
+      testFileHash,
+      testFiles,
+    }).execute()
+    try {
+      const record = new EvidenceStore(SCALE_DIR).saveGateResult(testIntegrityResult)
+      testIntegrityResult.evidenceRecordId = record.id
+      verificationEvidenceIds.push(record.id)
+    } catch {
+      // Evidence persistence must not mask the gate decision itself.
+    }
+    gateResults.push(testIntegrityResult)
+    const testIntegrityBlocked = !testIntegrityResult.passed
+    if (!args.json) {
+      console.log(`   ${testIntegrityResult.passed ? '[PASS]' : '[FAIL]'} G23: ${testIntegrityResult.evidence.split('\n')[0].slice(0, 60)}`)
+      if (testIntegrityBlocked) {
+        testIntegrityResult.blockers.forEach(b => console.log(`      [BLOCKER] ${b.slice(0, 80)}`))
+      }
+    }
+
     // Update Task payload with verification results
     const taskLevel = normalizeWorkflowLevel(currentPayload.workflowLevel ?? 'M')
     const verificationSkillPlan = taskLevel === 'S'
@@ -1392,7 +1435,26 @@ export const phaseVerify = defineCommand({
                        results.testPassed === true &&
                        (results.testCoverage ?? 0) >= 80 &&
                        results.securityPassed === true
+    // Baselines (decisions F1/G1): only advance on a passing, non-blocked verify so a
+    // failed or advisory run cannot overwrite a previously enforced baseline. Enforcement
+    // is sticky — a prior enforced baseline stays enforced even if this run is advisory,
+    // so the ship-time hash guard cannot be downgraded by re-verifying under `default`.
+    if (codePassed && !testIntegrityBlocked) {
+      if (typeof results.testCoverage === 'number') {
+        writeCoverageBaseline(SCALE_DIR, args['task-id'], results.testCoverage)
+      }
+      writeTestIntegrityBaseline(SCALE_DIR, {
+        taskId: args['task-id'],
+        profile: resolvedVerification.profileName,
+        enforce: testIntegrityEnforced || priorIntegrityBaseline?.enforce === true,
+        testFileHashAtVerify: testFileHash,
+        testFiles,
+        coverage: results.testCoverage,
+        verifiedAt: Date.now(),
+      })
+    }
     const completionEligible = codePassed &&
+      !testIntegrityBlocked &&
       !artifactGate.blocked &&
       !(skillGate?.blocked ?? false) &&
       !skillInstallationBlocked &&
@@ -1418,6 +1480,8 @@ export const phaseVerify = defineCommand({
       }
     } else if (!args.json && !codePassed) {
       console.log('\n   Verification requirements not met - cannot complete Task')
+    } else if (!args.json && testIntegrityBlocked) {
+      console.log('\n   Test integrity gate (G23) blocked completion - resolve flagged test changes or coverage regression')
     } else if (!args.json && artifactGate.blocked) {
       console.log('\n   Artifact gate blocked completion - required task artifacts are incomplete')
     } else if (!args.json && skillGate?.blocked) {
@@ -1543,6 +1607,14 @@ export const phaseVerify = defineCommand({
       },
       metric: metricRecord,
       verificationSurfaceCoverage: surfaceCoverage,
+      testIntegrity: {
+        gate: 'G23',
+        passed: testIntegrityResult.passed,
+        enforced: testIntegrityEnforced,
+        blockers: testIntegrityResult.blockers,
+        testFileHashAtVerify: testFileHash,
+        coverageBaseline,
+      },
       passed
     }
     if (args.json) console.log(JSON.stringify(result, null, 2))
@@ -2046,6 +2118,31 @@ export const phaseShip = defineCommand({
 
     // Check if task is completed (or attempt transition)
     const payload = task.payload as TaskPayload
+
+    // G23 timing-attack guard (P1.2 PR-D2, decision F1): before anything else, recompute
+    // the test-file hash over the exact set verify recorded and compare. A mismatch means
+    // tests changed after passing verify ("pass then quietly revert"). Hard-block under the
+    // enforced profile that produced the baseline; advisory profiles warn and continue.
+    const integrityBaseline = readTestIntegrityBaseline(SCALE_DIR, args['task-id'])
+    const testIntegrityWarnings: string[] = []
+    if (integrityBaseline && integrityBaseline.testFiles.length > 0) {
+      const shipHash = computeTestFileHash(PROJECT_DIR, integrityBaseline.testFiles)
+      if (shipHash !== integrityBaseline.testFileHashAtVerify) {
+        const message = `Test files changed since verify (hash mismatch). Re-run: scale verify ${args['task-id']}`
+        if (integrityBaseline.enforce) {
+          console.error('\nTest integrity gate (G23) blocked ship: ' + message + '\n')
+          process.exit(1)
+        } else {
+          // Advisory baseline: surface the mismatch instead of swallowing it. Emit to
+          // stderr (keeps stdout pure JSON) and record it for programmatic consumers.
+          const warning = `Test integrity (G23): ${message}`
+          testIntegrityWarnings.push(warning)
+          if (args.json) console.error('[WARN] ' + warning)
+          else console.log('\n   [WARN] ' + warning)
+        }
+      }
+    }
+
     const evidenceValidation = validateVerificationEvidence(payload.verificationEvidenceIds)
     const reviewValidation = validateReviewEvidence(payload.reviewEvidenceIds)
     const verificationPassed = payload.buildStatus === 'success' &&
@@ -2234,6 +2331,7 @@ export const phaseShip = defineCommand({
         warnings: workspaceBoundary.warnings,
       } : null,
       verificationSurfaceCoverage: shipSurfaceCoverage,
+      testIntegrityWarnings,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))
