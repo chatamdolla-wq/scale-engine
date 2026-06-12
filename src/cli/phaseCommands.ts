@@ -1310,6 +1310,7 @@ export const phaseVerify = defineCommand({
     const testFiles = enumerateTestFiles(PROJECT_DIR)
     const testFileHash = computeTestFileHash(PROJECT_DIR, testFiles)
     const coverageBaseline = readCoverageBaseline(SCALE_DIR, args['task-id'])
+    const priorIntegrityBaseline = readTestIntegrityBaseline(SCALE_DIR, args['task-id'])
     const testIntegrityResult = await new TestIntegrityGate({
       cwd: PROJECT_DIR,
       advisory: !testIntegrityEnforced,
@@ -1326,15 +1327,6 @@ export const phaseVerify = defineCommand({
       // Evidence persistence must not mask the gate decision itself.
     }
     gateResults.push(testIntegrityResult)
-    writeTestIntegrityBaseline(SCALE_DIR, {
-      taskId: args['task-id'],
-      profile: resolvedVerification.profileName,
-      enforce: testIntegrityEnforced,
-      testFileHashAtVerify: testFileHash,
-      testFiles,
-      coverage: results.testCoverage,
-      verifiedAt: Date.now(),
-    })
     const testIntegrityBlocked = !testIntegrityResult.passed
     if (!args.json) {
       console.log(`   ${testIntegrityResult.passed ? '[PASS]' : '[FAIL]'} G23: ${testIntegrityResult.evidence.split('\n')[0].slice(0, 60)}`)
@@ -1443,10 +1435,23 @@ export const phaseVerify = defineCommand({
                        results.testPassed === true &&
                        (results.testCoverage ?? 0) >= 80 &&
                        results.securityPassed === true
-    // Coverage baseline (decision G1): only advance the baseline on a passing verify
-    // so the next run compares against the last green coverage, not a failed run.
-    if (codePassed && typeof results.testCoverage === 'number') {
-      writeCoverageBaseline(SCALE_DIR, args['task-id'], results.testCoverage)
+    // Baselines (decisions F1/G1): only advance on a passing, non-blocked verify so a
+    // failed or advisory run cannot overwrite a previously enforced baseline. Enforcement
+    // is sticky — a prior enforced baseline stays enforced even if this run is advisory,
+    // so the ship-time hash guard cannot be downgraded by re-verifying under `default`.
+    if (codePassed && !testIntegrityBlocked) {
+      if (typeof results.testCoverage === 'number') {
+        writeCoverageBaseline(SCALE_DIR, args['task-id'], results.testCoverage)
+      }
+      writeTestIntegrityBaseline(SCALE_DIR, {
+        taskId: args['task-id'],
+        profile: resolvedVerification.profileName,
+        enforce: testIntegrityEnforced || priorIntegrityBaseline?.enforce === true,
+        testFileHashAtVerify: testFileHash,
+        testFiles,
+        coverage: results.testCoverage,
+        verifiedAt: Date.now(),
+      })
     }
     const completionEligible = codePassed &&
       !testIntegrityBlocked &&
@@ -2119,6 +2124,7 @@ export const phaseShip = defineCommand({
     // tests changed after passing verify ("pass then quietly revert"). Hard-block under the
     // enforced profile that produced the baseline; advisory profiles warn and continue.
     const integrityBaseline = readTestIntegrityBaseline(SCALE_DIR, args['task-id'])
+    const testIntegrityWarnings: string[] = []
     if (integrityBaseline && integrityBaseline.testFiles.length > 0) {
       const shipHash = computeTestFileHash(PROJECT_DIR, integrityBaseline.testFiles)
       if (shipHash !== integrityBaseline.testFileHashAtVerify) {
@@ -2126,8 +2132,13 @@ export const phaseShip = defineCommand({
         if (integrityBaseline.enforce) {
           console.error('\nTest integrity gate (G23) blocked ship: ' + message + '\n')
           process.exit(1)
-        } else if (!args.json) {
-          console.log('\n   [WARN] Test integrity (G23): ' + message)
+        } else {
+          // Advisory baseline: surface the mismatch instead of swallowing it. Emit to
+          // stderr (keeps stdout pure JSON) and record it for programmatic consumers.
+          const warning = `Test integrity (G23): ${message}`
+          testIntegrityWarnings.push(warning)
+          if (args.json) console.error('[WARN] ' + warning)
+          else console.log('\n   [WARN] ' + warning)
         }
       }
     }
@@ -2320,6 +2331,7 @@ export const phaseShip = defineCommand({
         warnings: workspaceBoundary.warnings,
       } : null,
       verificationSurfaceCoverage: shipSurfaceCoverage,
+      testIntegrityWarnings,
     }
 
     if (args.json) console.log(JSON.stringify(result, null, 2))

@@ -1876,5 +1876,7 @@ export function leaky(token: string) {
     // Advisory baseline never hard-blocks on hash mismatch; ship fails later for
     // the ordinary "not verified" reason, not the G23 integrity guard.
     expect(ship.stderr).not.toContain('Test integrity gate (G23) blocked ship')
+    // ...but the mismatch is still surfaced (not silently swallowed in JSON mode).
+    expect(ship.stderr).toContain('[WARN] Test integrity (G23): Test files changed since verify')
   }, 120_000)
 })
